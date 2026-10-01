@@ -25,6 +25,7 @@ model Session {
 }
 model Position {
   id String @id @default(uuid()) @db.Char(36)
+  importedFromId String? @db.Char(36)
   userId String @db.Char(36)
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
   kind String @db.VarChar(16)
@@ -40,6 +41,7 @@ model Position {
   outgoing PositionLink[] @relation("Source")
   incoming PositionLink[] @relation("Target")
   @@index([userId,kind])
+  @@unique([userId,importedFromId])
 }
 model Revision {
   id String @id @default(uuid()) @db.Char(36)

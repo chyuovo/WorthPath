@@ -11,7 +11,7 @@ pnpm db:migrate
 pnpm dev
 ```
 
-前端 http://localhost:5173，API http://localhost:3000/api。
+前端 http://localhost:5173，API http://localhost:3100/api。
 
 ```powershell
 pnpm typecheck
