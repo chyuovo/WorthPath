@@ -4,7 +4,6 @@ import {
   Get,
   Patch,
   Post,
-  Put,
   Req,
   Body,
   OnModuleInit,
@@ -13,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { Database } from './database';
 import { UserRequest } from './auth';
-import { currency, rateInput, date, rateValue, today } from './validation';
+import { currency, date, rateValue, today } from './validation';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 // Fixed public request; no user currency choices, identifiers or amounts leave the server.
@@ -115,28 +114,44 @@ export class RatesService implements OnModuleInit, OnModuleDestroy {
             source: 'frankfurter',
           };
         });
-      await this.db.$transaction(async (tx) => {
-        for (const v of data) {
-          const { rate, source, ...key } = v;
-          const existing = await tx.exchangeRate.findUnique({
-            where: { userId_currency_baseCurrency_date: key },
+      await this.db.$transaction(
+        async (tx) => {
+          // A clear or currency change during the network request must not recreate stale rates.
+          const currentUser = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+          const currentPositions = await tx.position.findMany({
+            where: { userId },
+            select: { currency: true },
+            distinct: ['currency'],
           });
-          if (existing?.source === 'manual') continue;
-          await tx.exchangeRate.upsert({
-            where: { userId_currency_baseCurrency_date: key },
-            create: v,
-            update: { rate, source },
-          });
-        }
-      });
-      const message = '已保存最新可用日汇率；休市日可能沿用上一工作日。同日手动汇率已保留。';
+          if (
+            currentUser.baseCurrency !== u.baseCurrency ||
+            JSON.stringify(currentPositions.map((p) => p.currency).sort()) !==
+              JSON.stringify(ps.map((p) => p.currency).sort())
+          )
+            return;
+          for (const v of data) {
+            const { rate, source, ...key } = v;
+            const existing = await tx.exchangeRate.findUnique({
+              where: { userId_currency_baseCurrency_date: key },
+            });
+            if (existing?.source === 'manual') continue;
+            await tx.exchangeRate.upsert({
+              where: { userId_currency_baseCurrency_date: key },
+              create: v,
+              update: { rate, source },
+            });
+          }
+        },
+        { isolationLevel: 'Serializable' },
+      );
+      const message = '已保存最新可用日汇率；休市日可能沿用上一工作日。同日历史导入汇率已保留。';
       this.outcomes.set(userId, { state: 'ok', attemptedAt: new Date().toISOString(), message });
       return { message };
     } catch {
       this.outcomes.set(userId, {
         state: 'error',
         attemptedAt: new Date().toISOString(),
-        message: '自动汇率更新失败，原币和已有汇率已保留，请重试或手动录入',
+        message: '自动汇率更新失败，原币和已有汇率已保留，请稍后重试',
       });
       throw new BadGatewayException('汇率更新失败，原币金额和已有汇率已保留；可稍后重试或手动录入');
     } finally {
@@ -153,10 +168,16 @@ export class SettingsController {
   @Get('settings') async settings(@Req() r: UserRequest) {
     const u = await this.db.user.findUniqueOrThrow({
       where: { id: r.userId },
-      select: { username: true, baseCurrency: true },
+      select: { username: true, baseCurrency: true, showSidebar: true, idleMinutes: true },
     });
     return {
       ...u,
+      lastActivity: (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } }))
+        .lastActivity,
+      revealed: r.revealed,
+      revealUntil: r.revealed
+        ? (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } })).revealUntil
+        : null,
       fxStatus: this.fx.status(r.userId),
       rates: await this.db.exchangeRate.findMany({
         where: { userId: r.userId },
@@ -166,24 +187,17 @@ export class SettingsController {
     };
   }
   @Patch('settings') async update(@Req() r: UserRequest, @Body() b: unknown) {
-    const { baseCurrency } = z.object({ baseCurrency: currency }).strict().parse(b);
-    await this.db.user.update({ where: { id: r.userId }, data: { baseCurrency } });
+    const data = z
+      .object({
+        baseCurrency: currency.optional(),
+        showSidebar: z.boolean().optional(),
+        idleMinutes: z.number().int().min(0).max(1440).optional(),
+      })
+      .strict()
+      .refine((v) => Object.keys(v).length > 0)
+      .parse(b);
+    await this.db.user.update({ where: { id: r.userId }, data });
     this.fx.invalidate(r.userId);
-    return { ok: true };
-  }
-  @Put('rates') async manual(@Req() r: UserRequest, @Body() b: unknown) {
-    const v = rateInput.parse(b),
-      key = {
-        userId: r.userId,
-        currency: v.currency,
-        baseCurrency: v.baseCurrency,
-        date: new Date(v.date),
-      };
-    await this.db.exchangeRate.upsert({
-      where: { userId_currency_baseCurrency_date: key },
-      create: { ...key, rate: v.rate, source: 'manual' },
-      update: { rate: v.rate, source: 'manual' },
-    });
     return { ok: true };
   }
   @Post('rates/refresh') async refresh(@Req() r: UserRequest) {

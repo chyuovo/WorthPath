@@ -19,7 +19,7 @@ import { randomBytes, createHash } from 'node:crypto';
 import { hash, compare } from 'bcryptjs';
 import { Database } from './database';
 import { credentials } from './validation';
-export type UserRequest = Request & { userId: string };
+export type UserRequest = Request & { userId: string; sessionId: string; revealed: boolean };
 const Public = () => SetMetadata('public', true);
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 @Injectable()
@@ -55,7 +55,16 @@ export class AuthService {
   async user(token: unknown) {
     if (typeof token !== 'string' || !/^[a-f0-9]{64}$/.test(token)) return null;
     const s = await this.db.session.findUnique({ where: { id: digest(token) } });
-    return s && s.expiresAt > new Date() ? s.userId : null;
+    if (!s || s.expiresAt <= new Date()) return null;
+    const u = await this.db.user.findUniqueOrThrow({
+      where: { id: s.userId },
+      select: { idleMinutes: true },
+    });
+    if (u.idleMinutes && Date.now() - +s.lastActivity >= u.idleMinutes * 60000) {
+      await this.db.session.deleteMany({ where: { id: s.id } });
+      throw new UnauthorizedException('长时间无操作，已自动退出登录');
+    }
+    return s;
   }
   async logout(req: Request, res: Response) {
     if (typeof req.cookies?.wp_session === 'string')
@@ -84,7 +93,9 @@ export class AuthGuard implements CanActivate {
     if (this.reflector.get<boolean>('public', ctx.getHandler())) return true;
     const id = await this.auth.user(req.cookies?.wp_session);
     if (!id) throw new UnauthorizedException('请先登录');
-    req.userId = id;
+    req.userId = id.userId;
+    req.sessionId = id.id;
+    req.revealed = !!id.revealUntil && +id.revealUntil > Date.now();
     return true;
   }
 }
@@ -129,8 +140,28 @@ export class AuthController {
   @Get('auth/me') async me(@Req() req: UserRequest) {
     return this.db.user.findUniqueOrThrow({
       where: { id: req.userId },
-      select: { username: true, baseCurrency: true },
+      select: { username: true, baseCurrency: true, showSidebar: true, idleMinutes: true },
     });
+  }
+  @Post('auth/activity') async activity(@Req() r: UserRequest) {
+    await this.db.session.update({
+      where: { id: r.sessionId },
+      data: { lastActivity: new Date() },
+    });
+    return { ok: true };
+  }
+  @Post('auth/reveal') async reveal(@Req() r: UserRequest, @Body() b: unknown) {
+    this.auth.limit(r);
+    const { password } = credentials.pick({ password: true }).parse(b);
+    const u = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
+    if (!(await compare(password, u.passwordHash))) throw new ForbiddenException('密码错误');
+    const revealUntil = new Date(Date.now() + 5 * 60000);
+    await this.db.session.update({ where: { id: r.sessionId }, data: { revealUntil } });
+    return { revealUntil };
+  }
+  @Post('auth/lock') async lock(@Req() r: UserRequest) {
+    await this.db.session.update({ where: { id: r.sessionId }, data: { revealUntil: null } });
+    return { ok: true };
   }
   @Post('auth/logout') async logout(
     @Req() req: Request,

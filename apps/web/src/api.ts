@@ -17,11 +17,20 @@ export async function api<T>(path: string, method = 'GET', data?: unknown): Prom
   if (!res.ok) throw new ApiError(body.message || '操作失败', res.status);
   return body;
 }
-export type User = { username: string; baseCurrency: string };
+export type User = {
+  username: string;
+  baseCurrency: string;
+  showSidebar: boolean;
+  idleMinutes: number;
+  revealed?: boolean;
+  revealUntil?: string | null;
+  lastActivity?: string;
+};
 export type History = {
   id: string;
   sequence: number;
   createdAt: string | null;
+  time: string;
   positionId: string;
   name: string;
   kind: string;
@@ -43,6 +52,7 @@ export type Position = {
   amount: string;
   notes: string;
   archived: boolean;
+  hidden: boolean;
   history: History[];
   outgoing: { targetId: string }[];
 };
@@ -58,6 +68,7 @@ export type Total = {
 };
 export type Overview = Total & {
   baseCurrency: string;
+  revealed: boolean;
   trend: Total[];
   recent: History[];
   items: {
@@ -85,6 +96,8 @@ export function today() {
     day: '2-digit',
   }).format(new Date());
 }
+export const nowMinute = () => new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 16);
+export const displayTime = (s: string) => s.replace('T', ' ');
 export function money(v: string, currency: string) {
   const [whole, frac] = v.split('.');
   return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac !== undefined ? '.' + frac : ''}`;

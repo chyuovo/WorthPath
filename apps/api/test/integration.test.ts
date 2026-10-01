@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { today } from '../src/validation';
+import { readBackupZip } from '../src/zip';
 const base = process.env.TEST_API_URL || 'http://127.0.0.1:3100/api',
   origin = process.env.WEB_ORIGIN!;
 test('real MySQL: authentication, isolation, history, backup and atomic failures', async () => {
@@ -21,7 +22,9 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
     });
     return {
       status: res.status,
-      data: await res.json(),
+      data: res.headers.get('content-type')?.includes('application/zip')
+        ? ((await readBackupZip(Buffer.from(await res.arrayBuffer()))) as any)
+        : await res.json(),
       cookie: res.headers.get('set-cookie')?.split(';')[0] || '',
     };
   }
@@ -137,19 +140,22 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
           a.cookie,
         )
       ).status,
-      200,
+      404,
     );
-    assert.equal(
-      (
-        await call(
-          '/rates',
-          'PUT',
-          { currency: 'USD', baseCurrency: 'CNY', rate: '7', date: today() },
-          a.cookie,
-        )
-      ).status,
-      200,
-    );
+    const owner = await db.user.findUniqueOrThrow({ where: { username: a.username } });
+    for (const businessDay of ['2026-09-01', today()]) {
+      const key = {
+        userId: owner.id,
+        currency: 'USD',
+        baseCurrency: 'CNY',
+        date: new Date(businessDay),
+      };
+      await db.exchangeRate.upsert({
+        where: { userId_currency_baseCurrency_date: key },
+        create: { ...key, rate: '7', source: 'manual' },
+        update: { rate: '7', source: 'manual' },
+      });
+    }
     let o = (await call('/overview', 'GET', undefined, a.cookie)).data;
     assert.equal(o.complete, true);
     assert.equal(o.net, '550.10');

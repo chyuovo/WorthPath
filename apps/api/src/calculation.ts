@@ -24,6 +24,8 @@ export type Rate = {
   source: string;
 };
 export const day = (d: Date) => d.toISOString().slice(0, 10);
+export const businessTime = (d: Date) => new Date(+d + 8 * 3600000).toISOString().slice(0, 16);
+export const businessDay = (d: Date) => businessTime(d).slice(0, 10);
 export function compareRevisions(a: Holding['revisions'][number], b: Holding['revisions'][number]) {
   return +a.effectiveDate - +b.effectiveDate || (a.sequence || 0) - (b.sequence || 0);
 }
@@ -39,7 +41,8 @@ export function history(p: Holding) {
       name: p.name,
       kind: p.kind,
       currency: p.currency,
-      date: day(r.effectiveDate),
+      date: businessDay(r.effectiveDate),
+      time: businessTime(r.effectiveDate),
       before: before.toFixed(),
       after: after.toFixed(),
       delta: after.minus(before).toFixed(),
@@ -63,7 +66,7 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
   const missing = new Set<string>();
   const items = positions.map((p) => {
     const rev = p.revisions
-        .filter((r) => day(r.effectiveDate) <= date)
+        .filter((r) => businessDay(r.effectiveDate) <= date)
         .sort((a, b) => compareRevisions(b, a))[0],
       amount = new Decimal(rev?.amount.toString() || '0'),
       fx = rateAt(rates, p.currency, base, date);
@@ -98,7 +101,7 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
 export function overview(positions: Holding[], rates: Rate[], base: string, date: string) {
   const dates = [
     ...new Set([
-      ...positions.flatMap((p) => p.revisions.map((r) => day(r.effectiveDate))),
+      ...positions.flatMap((p) => p.revisions.map((r) => businessDay(r.effectiveDate))),
       ...rates.filter((r) => r.baseCurrency === base).map((r) => day(r.date)),
       date,
     ]),
@@ -135,7 +138,7 @@ export function overview(positions: Holding[], rates: Rate[], base: string, date
     trend,
     recent: positions
       .flatMap(history)
-      .sort((a, b) => b.date.localeCompare(a.date) || b.sequence - a.sequence)
+      .sort((a, b) => b.time.localeCompare(a.time) || b.sequence - a.sequence)
       .slice(0, 20),
   };
 }

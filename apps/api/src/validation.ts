@@ -29,6 +29,19 @@ export const date = z
       Number.isFinite(+d) && d.toISOString().slice(0, 10) === s && s >= '1900-01-01' && s <= today()
     );
   }, '日期无效或在未来');
+export const businessDate = z.string().refine((s) => {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return date.safeParse(s).success;
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) return false;
+  const d = new Date(s + ':00+08:00');
+  return (
+    Number.isFinite(+d) &&
+    new Date(+d + 8 * 3600000).toISOString().slice(0, 16) === s &&
+    s >= '1900-01-01' &&
+    +d <= Date.now()
+  );
+}, '业务时间无效或在未来（北京时间）');
+export const toBusinessDate = (s: string) =>
+  new Date((s.length === 10 ? s + 'T00:00' : s) + ':00+08:00');
 export const amount = z
   .string()
   .regex(/^(0|[1-9]\d{0,15})(\.\d{1,8})?$/, '金额须为非负十进制字符串，最多 16 位整数和 8 位小数');
@@ -40,7 +53,7 @@ export const notes = z.string().max(2000).default('');
 export const revisionInput = z
   .object({
     amount,
-    date,
+    date: businessDate,
     notes,
     reason: z
       .enum(['initial', 'balance', 'valuation', 'repayment', 'correction'])
@@ -53,6 +66,7 @@ export const positionMeta = z
     category: z.string().trim().min(1).max(40),
     notes,
     archived: z.boolean().default(false),
+    hidden: z.boolean().default(false),
   })
   .strict();
 export const positionInput = positionMeta
@@ -61,7 +75,7 @@ export const positionInput = positionMeta
     side: z.enum(['asset', 'liability']),
     currency,
     amount,
-    date,
+    date: businessDate,
   })
   .strict()
   .superRefine((p, c) => {

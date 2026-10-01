@@ -5,25 +5,28 @@
     "dev": "node scripts/dev.cjs",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test test/calculation.test.ts",
+    "test": "tsx --test --test-concurrency=1 test/calculation.test.ts test/zip.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "node scripts/database.cjs deploy",
     "db:status": "node scripts/database.cjs status",
-    "test:integration": "tsx --test test/integration.test.ts"
+    "test:integration": "tsx --test --test-concurrency=1 test/integration.test.ts test/privacy.test.ts"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",
     "@prisma/client": "6.19.0",
+    "archiver": "^8.0.0",
     "bcryptjs": "^3.0.0",
     "cookie-parser": "^1.4.7",
     "decimal.js": "^10.6.0",
     "dotenv": "^17.2.0",
     "express": "5.1.0",
     "helmet": "^8.1.0",
+    "multer": "^2.4.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.2",
+    "yauzl": "^3.4.0",
     "zod": "^4.1.0"
   },
   "devDependencies": {
@@ -33,6 +36,9 @@
     "mysql2": "^3.15.0",
     "prisma": "6.19.0",
     "tsx": "^4.20.0",
-    "typescript": "^5.9.0"
+    "typescript": "^5.9.0",
+    "@types/archiver": "^8.0.0",
+    "@types/yauzl": "^3.4.0",
+    "@types/multer": "^2.3.0"
   }
 }

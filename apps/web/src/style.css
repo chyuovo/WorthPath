@@ -234,6 +234,42 @@ strong {
   display: flex;
   min-height: 100vh;
 }
+.sidebar-hidden main {
+  margin-left: 0;
+  padding-bottom: 0;
+  width: 100%;
+}
+.privacy-toolbar {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  font-size: 13px;
+  color: #637b75;
+}
+.danger {
+  background: #ae3232;
+  color: white;
+  padding: 12px 18px;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.check-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.check-line input {
+  width: auto;
+}
+.sidebar-hidden .topbar select {
+  max-width: 150px;
+  width: auto;
+}
 .sidebar {
   width: 228px;
   position: fixed;

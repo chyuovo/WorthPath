@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { Database } from './database';
 import { UserRequest } from './auth';
-import { positionInput, positionMeta, revisionInput, today } from './validation';
+import { positionInput, positionMeta, revisionInput, today, toBusinessDate } from './validation';
 import { history, overview } from './calculation';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
@@ -24,9 +24,9 @@ export class PortfolioController {
     private db: Database,
     private fx: RatesService,
   ) {}
-  private async own(userId: string, id: string) {
+  private async own(userId: string, id: string, revealed = false) {
     const p = await this.db.position.findFirst({
-      where: { id, userId },
+      where: { id, userId, ...(revealed ? {} : { hidden: false }) },
       include: {
         revisions: { orderBy: [{ effectiveDate: 'asc' }, { sequence: 'asc' }] },
         outgoing: true,
@@ -37,7 +37,7 @@ export class PortfolioController {
   }
   @Get('positions') async list(@Req() r: UserRequest) {
     const rows = await this.db.position.findMany({
-      where: { userId: r.userId },
+      where: { userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
       include: {
         revisions: { orderBy: [{ effectiveDate: 'asc' }, { sequence: 'asc' }] },
         outgoing: true,
@@ -52,7 +52,7 @@ export class PortfolioController {
     }));
   }
   @Get('positions/:id') async detail(@Req() r: UserRequest, @Param('id') id: string) {
-    const p = await this.own(r.userId, id);
+    const p = await this.own(r.userId, id, r.revealed);
     return { ...p, userId: undefined, history: history(p) };
   }
   @Post('positions') async create(@Req() r: UserRequest, @Body() b: unknown) {
@@ -63,7 +63,12 @@ export class PortfolioController {
         ...meta,
         userId: r.userId,
         revisions: {
-          create: { amount, effectiveDate: new Date(date), notes: v.notes, reason: 'initial' },
+          create: {
+            amount,
+            effectiveDate: toBusinessDate(date),
+            notes: v.notes,
+            reason: 'initial',
+          },
         },
       },
       select: { id: true },
@@ -77,7 +82,7 @@ export class PortfolioController {
     @Body() b: unknown,
   ) {
     const v = positionMeta.parse(b),
-      p = await this.own(r.userId, id);
+      p = await this.own(r.userId, id, r.revealed);
     if (
       p.kind === 'account' &&
       ['credit_card', 'loan'].includes(v.category) &&
@@ -95,13 +100,15 @@ export class PortfolioController {
     const v = revisionInput.parse(b);
     return this.db.$transaction(
       async (tx) => {
-        const p = await tx.position.findFirst({ where: { id, userId: r.userId } });
+        const p = await tx.position.findFirst({
+          where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
+        });
         if (!p) throw new NotFoundException('项目不存在');
         if (p.archived) throw new ConflictException('请先恢复归档项目');
         if (v.reason === 'repayment') {
           if (p.side !== 'liability') throw new BadRequestException('还款记录只能用于负债');
           const prior = await tx.revision.findFirst({
-            where: { positionId: p.id, effectiveDate: { lte: new Date(v.date) } },
+            where: { positionId: p.id, effectiveDate: { lte: toBusinessDate(v.date) } },
             orderBy: [{ effectiveDate: 'desc' }, { sequence: 'desc' }],
           });
           if (!prior || new Prisma.Decimal(v.amount).gt(prior.amount))
@@ -111,7 +118,7 @@ export class PortfolioController {
           data: {
             positionId: p.id,
             amount: v.amount,
-            effectiveDate: new Date(v.date),
+            effectiveDate: toBusinessDate(v.date),
             notes: v.notes,
             reason: v.reason,
           },
@@ -127,7 +134,7 @@ export class PortfolioController {
     @Body() b: unknown,
   ) {
     const v = revisionInput.parse(b),
-      p = await this.own(r.userId, id);
+      p = await this.own(r.userId, id, r.revealed);
     if (p.archived) throw new ConflictException('请先恢复归档项目');
     if (!p.revisions.some((x) => x.id === revisionId))
       throw new NotFoundException('历史记录不存在');
@@ -135,7 +142,7 @@ export class PortfolioController {
       where: { id: revisionId },
       data: {
         amount: v.amount,
-        effectiveDate: new Date(v.date),
+        effectiveDate: toBusinessDate(v.date),
         notes: v.notes,
         reason: 'correction',
       },
@@ -156,7 +163,7 @@ export class PortfolioController {
     return this.db.$transaction(
       async (tx) => {
         const source = await tx.position.findFirst({
-          where: { id, userId: r.userId, kind: 'debt' },
+          where: { id, userId: r.userId, kind: 'debt', ...(r.revealed ? {} : { hidden: false }) },
         });
         if (!source) throw new NotFoundException('债务不存在');
         const count = await tx.position.count({
@@ -180,11 +187,11 @@ export class PortfolioController {
         select: { baseCurrency: true },
       }),
       this.db.position.findMany({
-        where: { userId: r.userId },
+        where: { userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
         include: { revisions: true },
       }),
       this.db.exchangeRate.findMany({ where: { userId: r.userId } }),
     ]);
-    return overview(positions, rates, user.baseCurrency, today());
+    return { ...overview(positions, rates, user.baseCurrency, today()), revealed: r.revealed };
   }
 }

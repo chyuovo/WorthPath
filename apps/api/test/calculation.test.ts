@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { history, overview, totals, type Holding, type Rate } from '../src/calculation';
-import { positionInput, date, amount } from '../src/validation';
+import { positionInput, date, amount, businessDate, toBusinessDate } from '../src/validation';
 import { validateBackup } from '../src/backup';
 import { RatesService } from '../src/rates';
 import { Database } from '../src/database';
@@ -33,6 +33,15 @@ test('decimal totals and liability sign', () => {
     b = p('liability');
   b.revisions[0].amount = '0.2';
   assert.equal(totals([a, b], [], 'CNY', '2026-09-01').net, '99.90');
+});
+test('minute history uses Hong Kong day boundaries and rejects invalid local times', () => {
+  const a = p();
+  a.revisions = [{ ...rev('8', '2026-09-01'), effectiveDate: toBusinessDate('2026-09-02T00:01') }];
+  assert.equal(history(a)[0].time, '2026-09-02T00:01');
+  assert.equal(totals([a], [], 'CNY', '2026-09-01').net, '0.00');
+  assert.equal(totals([a], [], 'CNY', '2026-09-02').net, '8.00');
+  assert.equal(businessDate.safeParse('2026-02-30T09:17').success, false);
+  assert.equal(businessDate.safeParse('2026-09-01T25:17').success, false);
 });
 test('missing FX explicitly incomplete', () => {
   const v = totals([p('asset', 'USD')], [], 'CNY', '2026-09-01');
@@ -118,6 +127,8 @@ test('public FX uses a fixed request, preserves decimal tokens, manual rates and
     position: { findMany: async () => [{ currency: 'USD' }] },
     $transaction: async (fn: any) =>
       fn({
+        user: { findUniqueOrThrow: async () => ({ baseCurrency: 'CNY' }) },
+        position: { findMany: async () => [{ currency: 'USD' }] },
         exchangeRate: {
           findUnique: async () => (manual ? { source: 'manual' } : null),
           upsert: async (v: any) => writes.push(v.create),

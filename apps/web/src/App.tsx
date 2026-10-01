@@ -23,6 +23,8 @@ import {
   currencies,
   money,
   today,
+  nowMinute,
+  displayTime,
   type User,
   type Position,
   type Overview,
@@ -214,7 +216,11 @@ export default function App() {
       baseCurrency: string;
       currentBaseCurrency: string;
     } | null>(null);
+  const [clearStep, setClearStep] = useState(0);
+  const activityAt = useRef(0);
   function clearAccount() {
+    setClearStep(0);
+    activityAt.current = 0;
     sessionGeneration.current++;
     loadGeneration.current++;
     setUser(null);
@@ -253,11 +259,20 @@ export default function App() {
         >('/settings'),
       ]);
       if (session !== sessionGeneration.current || request !== loadGeneration.current) return;
-      setPositions(p);
+      if (o.revealed !== !!s.revealed) {
+        setPositions([]);
+        setOverview(null);
+        setSelected(null);
+        setModal(null);
+        void load();
+        return;
+      }
+      if (!activityAt.current && s.lastActivity) activityAt.current = +new Date(s.lastActivity);
+      setPositions(s.revealed ? p : p.filter((position) => !position.hidden));
       setOverview(o);
       setRates(s.rates);
       setFxStatus(s.fxStatus);
-      setUser({ username: s.username, baseCurrency: s.baseCurrency });
+      setUser(s);
     } catch (e) {
       if (session === sessionGeneration.current && request === loadGeneration.current) report(e);
     } finally {
@@ -281,12 +296,61 @@ export default function App() {
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [page, selected]);
+  useEffect(() => {
+    if (!user) return;
+    const session = sessionGeneration.current;
+    let lastSent = 0,
+      pending = false,
+      revealExpired = false;
+    const activity = () => {
+      if (!document.hidden) {
+        activityAt.current = Date.now();
+        if (Date.now() - lastSent > 15000 && !pending) {
+          pending = true;
+          lastSent = Date.now();
+          void api('/auth/activity', 'POST')
+            .catch((e) => {
+              if (session === sessionGeneration.current) report(e);
+            })
+            .finally(() => {
+              pending = false;
+            });
+        }
+      }
+    };
+    const check = window.setInterval(() => {
+      if (
+        user.idleMinutes &&
+        activityAt.current &&
+        Date.now() - activityAt.current >= user.idleMinutes * 60000
+      ) {
+        clearAccount();
+        setError('长时间无操作，已自动退出登录');
+        void api('/auth/logout', 'POST').catch(() => {});
+      } else if (!revealExpired && user.revealUntil && Date.now() >= +new Date(user.revealUntil)) {
+        revealExpired = true;
+        setPositions([]);
+        setOverview(null);
+        setSelected(null);
+        setModal(null);
+        void load();
+      }
+    }, 1000);
+    const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
+    events.forEach((e) => window.addEventListener(e, activity, { passive: true }));
+    return () => {
+      window.clearInterval(check);
+      events.forEach((e) => window.removeEventListener(e, activity));
+    };
+  }, [user?.idleMinutes, user?.revealUntil, !!user]);
   async function act(work: () => Promise<unknown>, message: string) {
+    const session = sessionGeneration.current;
     setBusy(true);
     setError('');
     setSuccess('');
     try {
       const result = await work();
+      if (session !== sessionGeneration.current) return;
       setSuccess(
         result &&
           typeof result === 'object' &&
@@ -298,7 +362,7 @@ export default function App() {
       setModal(null);
       await load();
     } catch (e) {
-      report(e);
+      if (session === sessionGeneration.current) report(e);
     } finally {
       setBusy(false);
     }
@@ -318,6 +382,7 @@ export default function App() {
       setPage('overview');
       setSelected(null);
       setModal(null);
+      activityAt.current = Date.now();
       setUser(u);
       await load();
     } catch (e) {
@@ -449,46 +514,64 @@ export default function App() {
     ['settings', Settings],
   ] as const;
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <span>W</span> WorthPath
-        </div>
-        <p className="nav-caption">我的资产空间</p>
-        <nav>
-          {nav.map(([key, Icon]) => (
-            <button
-              key={key}
-              className={page === key ? 'active' : ''}
-              onClick={() => {
-                setPage(key);
-                setSelected(null);
-              }}
-            >
-              <Icon size={19} />
-              <span>{labels[key]}</span>
-            </button>
-          ))}
-        </nav>
-        <div className="side-bottom">
-          <div className="avatar">{user.username.slice(0, 1).toUpperCase()}</div>
-          <div>
-            <strong>{user.username}</strong>
-            <small>个人账户 · {user.baseCurrency}</small>
+    <div className={'app' + (user.showSidebar === false ? ' sidebar-hidden' : '')}>
+      {user.showSidebar !== false && (
+        <aside className="sidebar">
+          <div className="brand">
+            <span>W</span> WorthPath
           </div>
-          <button
-            className="icon"
-            aria-label="退出登录"
-            disabled={busy}
-            onClick={() => void logout()}
-          >
-            <LogOut size={18} />
-          </button>
-        </div>
-      </aside>
+          <p className="nav-caption">我的资产空间</p>
+          <nav>
+            {nav.map(([key, Icon]) => (
+              <button
+                key={key}
+                className={page === key ? 'active' : ''}
+                onClick={() => {
+                  setPage(key);
+                  setSelected(null);
+                }}
+              >
+                <Icon size={19} />
+                <span>{labels[key]}</span>
+              </button>
+            ))}
+          </nav>
+          <div className="side-bottom">
+            <div className="avatar">{user.username.slice(0, 1).toUpperCase()}</div>
+            <div>
+              <strong>{user.username}</strong>
+              <small>个人账户 · {user.baseCurrency}</small>
+            </div>
+            <button
+              className="icon"
+              aria-label="退出登录"
+              disabled={busy}
+              onClick={() => void logout()}
+            >
+              <LogOut size={18} />
+            </button>
+          </div>
+        </aside>
+      )}
       <main>
         <header className="topbar">
           <span>个人财务 / {labels[page]}</span>
+          {user.showSidebar === false && (
+            <select
+              aria-label="页面导航"
+              value={page}
+              onChange={(e) => {
+                setPage(e.target.value);
+                setSelected(null);
+              }}
+            >
+              {nav.map(([key]) => (
+                <option key={key} value={key}>
+                  {labels[key]}
+                </option>
+              ))}
+            </select>
+          )}
           <div>
             <span className="currency-pill">本位币 {user.baseCurrency}</span>
             <button
@@ -502,6 +585,24 @@ export default function App() {
           </div>
         </header>
         <div className="content">
+          <div className="privacy-toolbar">
+            <span>
+              {overview?.revealed
+                ? '当前包含隐藏项目 · 验证 5 分钟后自动锁定'
+                : '当前不包含隐藏账户、资产和债务，净资产按此范围计算'}
+            </span>
+            <button
+              className="secondary"
+              disabled={busy}
+              onClick={() =>
+                overview?.revealed
+                  ? void act(() => api('/auth/lock', 'POST'), '隐藏项目已锁定')
+                  : setModal({ kind: 'reveal' })
+              }
+            >
+              {overview?.revealed ? '锁定隐藏项目' : '显示隐藏资产（验证密码）'}
+            </button>
+          </div>
           <div className="page-heading">
             <div>
               <p className="eyebrow">WORTHPATH / {today()}</p>
@@ -691,6 +792,7 @@ export default function App() {
                       {p.archived ? ' · 已归档' : ''}
                     </span>
                     <h2>{money(p.amount, p.currency)}</h2>
+                    {p.hidden && <span className="badge">隐藏项目</span>}
                     <p className="muted">
                       本位币：
                       {overview?.items.find((i) => i.id === p.id)?.converted !== null
@@ -718,6 +820,7 @@ export default function App() {
                               category: p.category,
                               notes: p.notes,
                               archived: !p.archived,
+                              hidden: p.hidden,
                             }),
                           p.archived ? '项目已恢复' : '项目已归档',
                         )
@@ -830,7 +933,7 @@ export default function App() {
               <HistoryTable
                 rows={positions
                   .flatMap((p) => p.history)
-                  .sort((a, b) => b.date.localeCompare(a.date) || b.sequence - a.sequence)}
+                  .sort((a, b) => b.time.localeCompare(a.time) || b.sequence - a.sequence)}
                 open={(id) => {
                   setSelected(id);
                   setPage(positions.find((p) => p.id === id)?.kind || 'account');
@@ -857,11 +960,40 @@ export default function App() {
                       e.preventDefault();
                       const f = new FormData(e.currentTarget);
                       void act(
-                        () => api('/settings', 'PATCH', { baseCurrency: f.get('baseCurrency') }),
-                        '本位币已更新，请检查换算汇率',
+                        () =>
+                          api('/settings', 'PATCH', {
+                            baseCurrency: f.get('baseCurrency'),
+                            showSidebar: f.get('showSidebar') === 'true',
+                            idleMinutes: Number(f.get('idleMinutes')),
+                          }),
+                        '个人设置已保存',
                       );
                     }}
                   >
+                    <Field label="左侧菜单栏">
+                      <select
+                        name="showSidebar"
+                        key={String(user.showSidebar)}
+                        defaultValue={String(user.showSidebar)}
+                      >
+                        <option value="true">显示</option>
+                        <option value="false">隐藏（顶部仍可切换页面）</option>
+                      </select>
+                    </Field>
+                    <Field label="无操作自动退出（分钟）">
+                      <input
+                        name="idleMinutes"
+                        type="number"
+                        min="0"
+                        max="1440"
+                        required
+                        defaultValue={user.idleMinutes}
+                        key={user.idleMinutes}
+                      />
+                    </Field>
+                    <p className="muted">
+                      0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。
+                    </p>
                     <Field label="本位币">
                       <select
                         name="baseCurrency"
@@ -895,7 +1027,7 @@ export default function App() {
                     </p>
                   )}
                   <p className="muted">
-                    服务器每小时检查当日是否已尝试更新。外部请求固定下载公共汇率表，不发送个人数据。失败保留已有汇率，可手动录入。
+                    服务器每小时检查当日是否已尝试更新。外部请求固定下载公共汇率表，不发送个人数据。失败保留已有汇率，可稍后重试。
                   </p>
                   <button
                     className="secondary"
@@ -909,9 +1041,6 @@ export default function App() {
                   >
                     <RefreshCw size={16} />
                     立即更新
-                  </button>
-                  <button className="text" onClick={() => setModal({ kind: 'rate' })}>
-                    手动录入 / 更正
                   </button>
                   <p className="muted">公共参考汇率可能与银行成交价不同；休市日日期可能滞后。</p>
                 </section>
@@ -937,30 +1066,85 @@ export default function App() {
                             </td>
                             <td>{r.rate}</td>
                             <td>{r.date.slice(0, 10)}</td>
-                            <td>{r.source === 'manual' ? '手动' : 'Frankfurter'}</td>
+                            <td>{r.source === 'manual' ? '历史导入' : 'Frankfurter'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <Empty
-                    title="没有保存的外币汇率"
-                    body="添加外币项目后更新，或手动录入带日期的汇率。"
-                  />
+                  <Empty title="没有保存的外币汇率" body="添加外币项目后更新并保存自动汇率。" />
                 )}
               </section>
               <section className="panel">
+                <h2>清空本账号数据</h2>
+                <p className="muted">
+                  清除本账号全部账户、资产、债务、历史和汇率（包括隐藏项目）；保留登录账号及个人设置。请先下载备份并确认文件已保存。
+                </p>
+                {clearStep === 0 ? (
+                  <a
+                    className="secondary"
+                    href="/api/backup"
+                    download
+                    onClick={() => setClearStep(1)}
+                  >
+                    <Download size={16} />
+                    第一步：下载备份
+                  </a>
+                ) : clearStep === 1 ? (
+                  <button
+                    className="secondary"
+                    disabled={busy}
+                    onClick={async () => {
+                      try {
+                        const s = await api<{ ready: boolean }>('/backup/clear-status');
+                        if (!s.ready) throw new Error('备份尚未完成，请重新下载');
+                        setClearStep(2);
+                      } catch (e) {
+                        report(e);
+                      }
+                    }}
+                  >
+                    备份已保存，进入下一步
+                  </button>
+                ) : (
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const confirmation = new FormData(e.currentTarget).get('confirmation');
+                      void act(async () => {
+                        await api('/backup/clear', 'POST', { confirmation });
+                        setClearStep(0);
+                        setSelected(null);
+                        setBackup(null);
+                        setPreview(null);
+                      }, '本账号数据已清空');
+                    }}
+                  >
+                    <Field label="输入“确定清空”以确认">
+                      <input name="confirmation" required pattern="确定清空" autoComplete="off" />
+                    </Field>
+                    <button className="danger" disabled={busy}>
+                      清空本账号数据
+                    </button>
+                  </form>
+                )}
+                {clearStep > 0 && (
+                  <button className="text" onClick={() => setClearStep(0)}>
+                    取消清空 / 重新下载
+                  </button>
+                )}
+                <hr />
                 <h2>数据备份与恢复</h2>
                 <p className="muted">
-                  可读的版本化
-                  JSON，包括项目、历史、关联、币种和汇率；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
+                  ZIP 内分文件保存可读
+                  JSON，包括全部账户、资产、债务、历史、关联、币种、设置和汇率，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
                 </p>
                 <div className="actions">
                   <a
                     className="secondary"
                     href="/api/backup"
-                    download={'worthpath-' + today() + '.json'}
+                    download={'worthpath-' + today() + '.zip'}
                     onClick={() => setSuccess('备份下载请求已发起，请检查浏览器下载列表')}
                   >
                     <Download size={16} />
@@ -971,7 +1155,7 @@ export default function App() {
                     选择备份并验证
                     <input
                       type="file"
-                      accept=".json,application/json"
+                      accept=".zip,application/zip,.json,application/json"
                       disabled={busy}
                       onChange={async (e) => {
                         setBackup(null);
@@ -982,15 +1166,20 @@ export default function App() {
                         const uploadSession = sessionGeneration.current;
                         setBusy(true);
                         try {
-                          if (file.size > 8 * 1024 * 1024) throw new Error('文件不能超过 8 MB');
-                          const b = JSON.parse(await file.text()),
-                            result = await api<NonNullable<typeof preview>>(
-                              '/backup/preview',
-                              'POST',
-                              b,
-                            );
+                          if (file.size > 512 * 1024 * 1024)
+                            throw new Error('ZIP 文件不能超过 512 MB（不限制记录条数）');
+                          const form = new FormData();
+                          form.append('file', file);
+                          const response = await fetch('/api/backup/upload', {
+                            method: 'POST',
+                            body: form,
+                            credentials: 'same-origin',
+                          });
+                          const result = await response.json();
+                          if (!response.ok)
+                            throw new ApiError(result.message || 'ZIP 验证失败', response.status);
                           if (uploadSession !== sessionGeneration.current) return;
-                          setBackup(b);
+                          setBackup(result.token);
                           setPreview(result);
                         } catch (err) {
                           if (uploadSession === sessionGeneration.current) report(err);
@@ -1018,7 +1207,10 @@ export default function App() {
                       disabled={busy}
                       onClick={() =>
                         void act(async () => {
-                          await api('/backup/import', 'POST', { confirmed: true, backup });
+                          await api('/backup/import-file', 'POST', {
+                            confirmed: true,
+                            token: backup,
+                          });
                           setPreview(null);
                           setBackup(null);
                         }, '备份已完整导入')
@@ -1046,14 +1238,14 @@ export default function App() {
       {modal && (
         <Modal
           title={
-            modal.kind === 'edit'
-              ? '编辑项目'
-              : modal.kind === 'revision'
-                ? '更新余额 / 估值'
-                : modal.kind === 'correction'
-                  ? '更正历史记录'
-                  : modal.kind === 'rate'
-                    ? '保存日汇率'
+            modal.kind === 'reveal'
+              ? '验证密码以显示隐藏资产'
+              : modal.kind === 'edit'
+                ? '编辑项目'
+                : modal.kind === 'revision'
+                  ? '更新余额 / 估值'
+                  : modal.kind === 'correction'
+                    ? '更正历史记录'
                     : modal.kind === 'links'
                       ? '管理债务关联'
                       : '新增' + labels[modal.kind]
@@ -1069,7 +1261,12 @@ export default function App() {
                 v = Object.fromEntries(f.entries()),
                 kind = modal.kind,
                 mp = modal.p;
-              if (kind === 'links') {
+              if (kind === 'reveal') {
+                void act(
+                  () => api('/auth/reveal', 'POST', { password: f.get('password') }),
+                  '隐藏项目已解锁 5 分钟',
+                );
+              } else if (kind === 'links') {
                 void act(
                   () =>
                     api('/positions/' + mp!.id + '/links', 'PUT', {
@@ -1077,8 +1274,6 @@ export default function App() {
                     }),
                   '关联已更新',
                 );
-              } else if (kind === 'rate') {
-                void act(() => api('/rates', 'PUT', v), '汇率已保存，同日已有汇率已更正');
               } else if (kind === 'revision' || kind === 'correction') {
                 void act(
                   () =>
@@ -1091,7 +1286,12 @@ export default function App() {
                 );
               } else if (kind === 'edit') {
                 void act(
-                  () => api('/positions/' + mp!.id, 'PATCH', { ...v, archived: mp!.archived }),
+                  () =>
+                    api('/positions/' + mp!.id, 'PATCH', {
+                      ...v,
+                      archived: mp!.archived,
+                      hidden: f.get('hidden') === 'on',
+                    }),
                   '项目资料已保存',
                 );
               } else {
@@ -1101,12 +1301,36 @@ export default function App() {
                     (kind === 'account' && ['credit_card', 'loan'].includes(category))
                       ? 'liability'
                       : 'asset';
-                void act(() => api('/positions', 'POST', { ...v, kind, side }), '项目已添加');
+                void act(
+                  () =>
+                    api('/positions', 'POST', {
+                      ...v,
+                      kind,
+                      side,
+                      hidden: f.get('hidden') === 'on',
+                    }),
+                  '项目已添加',
+                );
               }
             }}
           >
+            {modal.kind === 'reveal' && (
+              <Field label="登录密码">
+                <input
+                  name="password"
+                  type="password"
+                  autoComplete="current-password"
+                  required
+                  maxLength={72}
+                />
+              </Field>
+            )}
             {['account', 'asset', 'debt', 'edit'].includes(modal.kind) && (
               <>
+                <label className="check-line">
+                  <input name="hidden" type="checkbox" defaultChecked={modal.p?.hidden} />
+                  隐藏此项目（密码验证后可查看和编辑）
+                </label>
                 <Field label="名称">
                   <input
                     name="name"
@@ -1133,7 +1357,7 @@ export default function App() {
                 )}
               </>
             )}
-            {['account', 'asset', 'debt', 'rate'].includes(modal.kind) && (
+            {['account', 'asset', 'debt'].includes(modal.kind) && (
               <Field label="原币币种">
                 <select name="currency" defaultValue={user.baseCurrency}>
                   {currencies.map((c) => (
@@ -1141,26 +1365,6 @@ export default function App() {
                   ))}
                 </select>
               </Field>
-            )}
-            {modal.kind === 'rate' && (
-              <>
-                <Field label="换算到本位币">
-                  <select name="baseCurrency" defaultValue={user.baseCurrency}>
-                    {currencies.map((c) => (
-                      <option key={c}>{c}</option>
-                    ))}
-                  </select>
-                </Field>
-                <Field label="1 单位原币 = 多少本位币">
-                  <input
-                    name="rate"
-                    inputMode="decimal"
-                    required
-                    pattern="(0|[1-9][0-9]{0,11})(\.[0-9]{1,12})?"
-                  />
-                </Field>
-                <p className="muted">保存将更正同币种、同日期的已有汇率，历史总额会重新计算。</p>
-              </>
             )}
             {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
               <Field label={'变更后的绝对金额' + (modal.p ? '（' + modal.p.currency + '）' : '')}>
@@ -1174,17 +1378,15 @@ export default function App() {
                 />
               </Field>
             )}
-            {['account', 'asset', 'debt', 'revision', 'correction', 'rate'].includes(
-              modal.kind,
-            ) && (
-              <Field label="业务日期">
+            {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
+              <Field label={'业务时间（北京时间，精确到分钟）'}>
                 <input
-                  type="date"
+                  type={'datetime-local'}
                   name="date"
                   required
-                  min="1900-01-01"
-                  max={today()}
-                  defaultValue={modal.h?.date || today()}
+                  min={'1900-01-01T00:00'}
+                  max={nowMinute()}
+                  defaultValue={modal.h?.time || nowMinute()}
                 />
               </Field>
             )}
@@ -1233,7 +1435,7 @@ export default function App() {
                 )}
               </div>
             ) : (
-              modal.kind !== 'rate' && (
+              modal.kind !== 'reveal' && (
                 <Field label="备注">
                   <textarea
                     name="notes"
@@ -1302,7 +1504,7 @@ function HistoryTable({
                   h.name
                 )}
                 <small>
-                  {h.date} ·{' '}
+                  {displayTime(h.time)} ·{' '}
                   {
                     (
                       {
