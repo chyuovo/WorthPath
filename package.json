@@ -8,7 +8,10 @@
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm --filter @worthpath/api test",
     "db:generate": "pnpm --filter @worthpath/api db:generate",
-    "db:migrate": "pnpm --filter @worthpath/api db:migrate"
+    "db:migrate": "pnpm --filter @worthpath/api db:migrate",
+    "test:integration": "pnpm --filter @worthpath/api test:integration",
+    "db:status": "pnpm --filter @worthpath/api db:status",
+    "check:staged": "node scripts/check-staged.mjs"
   },
   "devDependencies": {
     "prettier": "3.6.0"
