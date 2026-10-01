@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "mysql"
+  url = env("DATABASE_URL")
+}
+model User {
+  id String @id @default(uuid()) @db.Char(36)
+  username String @unique @db.VarChar(64)
+  passwordHash String @db.VarChar(255)
+  baseCurrency String @default("CNY") @db.Char(3)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  positions Position[]
+  rates ExchangeRate[]
+  sessions Session[]
+}
+model Session {
+  id String @id @db.Char(64)
+  userId String @db.Char(36)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  expiresAt DateTime
+  @@index([userId])
+}
+model Position {
+  id String @id @default(uuid()) @db.Char(36)
+  userId String @db.Char(36)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  kind String @db.VarChar(16)
+  side String @db.VarChar(16)
+  name String @db.VarChar(100)
+  category String @db.VarChar(40)
+  currency String @db.Char(3)
+  notes String @db.Text
+  archived Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  revisions Revision[]
+  outgoing PositionLink[] @relation("Source")
+  incoming PositionLink[] @relation("Target")
+  @@index([userId,kind])
+}
+model Revision {
+  id String @id @default(uuid()) @db.Char(36)
+  positionId String @db.Char(36)
+  position Position @relation(fields:[positionId],references:[id],onDelete:Cascade)
+  amount Decimal @db.Decimal(24,8)
+  effectiveDate DateTime @db.Date
+  notes String @db.Text
+  reason String @db.VarChar(20)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([positionId,effectiveDate])
+}
+model PositionLink {
+  id String @id @default(uuid()) @db.Char(36)
+  sourceId String @db.Char(36)
+  targetId String @db.Char(36)
+  source Position @relation("Source",fields:[sourceId],references:[id],onDelete:Cascade)
+  target Position @relation("Target",fields:[targetId],references:[id],onDelete:Cascade)
+  @@unique([sourceId,targetId])
+}
+model ExchangeRate {
+  id String @id @default(uuid()) @db.Char(36)
+  userId String @db.Char(36)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  currency String @db.Char(3)
+  baseCurrency String @db.Char(3)
+  date DateTime @db.Date
+  rate Decimal @db.Decimal(24,12)
+  source String @db.VarChar(30)
+  @@unique([userId,currency,baseCurrency,date])
+}

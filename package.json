@@ -1,0 +1,13 @@
+{
+  "name": "worthpath",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @worthpath/api test",
+    "db:generate": "pnpm --filter @worthpath/api db:generate",
+    "db:migrate": "pnpm --filter @worthpath/api db:migrate"
+  }
+}
