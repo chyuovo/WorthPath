@@ -15,6 +15,7 @@ const files = [
   'history.json',
   'links.json',
   'rates.json',
+  'icons.json',
 ] as const;
 const sha = (s: Buffer | string) => createHash('sha256').update(s).digest('hex');
 export function packBackup(b: Backup) {
@@ -30,6 +31,7 @@ export function packBackup(b: Backup) {
     ),
     'links.json': b.links,
     'rates.json': b.rates,
+    'icons.json': b.icons || [],
   };
   const contents = Object.fromEntries(
     files.map((name) => [name, JSON.stringify(data[name], null, 2)]),
@@ -37,7 +39,7 @@ export function packBackup(b: Backup) {
   contents['manifest.json'] = JSON.stringify(
     {
       format: 'worthpath',
-      version: 3,
+      version: 4,
       exportedAt: b.exportedAt,
       files: files.map((name) => ({ name, sha256: sha(contents[name]) })),
     },
@@ -106,23 +108,30 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
       });
       zip.readEntry();
     });
-    if (contents.size !== files.length + 1) throw Error();
+
     const parse = (name: string) =>
       JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(contents.get(name)!));
     const manifest = z
       .object({
         format: z.literal('worthpath'),
-        version: z.literal(3),
+        version: z.union([z.literal(3), z.literal(4)]),
         exportedAt: z.iso.datetime(),
         files: z
           .array(
             z.object({ name: z.enum(files), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
           )
-          .length(files.length),
+          .min(files.length - 1)
+          .max(files.length),
       })
       .strict()
       .parse(parse('manifest.json'));
-    if (new Set(manifest.files.map((f) => f.name)).size !== files.length) throw Error();
+    const expected = manifest.version === 3 ? files.filter((f) => f !== 'icons.json') : [...files];
+    if (
+      contents.size !== expected.length + 1 ||
+      new Set(manifest.files.map((f) => f.name)).size !== expected.length ||
+      expected.some((name) => !manifest.files.some((f) => f.name === name))
+    )
+      throw Error();
     for (const f of manifest.files) if (sha(contents.get(f.name)!) !== f.sha256) throw Error();
     const settings = z
       .object({
@@ -160,6 +169,7 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
       positions: positions.map((p) => ({ ...p, revisions: grouped.get(p.id) || [] })),
       links: parse('links.json'),
       rates: parse('rates.json'),
+      ...(manifest.version === 4 ? { icons: parse('icons.json') } : {}),
     };
   } catch {
     throw new BadRequestException(

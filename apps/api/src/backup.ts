@@ -28,6 +28,7 @@ import { UserRequest } from './auth';
 import { positionInput, positionMeta, currency, revisionInput, rateInput } from './validation';
 import { createHash } from 'node:crypto';
 import { toBusinessDate } from './validation';
+import { iconName, validateStoredIcon } from './icons';
 import { day, businessTime } from './calculation';
 const timestamp = z.iso
   .datetime()
@@ -67,6 +68,19 @@ const backupSchema = z
       .object({ showSidebar: z.boolean(), idleMinutes: z.number().int().min(0).max(1440) })
       .strict()
       .optional(),
+    icons: z
+      .array(
+        z
+          .object({
+            id: z.string().uuid(),
+            name: iconName,
+            shared: z.boolean(),
+            image: z.string().max(3 * 1024 * 1024),
+            hash: z.string().regex(/^[a-f0-9]{64}$/),
+          })
+          .strict(),
+      )
+      .optional(),
     positions: z.array(record),
     links: z.array(z.object({ sourceId: z.string().uuid(), targetId: z.string().uuid() }).strict()),
     rates: z.array(rateInput.safeExtend({ source: z.enum(['manual', 'frankfurter']) })),
@@ -79,6 +93,12 @@ export function validateBackup(raw: unknown) {
   if (ids.size !== b.positions.length) throw new BadRequestException('重复项目 ID');
   const origins = b.positions.map((p) => p.importedFromId || p.id);
   if (new Set(origins).size !== origins.length) throw new BadRequestException('备份内包含重复项目');
+  const iconIds = new Set((b.icons || []).map((i) => i.id));
+  if (
+    iconIds.size !== (b.icons || []).length ||
+    b.positions.some((p) => p.iconId && !iconIds.has(p.iconId))
+  )
+    throw new BadRequestException('图标关联无效');
   const revisionIds = new Set<string>();
   for (const p of b.positions) {
     positionInput.parse({
@@ -180,6 +200,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     ]);
     const positions = ps.map((p) => ({
       id: p.id,
+      iconId: p.iconId,
       importedFromId: p.importedFromId,
       name: p.name,
       kind: p.kind,
@@ -202,6 +223,17 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         updatedAt: r.updatedAt.toISOString(),
       })),
     }));
+    const icons = await client.icon.findMany({
+      where: {
+        OR: [
+          { ownerId: userId },
+          {
+            id: { in: ps.flatMap((p) => (p.iconId ? [p.iconId] : [])) },
+            OR: [{ shared: true }, { ownerId: userId }],
+          },
+        ],
+      },
+    });
     return backupSchema.parse({
       format: 'worthpath',
       version: 2,
@@ -215,6 +247,13 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
           ...rates.flatMap((r) => [r.currency, r.baseCurrency]),
         ]),
       ],
+      icons: icons.map((i) => ({
+        id: i.id,
+        name: i.name,
+        shared: i.shared,
+        hash: i.hash,
+        image: Buffer.from(i.data).toString('base64'),
+      })),
       positions,
       links: ps.flatMap((p) =>
         p.outgoing.map((l) => ({ sourceId: l.sourceId, targetId: l.targetId })),
@@ -314,6 +353,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       (a.currency + a.baseCurrency + a.date).localeCompare(b.currency + b.baseCurrency + b.date),
     );
     data.currencies.sort();
+    data.icons?.sort((a, b) => a.id.localeCompare(b.id));
     return createHash('sha256').update(JSON.stringify(data)).digest('hex');
   }
   @Get('clear-status') async clearStatus(@Req() r: UserRequest) {
@@ -332,6 +372,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         if (this.fingerprint(await this.data(r.userId, tx)) !== s.backupDigest)
           throw new ConflictException('数据已变化，请重新下载备份');
         await tx.position.deleteMany({ where: { userId: r.userId } });
+        await tx.icon.deleteMany({ where: { ownerId: r.userId, shared: false } });
         await tx.exchangeRate.deleteMany({ where: { userId: r.userId } });
         await tx.session.updateMany({
           where: { userId: r.userId },
@@ -345,15 +386,17 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
   @Post('preview') async preview(@Req() r: UserRequest, @Body() raw: unknown) {
     const b = validateBackup(raw),
       existing = await this.data(r.userId);
+    for (const i of b.icons || []) await validateStoredIcon(i.image, i.hash);
     this.conflicts(b, existing);
     return {
       positions: b.positions.length,
       revisions: b.positions.reduce((n, p) => n + p.revisions.length, 0),
       rates: b.rates.length,
+      icons: (b.icons || []).length,
       baseCurrency: b.baseCurrency,
       currentBaseCurrency: existing.baseCurrency,
       message:
-        '只追加新项目并重建关联，相同汇率保留。不会覆盖已有项目。已有本位币保留，空账户恢复备份本位币和个人设置。确认后以事务导入。',
+        '只追加新项目并重建关联，相同汇率保留。不会覆盖已有项目。已有本位币保留，空账户恢复备份本位币和个人设置。确认后以事务导入，备份中的图标恢复为私有，不会自动发布到共享库。',
     };
   }
   private conflicts(b: Backup, existing: Backup) {
@@ -379,6 +422,8 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         .strict()
         .parse(raw),
       b = validateBackup(backup);
+    const iconData = new Map<string, Buffer>();
+    for (const i of b.icons || []) iconData.set(i.id, await validateStoredIcon(i.image, i.hash));
     return this.db.$transaction(
       async (tx) => {
         const ps = await tx.position.findMany({
@@ -398,12 +443,28 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
           rates: rs.map((v) => ({ ...v, rate: v.rate.toString(), date: day(v.date) })),
         } as unknown as Backup;
         this.conflicts(b, existing);
+        const iconMapping = new Map<string, string>();
+        for (const i of b.icons || []) {
+          const row = await tx.icon.upsert({
+            where: { ownerId_hash_shared: { ownerId: r.userId, hash: i.hash, shared: false } },
+            create: {
+              ownerId: r.userId,
+              name: i.name,
+              hash: i.hash,
+              shared: false,
+              data: new Uint8Array(iconData.get(i.id)!),
+            },
+            update: {},
+          });
+          iconMapping.set(i.id, row.id);
+        }
         const mapping = new Map<string, string>();
         for (const p of b.positions) {
           const row = await tx.position.create({
             data: {
               userId: r.userId,
               importedFromId: p.importedFromId || p.id,
+              iconId: p.iconId ? iconMapping.get(p.iconId) : null,
               name: p.name,
               kind: p.kind,
               side: p.side,

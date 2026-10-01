@@ -17,6 +17,7 @@ model User {
   positions Position[]
   rates ExchangeRate[]
   sessions Session[]
+  icons Icon[]
 }
 model Session {
   id String @id @db.Char(64)
@@ -44,6 +45,8 @@ model Position {
   hidden Boolean @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  iconId String? @db.Char(36)
+  icon Icon? @relation(fields:[iconId],references:[id],onDelete:SetNull)
   revisions Revision[]
   outgoing PositionLink[] @relation("Source")
   incoming PositionLink[] @relation("Target")
@@ -81,4 +84,19 @@ model ExchangeRate {
   rate Decimal @db.Decimal(24,12)
   source String @db.VarChar(30)
   @@unique([userId,currency,baseCurrency,date])
+}
+
+model Icon {
+  id String @id @default(uuid()) @db.Char(36)
+  ownerId String? @db.Char(36)
+  owner User? @relation(fields:[ownerId],references:[id],onDelete:SetNull)
+  name String @db.VarChar(100)
+  shared Boolean @default(false)
+  hash String @db.Char(64)
+  data Bytes @db.MediumBlob
+  source String? @db.VarChar(500)
+  createdAt DateTime @default(now())
+  positions Position[]
+  @@unique([ownerId,hash,shared])
+  @@index([shared,name])
 }

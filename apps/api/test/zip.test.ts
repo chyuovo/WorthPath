@@ -12,6 +12,7 @@ const empty = () =>
     baseCurrency: 'CNY',
     preferences: { showSidebar: false, idleMinutes: 9 },
     currencies: ['CNY'],
+    icons: [],
     positions: [],
     rates: [],
     links: [],
@@ -37,6 +38,7 @@ test('ZIP contains separate JSON files and restores settings without authenticat
     'currencies.json',
     'debts.json',
     'history.json',
+    'icons.json',
     'links.json',
     'manifest.json',
     'rates.json',
@@ -92,4 +94,16 @@ test('backup accepts over 1000 positions, 10000 revisions per position and 20000
     b.positions.reduce((n, p) => n + p.revisions.length, 0),
     21001,
   );
+});
+
+test('legacy v3 ZIP remains readable without icons', async () => {
+  const contents = packBackup(empty());
+  delete contents['icons.json'];
+  const manifest = JSON.parse(contents['manifest.json']);
+  manifest.version = 3;
+  manifest.files = manifest.files.filter((f: { name: string }) => f.name !== 'icons.json');
+  contents['manifest.json'] = JSON.stringify(manifest);
+  const restored = validateBackup(await readBackupZip(await archive(contents)));
+  assert.equal(restored.icons, undefined);
+  assert.deepEqual(restored.positions, []);
 });

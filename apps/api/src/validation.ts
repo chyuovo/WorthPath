@@ -62,6 +62,7 @@ export const revisionInput = z
   .strict();
 export const positionMeta = z
   .object({
+    iconId: z.string().uuid().nullable().optional(),
     name: z.string().trim().min(1).max(100),
     category: z.string().trim().min(1).max(40),
     notes,

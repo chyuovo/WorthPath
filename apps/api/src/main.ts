@@ -8,6 +8,7 @@ import { json } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
 import { PortfolioController } from './portfolio';
 import { BackupController } from './backup';
+import { IconsController, IconsService } from './icons';
 import { Database } from './database';
 import { RatesService, SettingsController } from './rates';
 import { ZodError } from 'zod';
@@ -41,8 +42,20 @@ class SafeErrors implements ExceptionFilter {
   }
 }
 @Module({
-  providers: [Database, AuthService, RatesService, { provide: APP_GUARD, useClass: AuthGuard }],
-  controllers: [AuthController, PortfolioController, SettingsController, BackupController],
+  providers: [
+    Database,
+    AuthService,
+    RatesService,
+    IconsService,
+    { provide: APP_GUARD, useClass: AuthGuard },
+  ],
+  controllers: [
+    IconsController,
+    AuthController,
+    PortfolioController,
+    SettingsController,
+    BackupController,
+  ],
 })
 class AppModule {}
 async function bootstrap() {

@@ -33,6 +33,7 @@ import {
   type Total,
 } from './api';
 import './style.css';
+import { IconLibrary, iconUrl } from './IconLibrary';
 const labels: Record<string, string> = {
   overview: '资产总览',
   account: '账户',
@@ -606,7 +607,12 @@ export default function App() {
           <div className="page-heading">
             <div>
               <p className="eyebrow">WORTHPATH / {today()}</p>
-              <h1>{p ? p.name : labels[page]}</h1>
+              <h1>
+                {p?.iconId && (
+                  <img className="detail-icon" src={iconUrl(p.iconId)} alt="账户图标" />
+                )}
+                {p ? p.name : labels[page]}
+              </h1>
               <p className="muted">
                 {page === 'overview'
                   ? '你的财富全貌，从这里开始。'
@@ -889,7 +895,9 @@ export default function App() {
                         >
                           <div>
                             <span className="position-icon">
-                              {p.kind === 'asset' ? (
+                              {p.iconId ? (
+                                <img src={iconUrl(p.iconId)} alt="账户图标" />
+                              ) : p.kind === 'asset' ? (
                                 <Landmark />
                               ) : p.kind === 'debt' ? (
                                 <HandCoins />
@@ -943,6 +951,9 @@ export default function App() {
           )}
           {page === 'settings' && (
             <>
+              <section className="panel">
+                <IconLibrary />
+              </section>
               <div className="settings-grid">
                 <section className="panel">
                   <div className="panel-title">
@@ -1079,7 +1090,7 @@ export default function App() {
               <section className="panel">
                 <h2>清空本账号数据</h2>
                 <p className="muted">
-                  清除本账号全部账户、资产、债务、历史和汇率（包括隐藏项目）；保留登录账号及个人设置。请先下载备份并确认文件已保存。
+                  清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏项目）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。
                 </p>
                 {clearStep === 0 ? (
                   <a
@@ -1138,7 +1149,7 @@ export default function App() {
                 <h2>数据备份与恢复</h2>
                 <p className="muted">
                   ZIP 内分文件保存可读
-                  JSON，包括全部账户、资产、债务、历史、关联、币种、设置和汇率，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
+                  JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率及图标，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
                 </p>
                 <div className="actions">
                   <a
@@ -1289,6 +1300,7 @@ export default function App() {
                   () =>
                     api('/positions/' + mp!.id, 'PATCH', {
                       ...v,
+                      ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
                       archived: mp!.archived,
                       hidden: f.get('hidden') === 'on',
                     }),
@@ -1305,6 +1317,7 @@ export default function App() {
                   () =>
                     api('/positions', 'POST', {
                       ...v,
+                      ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
                       kind,
                       side,
                       hidden: f.get('hidden') === 'on',
@@ -1331,6 +1344,13 @@ export default function App() {
                   <input name="hidden" type="checkbox" defaultChecked={modal.p?.hidden} />
                   隐藏此项目（密码验证后可查看和编辑）
                 </label>
+                {(modal.kind === 'account' || modal.p?.kind === 'account') && (
+                  <IconLibrary
+                    key={modal.p?.id || 'new-account'}
+                    picker
+                    initialId={modal.p?.iconId}
+                  />
+                )}
                 <Field label="名称">
                   <input
                     name="name"

@@ -17,12 +17,14 @@ import { positionInput, positionMeta, revisionInput, today, toBusinessDate } fro
 import { history, overview } from './calculation';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
+import { IconsService } from './icons';
 import { RatesService } from './rates';
 @Controller('api')
 export class PortfolioController {
   constructor(
     private db: Database,
     private fx: RatesService,
+    private icons: IconsService,
   ) {}
   private async own(userId: string, id: string, revealed = false) {
     const p = await this.db.position.findFirst({
@@ -58,6 +60,7 @@ export class PortfolioController {
   @Post('positions') async create(@Req() r: UserRequest, @Body() b: unknown) {
     const v = positionInput.parse(b),
       { amount, date, ...meta } = v;
+    await this.icons.requireVisible(r.userId, meta.iconId);
     const created = await this.db.position.create({
       data: {
         ...meta,
@@ -89,6 +92,7 @@ export class PortfolioController {
       p.side !== 'liability'
     )
       throw new BadRequestException('信用卡和贷款账户必须为负债');
+    await this.icons.requireVisible(r.userId, v.iconId);
     await this.db.position.update({ where: { id: p.id }, data: v });
     return { ok: true };
   }

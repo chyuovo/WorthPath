@@ -1,0 +1,122 @@
+[
+  {
+    "name": "中国工商银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国工商银行@3x.png",
+    "file": "01.png",
+    "sha256": "6a49f1e01332575c2fd5b8f3892d2969f6a254733a7731badae6b6c51ded6108"
+  },
+  {
+    "name": "中国农业银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国农业银行@3x.png",
+    "file": "02.png",
+    "sha256": "cc023287b5a6d0187f9e8198a1791507b0655d593ee1e619e5b48f5cb351484d"
+  },
+  {
+    "name": "中国建设银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国建设银行@3x.png",
+    "file": "03.png",
+    "sha256": "c1a1711a94ebb7e49d7494cb1d502a40f4bec8d30dc1e9f1cbd215c65fe233db"
+  },
+  {
+    "name": "中国银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国银行@3x.png",
+    "file": "04.png",
+    "sha256": "718978d8d444321d356810841919aa81da590e5faf23fe1a0cad6e471dbcb024"
+  },
+  {
+    "name": "交通银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/交通银行@3x.png",
+    "file": "05.png",
+    "sha256": "75b5e40cae526194715688b6b8c63684093d4cccbcd498ebc4fe3a730a616e6c"
+  },
+  {
+    "name": "招商银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/招商银行@3x.png",
+    "file": "06.png",
+    "sha256": "abf071f561028bac84e7bd07f53314623c6983810d328b6f7990e6ca11736017"
+  },
+  {
+    "name": "中信银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中信银行@3x.png",
+    "file": "07.png",
+    "sha256": "51c873fcdabfab733700b48e772f3e03f2cb0918fe7a36a90a064297c018c530"
+  },
+  {
+    "name": "中国光大银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国光大银行@3x.png",
+    "file": "08.png",
+    "sha256": "791d54ef3f49fdd5466c09f2cec955585f3af22bd2593f95ac259548c22fcfbc"
+  },
+  {
+    "name": "中国民生银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国民生银行@3x.png",
+    "file": "09.png",
+    "sha256": "a466c4469559b966d7096449aa155227b1e0b8965a883f544067d8361b7c0a9d"
+  },
+  {
+    "name": "兴业银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/兴业银行@3x.png",
+    "file": "10.png",
+    "sha256": "05b860edad339b114bb38ac954da2c49f41f3f3e8ddc6d8a5c939dc2fc747e07"
+  },
+  {
+    "name": "平安银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/平安银行@3x.png",
+    "file": "11.png",
+    "sha256": "7e057cd3f23fd5df3fca54e1dc0b253f9a61005f52e7f933087820f63aade94e"
+  },
+  {
+    "name": "上海浦东发展银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/上海浦东发展银行@3x.png",
+    "file": "12.png",
+    "sha256": "b205b7adaa577df7f367d4644717a0e3d6fbdba45a77590c2a0a5e9f2fe3c91f"
+  },
+  {
+    "name": "广发银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/广发银行@3x.png",
+    "file": "13.png",
+    "sha256": "1a3c1f7f2c738eabbb330bb3eb1a5888e69f731fd9f7f62729366172ee773919"
+  },
+  {
+    "name": "华夏银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/华夏银行@3x.png",
+    "file": "14.png",
+    "sha256": "1547c7d7a2436e80c39d197be26ffb77dc35728f69260608b0dc3bff2743be6f"
+  },
+  {
+    "name": "北京银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/北京银行@3x.png",
+    "file": "15.png",
+    "sha256": "d59af4b650391832e3a2a4f3d852b6dde6c791a5842a1ce570f9c2990157c6dd"
+  },
+  {
+    "name": "上海银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/上海银行@3x.png",
+    "file": "16.png",
+    "sha256": "0ea8f0650db5ca04c7869cc46a2043606cf0038d701f22f07c40cd3e6b70519e"
+  },
+  {
+    "name": "浙商银行",
+    "source": "https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/浙商银行@3x.png",
+    "file": "17.png",
+    "sha256": "8237233ee5ee7487ace0f84dce2832037ec13e2f004dcf6ed65652d783961656"
+  },
+  {
+    "name": "支付宝",
+    "source": "https://i.alipayobjects.com/common/favicon/favicon.ico",
+    "file": "18.png",
+    "sha256": "b662de58b15b34d1bf4d2a8bc546f7062a3faaa22acd2ecbbbad70f1e7f37a39"
+  },
+  {
+    "name": "微信",
+    "source": "https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico",
+    "file": "19.png",
+    "sha256": "a62d7d84bd02b1718106d294d1f2c8387f9967239696c1e8b446201b63f34dc7"
+  },
+  {
+    "name": "京东金融",
+    "source": "https://jr.jd.com/logo.png",
+    "file": "20.png",
+    "sha256": "8dc9703f571e605df552dc7eb14ae074d9ddab6b27a9140b610e87b1c2a5f693"
+  }
+]

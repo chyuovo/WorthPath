@@ -43,6 +43,7 @@ export type History = {
   reason: string;
 };
 export type Position = {
+  iconId?: string | null;
   id: string;
   kind: string;
   side: string;
