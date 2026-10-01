@@ -27,7 +27,10 @@ export class PortfolioController {
   private async own(userId: string, id: string) {
     const p = await this.db.position.findFirst({
       where: { id, userId },
-      include: { revisions: { orderBy: { effectiveDate: 'asc' } }, outgoing: true },
+      include: {
+        revisions: { orderBy: [{ effectiveDate: 'asc' }, { sequence: 'asc' }] },
+        outgoing: true,
+      },
     });
     if (!p) throw new NotFoundException('项目不存在');
     return p;
@@ -35,7 +38,10 @@ export class PortfolioController {
   @Get('positions') async list(@Req() r: UserRequest) {
     const rows = await this.db.position.findMany({
       where: { userId: r.userId },
-      include: { revisions: { orderBy: { effectiveDate: 'asc' } }, outgoing: true },
+      include: {
+        revisions: { orderBy: [{ effectiveDate: 'asc' }, { sequence: 'asc' }] },
+        outgoing: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
     return rows.map((p) => ({
@@ -92,6 +98,15 @@ export class PortfolioController {
         const p = await tx.position.findFirst({ where: { id, userId: r.userId } });
         if (!p) throw new NotFoundException('项目不存在');
         if (p.archived) throw new ConflictException('请先恢复归档项目');
+        if (v.reason === 'repayment') {
+          if (p.side !== 'liability') throw new BadRequestException('还款记录只能用于负债');
+          const prior = await tx.revision.findFirst({
+            where: { positionId: p.id, effectiveDate: { lte: new Date(v.date) } },
+            orderBy: [{ effectiveDate: 'desc' }, { sequence: 'desc' }],
+          });
+          if (!prior || new Prisma.Decimal(v.amount).gt(prior.amount))
+            throw new BadRequestException('还款后的欠款不能高于该业务日期的原欠款');
+        }
         return tx.revision.create({
           data: {
             positionId: p.id,

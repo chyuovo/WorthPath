@@ -232,6 +232,35 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
     );
     o = (await call('/overview', 'GET', undefined, a.cookie)).data;
     assert.equal(o.net, '570.10');
+    assert.equal(
+      (
+        await call(
+          '/positions/' + bank + '/revisions',
+          'POST',
+          { amount: '120.10', date: '2026-09-02' },
+          a.cookie,
+        )
+      ).status,
+      201,
+    );
+    const sameDay = (await call('/positions/' + bank, 'GET', undefined, a.cookie)).data.history;
+    assert.equal(sameDay.length, 3);
+    assert.equal(sameDay[2].after, '120.1');
+    assert.equal(sameDay[2].delta, '10');
+    assert.ok(sameDay[2].sequence > sameDay[1].sequence);
+    assert.equal(
+      (
+        await call(
+          '/positions/' + bank + '/revisions',
+          'POST',
+          { amount: '0', date: '2026-09-03', reason: 'repayment' },
+          a.cookie,
+        )
+      ).status,
+      400,
+    );
+    o = (await call('/overview', 'GET', undefined, a.cookie)).data;
+    assert.equal(o.net, '580.10');
     const backup = (await call('/backup', 'GET', undefined, a.cookie)).data;
     assert.equal(backup.positions.length, 4);
     assert.equal(backup.links.length, 2);
@@ -270,6 +299,13 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       ),
     );
     assert.equal(restored.find((p: { kind: string }) => p.kind === 'debt').outgoing.length, 2);
+    const restoredHistory = restored.find(
+      (p: { kind: string; side: string }) => p.kind === 'account' && p.side === 'asset',
+    ).history;
+    assert.deepEqual(
+      restoredHistory.map((h: { after: string }) => h.after),
+      sameDay.map((h: { after: string }) => h.after),
+    );
     assert.equal(
       (await call('/backup/import', 'POST', { confirmed: true, backup }, b.cookie)).status,
       409,

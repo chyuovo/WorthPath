@@ -46,6 +46,23 @@ test('correction recalculates later delta', () => {
   assert.equal(history(a)[1].delta, '20');
   assert.equal(totals([a], [], 'CNY', '2026-09-02').net, '110.10');
 });
+test('multiple same-day balances preserve ordering and use last value in totals', () => {
+  const a = p();
+  a.revisions = [
+    { ...rev('120.10', '2026-09-01'), sequence: 3 },
+    { ...rev('100.10', '2026-09-01'), sequence: 1 },
+    { ...rev('110.10', '2026-09-01'), sequence: 2 },
+  ];
+  assert.deepEqual(
+    history(a).map((r) => r.after),
+    ['100.1', '110.1', '120.1'],
+  );
+  assert.equal(history(a)[2].delta, '10');
+  assert.equal(totals([a], [], 'CNY', '2026-09-01').net, '120.10');
+  a.revisions[1].amount = '90.10';
+  assert.equal(history(a)[1].delta, '20');
+  assert.equal(totals([a], [], 'CNY', '2026-09-01').net, '120.10');
+});
 test('FX and actual changes separated', () => {
   const a = p('asset', 'USD');
   a.revisions = [rev('100', '2026-09-01'), rev('110', '2026-09-02')];

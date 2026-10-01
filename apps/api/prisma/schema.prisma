@@ -45,6 +45,7 @@ model Position {
 }
 model Revision {
   id String @id @default(uuid()) @db.Char(36)
+  sequence Int @unique @default(autoincrement())
   positionId String @db.Char(36)
   position Position @relation(fields:[positionId],references:[id],onDelete:Cascade)
   amount Decimal @db.Decimal(24,8)
@@ -53,7 +54,7 @@ model Revision {
   reason String @db.VarChar(20)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  @@unique([positionId,effectiveDate])
+  @@index([positionId,effectiveDate])
 }
 model PositionLink {
   id String @id @default(uuid()) @db.Char(36)

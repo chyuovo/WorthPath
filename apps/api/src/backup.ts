@@ -35,6 +35,7 @@ const record = positionMeta
       .array(
         revisionInput.extend({
           id: z.string().uuid(),
+          sequence: z.number().int().positive().max(2147483647).optional(),
           createdAt: timestamp,
           updatedAt: timestamp,
         }),
@@ -79,10 +80,11 @@ export function validateBackup(raw: unknown) {
       amount: '0',
       date: p.revisions[0].date,
     });
-    const dates = new Set<string>();
+    const sequences = new Set<number>();
     for (const r of p.revisions) {
-      if (dates.has(r.date) || revisionIds.has(r.id)) throw new BadRequestException('重复历史记录');
-      dates.add(r.date);
+      if (revisionIds.has(r.id) || (r.sequence !== undefined && sequences.has(r.sequence)))
+        throw new BadRequestException('重复历史记录');
+      if (r.sequence !== undefined) sequences.add(r.sequence);
       revisionIds.add(r.id);
     }
     if (!b.currencies.includes(p.currency)) throw new BadRequestException('币种清单不完整');
@@ -136,6 +138,7 @@ export class BackupController {
       updatedAt: p.updatedAt.toISOString(),
       revisions: p.revisions.map((r) => ({
         id: r.id,
+        sequence: r.sequence,
         amount: r.amount.toString(),
         date: day(r.effectiveDate),
         notes: r.notes,
@@ -250,14 +253,21 @@ export class BackupController {
               createdAt: new Date(p.createdAt),
               updatedAt: new Date(p.updatedAt),
               revisions: {
-                create: p.revisions.map((v) => ({
-                  amount: v.amount,
-                  effectiveDate: new Date(v.date),
-                  notes: v.notes,
-                  reason: v.reason,
-                  createdAt: new Date(v.createdAt),
-                  updatedAt: new Date(v.updatedAt),
-                })),
+                create: [...p.revisions]
+                  .sort(
+                    (a, b) =>
+                      a.date.localeCompare(b.date) ||
+                      (a.sequence || 0) - (b.sequence || 0) ||
+                      a.createdAt.localeCompare(b.createdAt),
+                  )
+                  .map((v) => ({
+                    amount: v.amount,
+                    effectiveDate: new Date(v.date),
+                    notes: v.notes,
+                    reason: v.reason,
+                    createdAt: new Date(v.createdAt),
+                    updatedAt: new Date(v.updatedAt),
+                  })),
               },
             },
           });

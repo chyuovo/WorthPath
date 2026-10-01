@@ -8,6 +8,8 @@ export type Holding = {
   currency: string;
   revisions: {
     id: string;
+    sequence?: number;
+    createdAt?: Date;
     amount: { toString(): string };
     effectiveDate: Date;
     notes: string;
@@ -22,28 +24,31 @@ export type Rate = {
   source: string;
 };
 export const day = (d: Date) => d.toISOString().slice(0, 10);
+export function compareRevisions(a: Holding['revisions'][number], b: Holding['revisions'][number]) {
+  return +a.effectiveDate - +b.effectiveDate || (a.sequence || 0) - (b.sequence || 0);
+}
 export function history(p: Holding) {
   let before = new Decimal(0);
-  return [...p.revisions]
-    .sort((a, b) => +a.effectiveDate - +b.effectiveDate)
-    .map((r) => {
-      const after = new Decimal(r.amount.toString());
-      const row = {
-        id: r.id,
-        positionId: p.id,
-        name: p.name,
-        kind: p.kind,
-        currency: p.currency,
-        date: day(r.effectiveDate),
-        before: before.toFixed(),
-        after: after.toFixed(),
-        delta: after.minus(before).toFixed(),
-        notes: r.notes,
-        reason: r.reason,
-      };
-      before = after;
-      return row;
-    });
+  return [...p.revisions].sort(compareRevisions).map((r) => {
+    const after = new Decimal(r.amount.toString());
+    const row = {
+      id: r.id,
+      sequence: r.sequence || 0,
+      createdAt: r.createdAt?.toISOString() || null,
+      positionId: p.id,
+      name: p.name,
+      kind: p.kind,
+      currency: p.currency,
+      date: day(r.effectiveDate),
+      before: before.toFixed(),
+      after: after.toFixed(),
+      delta: after.minus(before).toFixed(),
+      notes: r.notes,
+      reason: r.reason,
+    };
+    before = after;
+    return row;
+  });
 }
 export function rateAt(rates: Rate[], currency: string, base: string, date: string) {
   if (currency === base) return { value: new Decimal(1), date, source: 'identity' };
@@ -59,7 +64,7 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
   const items = positions.map((p) => {
     const rev = p.revisions
         .filter((r) => day(r.effectiveDate) <= date)
-        .sort((a, b) => +b.effectiveDate - +a.effectiveDate)[0],
+        .sort((a, b) => compareRevisions(b, a))[0],
       amount = new Decimal(rev?.amount.toString() || '0'),
       fx = rateAt(rates, p.currency, base, date);
     if (!fx && !amount.isZero()) missing.add(p.currency);
@@ -130,7 +135,7 @@ export function overview(positions: Holding[], rates: Rate[], base: string, date
     trend,
     recent: positions
       .flatMap(history)
-      .sort((a, b) => b.date.localeCompare(a.date))
+      .sort((a, b) => b.date.localeCompare(a.date) || b.sequence - a.sequence)
       .slice(0, 20),
   };
 }
