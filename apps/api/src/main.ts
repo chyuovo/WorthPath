@@ -48,6 +48,8 @@ class AppModule {}
 async function bootstrap() {
   if (!process.env.DATABASE_URL || !process.env.WEB_ORIGIN)
     throw Error('Missing local environment configuration');
+  if (process.env.NODE_ENV === 'production' && process.env.WEB_ORIGIN === '*')
+    throw Error('Production requires an explicit web origin');
   if (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'true')
     throw Error('Production requires secure cookies');
   const app = await NestFactory.create(AppModule, { logger: false, bodyParser: false });

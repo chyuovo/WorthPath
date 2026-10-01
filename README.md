@@ -40,3 +40,5 @@ pnpm check:staged # git add 后，提交前检查本地凭证和禁止提交的�
 设计见 [数据模型与结构](docs/architecture.md)，已验证范围与后续工作见 [首版验收](docs/acceptance.md)。生产需要 HTTPS、COOKIE_SECURE=true、WEB_ORIGIN 为准确站点地址；前端构建由反向代理托管并代理 /api。API 生产启动：在 `apps/api` 中执行 `node dist/main.js`。生产认证限速需迁移到共享存储，数据库用户需最小权限，部署与运行监控尚未配置。
 
 备份下载为 ZIP：manifest、settings、currencies、accounts、assets、debts、history、links、rates 各一个 JSON 文件，包含隐藏项目及全部历史，不含密码或会话凭据。导入先上传并预览，再确认追加；旧 JSON 备份继续兼容。不限制项目、历史、关联或汇率条数；上传文件最大 512 MB，ZIP 解压总计最大 1 GB，用于保护服务器资源。
+
+内网穿透临时测试：本地 `apps/api/.env` 可设置 `WEB_ORIGIN=*` 并重启 API，允许来自任意 HTTP/HTTPS 站点的浏览器写入请求，仍需登录身份并校验数据归属。缺失或无效 Origin 仍拒绝；`NODE_ENV=production` 禁止此通配符。测试结束后恢复准确的站点地址。

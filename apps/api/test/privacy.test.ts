@@ -12,7 +12,7 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
     const res = await fetch(base + path, {
       method,
       headers: {
-        Origin: process.env.WEB_ORIGIN!,
+        Origin: process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!,
         Cookie: cookie,
         ...(data ? { 'Content-Type': 'application/json' } : {}),
       },
@@ -131,7 +131,11 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
       form.append('file', new Blob([content]), 'backup.zip');
       const res = await fetch(base + '/backup/upload', {
         method: 'POST',
-        headers: { Origin: process.env.WEB_ORIGIN!, Cookie: cookie },
+        headers: {
+          Origin:
+            process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!,
+          Cookie: cookie,
+        },
         body: form,
       });
       return { status: res.status, data: await res.json() };

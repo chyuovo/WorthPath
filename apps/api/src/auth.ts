@@ -22,6 +22,20 @@ import { credentials } from './validation';
 export type UserRequest = Request & { userId: string; sessionId: string; revealed: boolean };
 const Public = () => SetMetadata('public', true);
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
+export function allowedOrigin(
+  origin: string | undefined,
+  configured: string | undefined,
+  production = false,
+) {
+  if (configured !== '*') return !!origin && origin === configured;
+  if (production || !origin) return false;
+  try {
+    const url = new URL(origin);
+    return ['http:', 'https:'].includes(url.protocol) && url.origin === origin;
+  } catch {
+    return false;
+  }
+}
 @Injectable()
 export class AuthService {
   private attempts = new Map<string, { count: number; until: number }>();
@@ -87,7 +101,11 @@ export class AuthGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest<UserRequest>();
     if (
       !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
-      req.headers.origin !== process.env.WEB_ORIGIN
+      !allowedOrigin(
+        req.headers.origin,
+        process.env.WEB_ORIGIN,
+        process.env.NODE_ENV === 'production',
+      )
     )
       throw new ForbiddenException('请求来源不受信任');
     if (this.reflector.get<boolean>('public', ctx.getHandler())) return true;

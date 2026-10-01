@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 import { today } from '../src/validation';
 import { readBackupZip } from '../src/zip';
 const base = process.env.TEST_API_URL || 'http://127.0.0.1:3100/api',
-  origin = process.env.WEB_ORIGIN!;
+  origin = process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!;
 test('real MySQL: authentication, isolation, history, backup and atomic failures', async () => {
   const db = new PrismaClient(),
     created: { id: string; username: string }[] = [];
@@ -53,10 +53,10 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
             'Content-Type': 'application/json',
             Origin: 'https://untrusted.invalid',
           },
-          body: JSON.stringify({ baseCurrency: 'USD' }),
+          body: JSON.stringify({ showSidebar: true }),
         })
       ).status,
-      403,
+      process.env.WEB_ORIGIN === '*' ? 200 : 403,
     );
     const make = async (
       kind: string,

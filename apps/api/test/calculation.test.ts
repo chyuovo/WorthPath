@@ -6,6 +6,22 @@ import { positionInput, date, amount, businessDate, toBusinessDate } from '../sr
 import { validateBackup } from '../src/backup';
 import { RatesService } from '../src/rates';
 import { Database } from '../src/database';
+import { allowedOrigin } from '../src/auth';
+test('development wildcard accepts HTTP origins while exact and production checks stay strict', () => {
+  assert.equal(allowedOrigin('https://tunnel.example', '*'), true);
+  assert.equal(allowedOrigin('http://example.test:8080', '*'), true);
+  for (const origin of [
+    undefined,
+    'null',
+    'file://host',
+    'https://example.test/path',
+    'https://name:secret@example.test',
+  ])
+    assert.equal(allowedOrigin(origin, '*'), false);
+  assert.equal(allowedOrigin('https://tunnel.example', '*', true), false);
+  assert.equal(allowedOrigin('https://tunnel.example', 'http://localhost:5173'), false);
+  assert.equal(allowedOrigin('http://localhost:5173', 'http://localhost:5173'), true);
+});
 const rev = (amount: string, day: string) => ({
   id: randomUUID(),
   amount,
