@@ -129,8 +129,62 @@ test('real MySQL: groups, scheduled atomic execution, calendar, privacy and ZIP 
     assert.equal(day.expense, '5.50');
     assert.equal(day.income, '0.00');
     assert.equal((await call('/calendar/day?date=' + today(), a.cookie)).data.items.length, 4);
+    const transferPlan = await call('/schedules', a.cookie, 'POST', {
+      ...input,
+      name: 'Scheduled transfer',
+      operation: 'transfer',
+      targetId,
+      amount: '3',
+      received: '3',
+    });
+    assert.equal(transferPlan.status, 201);
+    const transferRace = await Promise.all([
+      call('/schedules/run', a.cookie, 'POST', {}),
+      call('/schedules/run', a.cookie, 'POST', {}),
+    ]);
+    assert.equal(
+      transferRace.reduce((sum, v) => sum + v.data.executed, 0),
+      1,
+    );
+    const afterTransfer = (await call('/positions', a.cookie)).data;
+    assert.equal(afterTransfer.find((p: any) => p.id === sourceId).amount, '-23.5');
+    assert.equal(afterTransfer.find((p: any) => p.id === targetId).amount, '28');
+    assert.equal((await call('/calendar/day?date=' + today(), a.cookie)).data.items.length, 4);
+    const failedPlan = await call('/schedules', a.cookie, 'POST', {
+      ...input,
+      name: 'Archived account',
+    });
+    assert.equal(failedPlan.status, 201);
+    const beforeFailure = (await call('/schedules', a.cookie)).data.find(
+      (p: any) => p.id === failedPlan.data.id,
+    );
+    await call('/positions/' + sourceId, a.cookie, 'PATCH', {
+      name: 'Daily',
+      category: 'bank',
+      groupName: '日常',
+      archived: true,
+    });
+    const failure = await call('/schedules/run', a.cookie, 'POST', {});
+    assert.equal(failure.data.executed, 0);
+    assert.equal(failure.data.errors.length, 1);
+    assert.equal(
+      (await call('/schedules', a.cookie)).data.find((p: any) => p.id === failedPlan.data.id)
+        .nextAt,
+      beforeFailure.nextAt,
+    );
+    assert.equal(
+      (await call('/positions', a.cookie)).data.find((p: any) => p.id === sourceId).amount,
+      '-23.5',
+    );
+    await call('/positions/' + sourceId, a.cookie, 'PATCH', {
+      name: 'Daily',
+      category: 'bank',
+      groupName: '日常',
+      archived: false,
+    });
+    assert.equal((await call('/schedules/' + failedPlan.data.id, a.cookie, 'DELETE')).status, 200);
     const backup = (await call('/backup', a.cookie)).data;
-    assert.equal(backup.schedules.length, 2);
+    assert.equal(backup.schedules.length, 3);
     assert.equal(
       (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
@@ -141,7 +195,32 @@ test('real MySQL: groups, scheduled atomic execution, calendar, privacy and ZIP 
       ['日常', '理财'].sort(),
     );
     const restored = (await call('/backup', b.cookie)).data;
-    assert.equal(restored.schedules.filter((p: any) => p.completed).length, 1);
+    assert.equal(restored.schedules.filter((p: any) => p.completed).length, 2);
+    await db.schedule.createMany({
+      data: Array.from({ length: 21 }, (_, i) => ({
+        id: randomUUID(),
+        userId: a.id,
+        name: 'Batch ' + i,
+        operation: 'expense',
+        sourceId,
+        amount: '1',
+        received: '0',
+        nextAt: new Date(Date.now() - 60000),
+        intervalDays: 0,
+        enabled: true,
+        notes: '',
+      })),
+    });
+    const firstBatch = await call('/schedules/run', a.cookie, 'POST', {});
+    assert.equal(firstBatch.data.executed, 20);
+    assert.equal(firstBatch.data.hasMore, true);
+    const secondBatch = await call('/schedules/run', a.cookie, 'POST', {});
+    assert.equal(secondBatch.data.executed, 1);
+    assert.equal(secondBatch.data.hasMore, false);
+    assert.equal(
+      (await call('/positions', a.cookie)).data.find((p: any) => p.id === sourceId).amount,
+      '-44.5',
+    );
     await call('/positions/' + sourceId, a.cookie, 'PATCH', {
       name: 'Daily',
       category: 'bank',
