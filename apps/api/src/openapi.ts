@@ -54,6 +54,49 @@ export function setupOpenApi(app: INestApplication) {
       const operation = entry[method];
       if (!operation) continue;
       operation.summary = `${method.toUpperCase()} ${path}`;
+      if (
+        method === 'get' &&
+        ['/api/history', '/api/positions/{id}/history', '/api/transfers'].includes(path)
+      ) {
+        operation.parameters = [
+          ...(operation.parameters || []),
+          {
+            name: 'limit',
+            in: 'query',
+            schema: { type: 'integer', minimum: 1, maximum: 100, default: 50 },
+          },
+          {
+            name: 'cursor',
+            in: 'query',
+            schema: { type: 'string' },
+            description: '上页 nextCursor；业务时间及唯一顺序键降序，写入或更正后重新读取第一页',
+          },
+          ...['from', 'to'].map((name) => ({
+            name,
+            in: 'query' as const,
+            schema: { type: 'string', format: 'date' },
+          })),
+        ];
+        operation.responses['200'] = {
+          description: '{ items, nextCursor, revealed }；金额为绝对余额，before 为真实前序余额',
+        };
+      }
+      if (method === 'get' && path === '/api/trend') {
+        operation.parameters = [
+          ...['from', 'to'].map((name) => ({
+            name,
+            in: 'query' as const,
+            schema: { type: 'string', format: 'date' },
+          })),
+          {
+            name: 'grain',
+            in: 'query',
+            schema: { type: 'string', enum: ['day', 'week', 'month'], default: 'day' },
+          },
+        ];
+        operation.description =
+          '默认90天；日最多366天，周最多1096天，月最多3653天。取北京时间期末余额，归因累计每日变化；不返回每天项目明细。';
+      }
       if (path === '/api/health' || ['/api/auth/register', '/api/auth/login'].includes(path))
         operation.security = [];
       const schema = bodies[method.toUpperCase() + ' ' + path];

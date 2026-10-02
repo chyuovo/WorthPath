@@ -109,7 +109,9 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
       ).status,
       201,
     );
-    const history = (await call('/positions/' + hidden, 'GET', undefined, a.cookie)).data.history;
+    const history = (
+      await call('/positions/' + hidden + '/history', 'GET', undefined, a.cookie)
+    ).data.items.reverse();
     assert.deepEqual(
       history.map((h: { time: string }) => h.time),
       ['2026-09-01T09:17', '2026-09-01T09:18'],

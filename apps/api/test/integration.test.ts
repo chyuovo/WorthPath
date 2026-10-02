@@ -176,7 +176,11 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       ).status,
       201,
     );
-    const d = (await call('/positions/' + bank, 'GET', undefined, a.cookie)).data;
+    const d = {
+      history: (
+        await call('/positions/' + bank + '/history', 'GET', undefined, a.cookie)
+      ).data.items.reverse(),
+    };
     assert.equal(
       (
         await call(
@@ -200,7 +204,8 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       200,
     );
     assert.equal(
-      (await call('/positions/' + bank, 'GET', undefined, a.cookie)).data.history[1].delta,
+      (await call('/positions/' + bank + '/history', 'GET', undefined, a.cookie)).data.items[0]
+        .delta,
       '20',
     );
     assert.equal(
@@ -249,7 +254,9 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       ).status,
       201,
     );
-    const sameDay = (await call('/positions/' + bank, 'GET', undefined, a.cookie)).data.history;
+    const sameDay = (
+      await call('/positions/' + bank + '/history', 'GET', undefined, a.cookie)
+    ).data.items.reverse();
     assert.equal(sameDay.length, 3);
     assert.equal(sameDay[2].after, '120.1');
     assert.equal(sameDay[2].delta, '10');
@@ -305,9 +312,12 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       ),
     );
     assert.equal(restored.find((p: { kind: string }) => p.kind === 'debt').outgoing.length, 2);
-    const restoredHistory = restored.find(
+    const restoredAccount = restored.find(
       (p: { kind: string; side: string }) => p.kind === 'account' && p.side === 'asset',
-    ).history;
+    );
+    const restoredHistory = (
+      await call('/positions/' + restoredAccount.id + '/history', 'GET', undefined, b.cookie)
+    ).data.items.reverse();
     assert.deepEqual(
       restoredHistory.map((h: { after: string }) => h.after),
       sameDay.map((h: { after: string }) => h.after),

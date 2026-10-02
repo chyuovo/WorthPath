@@ -103,8 +103,8 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     assert.equal(rows.find((p: any) => p.id === sourceId).amount, '74');
     assert.equal(rows.find((p: any) => p.id === targetId).amount, '35');
     assert.equal((await call('/overview', a.cookie)).data.net, '109.00');
-    assert.equal((await call('/transfers', b.cookie)).data.length, 0);
-    const revision = rows.find((p: any) => p.id === sourceId).history.at(-1);
+    assert.equal((await call('/transfers', b.cookie)).data.items.length, 0);
+    const revision = (await call('/positions/' + sourceId + '/history', a.cookie)).data.items[0];
     assert.equal(
       (
         await call(`/positions/${sourceId}/revisions/${revision.id}`, a.cookie, 'PUT', {
@@ -188,7 +188,11 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
         }),
       ),
     );
-    assert.equal(race.filter((r) => r.status === 201).length, 1);
+    assert.equal(
+      race.filter((r) => r.status === 201).length,
+      1,
+      JSON.stringify(race.map((r) => ({ status: r.status, data: r.data }))),
+    );
     assert.equal(race.filter((r) => [400, 409].includes(r.status)).length, 1);
     assert.equal(
       (
@@ -249,7 +253,7 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
       category: 'bank',
       hidden: true,
     });
-    const visibleTransfers = (await call('/transfers', a.cookie)).data;
+    const visibleTransfers = (await call('/transfers', a.cookie)).data.items;
     assert.equal(visibleTransfers.length, 2);
     assert.ok(
       visibleTransfers.every((t: any) => t.sourceId !== sourceId && t.targetId !== sourceId),

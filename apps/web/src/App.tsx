@@ -1,3 +1,4 @@
+import { t as tr, useLocale, LanguagePicker } from './i18n';
 import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard,
@@ -31,10 +32,12 @@ import {
   type History,
   type Rate,
   type Total,
+  type PageResult,
 } from './api';
 import './style.css';
 import { IconPicker } from './IconPicker';
 import { TransferForm } from './TransferForm';
+import { DebtPaymentForm, operationLabel, type DebtOperation } from './DebtPaymentForm';
 import type { Transfer } from './api';
 import { IconLibrary, iconUrl } from './IconLibrary';
 const labels: Record<string, string> = {
@@ -68,7 +71,7 @@ const categories: Record<string, [string, string][]> = {
   ],
 };
 const categoryLabel = (p: Position) =>
-  categories[p.kind]?.find(([v]) => v === p.category)?.[1] || p.category;
+  tr(categories[p.kind]?.find(([v]) => v === p.category)?.[1] || p.category);
 function Currency({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   return (
     <select value={value} onChange={(e) => onChange(e.target.value)}>
@@ -80,8 +83,8 @@ function Currency({ value, onChange }: { value: string; onChange: (v: string) =>
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className={label === '备注' ? 'field note-field' : 'field'}>
-      <span>{label}</span>
+    <label className={label === tr('备注') ? 'field note-field' : 'field'}>
+      <span>{tr(label)}</span>
       {children}
     </label>
   );
@@ -104,8 +107,10 @@ function Modal({
     >
       <section role="dialog" aria-modal="true" aria-label={title} className="modal">
         <header>
-          <h2 className={title.includes('清空本账号数据') ? 'danger-text' : undefined}>{title}</h2>
-          <button className="icon" aria-label="关闭" onClick={close}>
+          <h2 className={title.includes(tr('清空本账号数据')) ? 'danger-text' : undefined}>
+            {title}
+          </h2>
+          <button className="icon" aria-label={tr('关闭')} onClick={close}>
             <X size={20} />
           </button>
         </header>
@@ -128,7 +133,10 @@ function Chart({ rows, base }: { rows: Total[]; base: string }) {
   const valid = rows.filter((r) => r.complete);
   if (valid.length < 2)
     return (
-      <Empty title="等待更多历史记录" body="至少两个日期的完整余额和汇率记录，才能绘制趋势。" />
+      <Empty
+        title={tr('等待更多历史记录')}
+        body={tr('至少两个日期的完整余额和汇率记录，才能绘制趋势。')}
+      />
     );
   const values = valid.flatMap((r) => [Number(r.assets), Number(r.liabilities), Number(r.net)]),
     min = Math.min(0, ...values),
@@ -145,16 +153,16 @@ function Chart({ rows, base }: { rows: Total[]; base: string }) {
   return (
     <>
       <div className="legend">
-        <span className="green">总资产</span>
-        <span className="orange">总负债</span>
-        <span className="blue">净资产</span>
+        <span className="green">{tr('总资产')}</span>
+        <span className="orange">{tr('总负债')}</span>
+        <span className="blue">{tr('净资产')}</span>
         <small>{base}</small>
       </div>
       <svg
         viewBox={`0 0 ${w} ${h}`}
         className="chart"
         role="img"
-        aria-label="资产、负债和净资产历史趋势"
+        aria-label={tr('资产、负债和净资产历史趋势')}
       >
         <line x1="35" y1={y('0')} x2="690" y2={y('0')} stroke="#dbe4e2" />
         {series.map((s, i) => (
@@ -175,7 +183,8 @@ function Chart({ rows, base }: { rows: Total[]; base: string }) {
         {valid.map((r) => (
           <circle key={r.date} cx={x(r.date)} cy={y(r.net)} r="4" fill="#457bca">
             <title>
-              {r.date} 净资产 {money(r.net, base)}
+              {r.date} {tr('净资产')}
+              {money(r.net, base)}
             </title>
           </circle>
         ))}
@@ -185,14 +194,16 @@ function Chart({ rows, base }: { rows: Total[]; base: string }) {
         <span>{rows.at(-1)!.date}</span>
       </div>
       {rows.some((r) => !r.complete) && (
-        <p className="muted">缺失汇率的日期未绘制，曲线在该处断开。</p>
+        <p className="muted">{tr('缺失汇率的日期未绘制，曲线在该处断开。')}</p>
       )}
     </>
   );
 }
 export default function App() {
+  const locale = useLocale();
   const sessionGeneration = useRef(0),
     loadGeneration = useRef(0);
+  const authCheck = useRef<Promise<User> | null>(null);
   const [user, setUser] = useState<User | null>(null),
     [boot, setBoot] = useState(true),
     [register, setRegister] = useState(false),
@@ -201,7 +212,12 @@ export default function App() {
     [overview, setOverview] = useState<Overview | null>(null),
     [rates, setRates] = useState<Rate[]>([]),
     [selected, setSelected] = useState<string | null>(null),
-    [modal, setModal] = useState<{ kind: string; p?: Position; h?: History } | null>(null),
+    [modal, setModal] = useState<{
+      kind: string;
+      p?: Position;
+      h?: History;
+      operation?: DebtOperation;
+    } | null>(null),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
@@ -224,6 +240,19 @@ export default function App() {
     [clearConfirmation, setClearConfirmation] = useState(0);
   const [settingsSection, setSettingsSection] = useState('general'),
     [transfers, setTransfers] = useState<Transfer[]>([]);
+  const [historyRows, setHistoryRows] = useState<History[]>([]),
+    [historyCursor, setHistoryCursor] = useState<string | null>(null),
+    [transferCursor, setTransferCursor] = useState<string | null>(null),
+    [rangeFrom, setRangeFrom] = useState(
+      new Date(+new Date(today()) - 89 * 86400000).toISOString().slice(0, 10),
+    ),
+    [rangeTo, setRangeTo] = useState(today()),
+    [grain, setGrain] = useState('day');
+  const viewKey = [page, selected, rangeFrom, rangeTo, grain, settingsSection].join('|');
+  const viewRef = useRef(viewKey);
+  viewRef.current = viewKey;
+  const userRef = useRef(user);
+  userRef.current = user;
   const activityAt = useRef(0);
   function clearAccount() {
     setClearStep(0);
@@ -236,6 +265,9 @@ export default function App() {
     setOverview(null);
     setRates([]);
     setTransfers([]);
+    setHistoryRows([]);
+    setHistoryCursor(null);
+    setTransferCursor(null);
     setFxStatus(null);
     setModal(null);
     setSelected(null);
@@ -247,61 +279,214 @@ export default function App() {
     setSuccess('');
   }
   const report = (e: unknown) => {
-    setError(e instanceof Error ? e.message : '操作失败');
+    setError(e instanceof Error ? e.message : tr('操作失败'));
     if (e instanceof ApiError && e.status === 401) {
       clearAccount();
     }
   };
-  async function load() {
+  async function load(refreshUser = false, rangeOnly = false) {
     const session = sessionGeneration.current,
-      request = ++loadGeneration.current;
+      request = ++loadGeneration.current,
+      view = viewRef.current;
+    const active = () =>
+      session === sessionGeneration.current &&
+      request === loadGeneration.current &&
+      view === viewRef.current;
     setLoading(true);
     try {
-      const [p, o, s, t] = await Promise.all([
-        api<Position[]>('/positions'),
-        api<Overview>('/overview'),
-        api<
-          User & {
-            rates: Rate[];
-            fxStatus: { state: string; message: string; attemptedAt: string | null };
-          }
-        >('/settings'),
-        api<Transfer[]>('/transfers'),
-      ]);
-      if (session !== sessionGeneration.current || request !== loadGeneration.current) return;
-      if (o.revealed !== !!s.revealed) {
-        setPositions([]);
-        setOverview(null);
-        setSelected(null);
-        setModal(null);
-        void load();
-        return;
+      const s = refreshUser ? await api<User>('/auth/me') : userRef.current;
+      if (!active() || !s) return;
+      if (refreshUser) {
+        setUser(s);
+        setPage((current) => (s.hiddenMenus.includes(current) ? 'settings' : current));
+        if (!s.revealed) {
+          setPositions((rows) => rows.filter((p) => !p.hidden));
+          setHistoryRows([]);
+          setTransfers([]);
+          setOverview(null);
+        }
       }
-      if (!activityAt.current && s.lastActivity) activityAt.current = +new Date(s.lastActivity);
-      setPositions(s.revealed ? p : p.filter((position) => !position.hidden));
-      setOverview(o);
-      setRates(s.rates);
-      setTransfers(t);
-      setFxStatus(s.fxStatus);
-      setUser(s);
-      setPage((current) => (s.hiddenMenus.includes(current) ? 'settings' : current));
+      if (page === 'overview' && rangeOnly) {
+        const t = await api<PageResult<Total>>(
+          '/trend?' + new URLSearchParams({ from: rangeFrom, to: rangeTo, grain }),
+        );
+        if (!active()) return;
+        if (t.revealed !== !!s.revealed) {
+          void load(true);
+          return;
+        }
+        setOverview((o) => (o ? { ...o, trend: t.items } : o));
+      } else if (page === 'overview') {
+        const [o, t, recent] = await Promise.all([
+          api<Omit<Overview, 'trend' | 'recent'>>('/overview'),
+          api<PageResult<Total>>(
+            '/trend?' + new URLSearchParams({ from: rangeFrom, to: rangeTo, grain }),
+          ),
+          api<PageResult<History>>('/history?limit=20'),
+        ]);
+        if (!active()) return;
+        if ([o.revealed, t.revealed, recent.revealed].some((v) => v !== !!s.revealed)) {
+          void load(true);
+          return;
+        }
+        setOverview({ ...o, trend: t.items, recent: recent.items });
+      } else if (['account', 'asset', 'debt'].includes(page)) {
+        const [p, h] = await Promise.all([
+          api<Position[]>('/positions?kind=' + page),
+          selected
+            ? api<PageResult<History>>('/positions/' + selected + '/history?limit=50')
+            : Promise.resolve(null),
+        ]);
+        if (!active()) return;
+        setPositions(s.revealed ? p : p.filter((p) => !p.hidden));
+        setHistoryRows(h?.items || []);
+        setHistoryCursor(h?.nextCursor || null);
+      } else if (page === 'history') {
+        const [h, t] = await Promise.all([
+          api<PageResult<History>>(
+            '/history?' + new URLSearchParams({ from: rangeFrom, to: rangeTo, limit: '50' }),
+          ),
+          api<PageResult<Transfer>>(
+            '/transfers?' + new URLSearchParams({ from: rangeFrom, to: rangeTo, limit: '50' }),
+          ),
+        ]);
+        if (!active()) return;
+        if ([h.revealed, t.revealed].some((v) => v !== !!s.revealed)) {
+          void load(true);
+          return;
+        }
+        setHistoryRows(h.items);
+        setHistoryCursor(h.nextCursor);
+        setTransfers(t.items);
+        setTransferCursor(t.nextCursor);
+      } else if (page === 'settings') {
+        const settings = await api<User & { rates: Rate[]; fxStatus: typeof fxStatus }>(
+          '/settings' + (settingsSection === 'rates' ? '?rates=true' : ''),
+        );
+        if (!active()) return;
+        setUser(settings);
+        setRates(settings.rates);
+        setFxStatus(settings.fxStatus);
+      }
     } catch (e) {
-      if (session === sessionGeneration.current && request === loadGeneration.current) report(e);
+      if (active()) report(e);
     } finally {
-      if (session === sessionGeneration.current && request === loadGeneration.current)
-        setLoading(false);
+      if (active()) setLoading(false);
     }
   }
+  async function more(kind: 'history' | 'transfers') {
+    const session = sessionGeneration.current,
+      view = viewRef.current,
+      request = loadGeneration.current;
+    const cursor = kind === 'history' ? historyCursor : transferCursor;
+    if (!cursor || loading) return;
+    setLoading(true);
+    try {
+      const accountId = ['account', 'asset', 'debt'].includes(page) ? selected : null;
+      const endpoint =
+        kind === 'history' && accountId ? '/positions/' + accountId + '/history' : '/' + kind;
+      const query = new URLSearchParams({
+        cursor,
+        limit: '50',
+        ...(!accountId ? { from: rangeFrom, to: rangeTo } : {}),
+      });
+      const result = await api<PageResult<History | Transfer>>(endpoint + '?' + query);
+      if (
+        session !== sessionGeneration.current ||
+        view !== viewRef.current ||
+        request !== loadGeneration.current
+      )
+        return;
+      if (result.revealed !== !!userRef.current?.revealed) {
+        void load(true);
+        return;
+      }
+      if (kind === 'history') {
+        setHistoryRows((rows) => [...rows, ...(result.items as History[])]);
+        setHistoryCursor(result.nextCursor);
+      } else {
+        setTransfers((rows) => [...rows, ...(result.items as Transfer[])]);
+        setTransferCursor(result.nextCursor);
+      }
+    } catch (e) {
+      if (session === sessionGeneration.current && view === viewRef.current) report(e);
+    } finally {
+      if (session === sessionGeneration.current && view === viewRef.current) setLoading(false);
+    }
+  }
+  const [movementPositions, setMovementPositions] = useState<Position[]>([]);
+  const [movementLoading, setMovementLoading] = useState(true);
+  useEffect(() => {
+    if (!modal || !['transfer', 'debt-payment'].includes(modal.kind)) {
+      setMovementPositions([]);
+      setMovementLoading(true);
+      return;
+    }
+    let cancelled = false;
+    const session = sessionGeneration.current;
+    setMovementLoading(true);
+    void api<Position[]>('/positions')
+      .then((rows) => {
+        if (!cancelled && session === sessionGeneration.current) {
+          setMovementPositions(rows);
+          setMovementLoading(false);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled && session === sessionGeneration.current) report(error);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modal]);
+  const [linkOptions, setLinkOptions] = useState<Position[]>([]);
+  useEffect(() => {
+    if (modal?.kind !== 'links') {
+      setLinkOptions([]);
+      return;
+    }
+    let cancelled = false;
+    const session = sessionGeneration.current;
+    void api<Position[]>('/positions')
+      .then((rows) => {
+        if (!cancelled && session === sessionGeneration.current)
+          setLinkOptions(rows.filter((p) => p.kind !== 'debt'));
+      })
+      .catch((e) => {
+        if (!cancelled && session === sessionGeneration.current) report(e);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [modal]);
+  const previousView = useRef('');
+  useEffect(() => {
+    if (!user) return;
+    const rangeOnly =
+      page === 'overview' && previousView.current.startsWith('overview|') && !!overview;
+    previousView.current = viewKey;
+    if (!rangeOnly) setOverview(null);
+    setHistoryRows([]);
+    setHistoryCursor(null);
+    setTransfers([]);
+    setTransferCursor(null);
+    void load(false, rangeOnly);
+    return () => {
+      loadGeneration.current++;
+    };
+  }, [viewKey, !!user]);
   useEffect(() => {
     const session = sessionGeneration.current;
-    void api<User>('/auth/me')
+    authCheck.current ||= api<User>('/auth/me');
+    void authCheck.current
       .then((u) => {
         if (session !== sessionGeneration.current) return;
         setUser(u);
-        return load();
+        if (u.lastActivity) activityAt.current = +new Date(u.lastActivity);
       })
       .catch((e) => {
-        if (!(e instanceof ApiError && e.status === 401)) report(e);
+        if (session === sessionGeneration.current && !(e instanceof ApiError && e.status === 401))
+          report(e);
       })
       .finally(() => setBoot(false));
   }, []);
@@ -337,7 +522,7 @@ export default function App() {
         Date.now() - activityAt.current >= user.idleMinutes * 60000
       ) {
         clearAccount();
-        setError('长时间无操作，已自动退出登录');
+        setError(tr('长时间无操作，已自动退出登录'));
         void api('/auth/logout', 'POST').catch(() => {});
       } else if (!revealExpired && user.revealUntil && Date.now() >= +new Date(user.revealUntil)) {
         revealExpired = true;
@@ -345,7 +530,9 @@ export default function App() {
         setOverview(null);
         setSelected(null);
         setModal(null);
-        void load();
+        setHistoryRows([]);
+        setTransfers([]);
+        void load(true);
       }
     }, 1000);
     const events = ['pointerdown', 'pointermove', 'keydown', 'wheel', 'touchstart'];
@@ -371,8 +558,20 @@ export default function App() {
           ? result.message
           : message,
       );
+      const createdKind =
+        modal && ['account', 'asset', 'debt'].includes(modal.kind) ? modal.kind : null;
       setModal(null);
-      await load();
+      if (
+        createdKind &&
+        result &&
+        typeof result === 'object' &&
+        'id' in result &&
+        typeof result.id === 'string'
+      ) {
+        setPage(createdKind);
+        setSelected(result.id);
+      }
+      await load(true);
     } catch (e) {
       if (session === sessionGeneration.current) report(e);
     } finally {
@@ -396,7 +595,6 @@ export default function App() {
       setModal(null);
       activityAt.current = Date.now();
       setUser(u);
-      await load();
     } catch (e) {
       report(e);
     } finally {
@@ -417,20 +615,24 @@ export default function App() {
       setBusy(false);
     }
   }
-  const p = positions.find((p) => p.id === selected),
+  const p = positions.find((p) => p.id === selected && p.kind === page),
     newAction = (
       <button
         className="primary"
         onClick={() => setModal({ kind: page === 'overview' ? 'account' : page })}
       >
         <Plus size={17} />
-        新增{page === 'overview' ? '账户' : labels[page]}
+        {tr('新增')}
+        {page === 'overview' ? tr('账户') : tr(labels[page])}
       </button>
     );
-  if (boot) return <div className="splash">WorthPath · 正在连接你的资产空间…</div>;
+  if (boot) return <div className="splash">{tr('WorthPath · 正在连接你的资产空间…')}</div>;
   if (!user)
     return (
       <div className="auth-layout">
+        <div className="auth-language">
+          <LanguagePicker />
+        </div>
         <section className="auth-story">
           <div className="brand">
             <span>W</span> WorthPath
@@ -438,50 +640,50 @@ export default function App() {
           <div>
             <p className="eyebrow">YOUR WEALTH, IN PERSPECTIVE</p>
             <h1>
-              让每一步积累，
+              {tr('让每一步积累，')}
               <br />
-              都有清晰的方向。
+              {tr('都有清晰的方向。')}
             </h1>
             <p>
-              在一个空间里，连接你的账户、资产与债务。
+              {tr('在一个空间里，连接你的账户、资产与债务。')}
               <br />
-              看见当下，也看见净资产的每一次变化。
+              {tr('看见当下，也看见净资产的每一次变化。')}
             </p>
             <div className="story-line">
               <TrendingUp size={32} />
               <span>
-                关注长期积累
+                {tr('关注长期积累')}
                 <br />
-                <small>从第一份真实资产开始</small>
+                <small>{tr('从第一份真实资产开始')}</small>
               </span>
             </div>
           </div>
-          <small>个人资产管理 · 多币种 · 历史追踪</small>
+          <small>{tr('个人资产管理 · 多币种 · 历史追踪')}</small>
         </section>
         <section className="auth-form">
           <div>
-            <p className="eyebrow">开始你的资产之路</p>
-            <h2>{register ? '创建账号' : '欢迎回来'}</h2>
+            <p className="eyebrow">{tr('开始你的资产之路')}</p>
+            <h2>{register ? tr('创建账号') : tr('欢迎回来')}</h2>
             <p className="muted">
-              {register ? '建立属于你的私人资产空间' : '登录以查看你的资产与负债'}
+              {register ? tr('建立属于你的私人资产空间') : tr('登录以查看你的资产与负债')}
             </p>
             {error && (
               <div role="alert" className="notice error">
-                {error}
+                {tr(error)}
               </div>
             )}
             <form onSubmit={auth}>
-              <Field label="账号">
+              <Field label={tr('账号')}>
                 <input
                   name="username"
                   autoComplete="username"
                   required
                   minLength={3}
                   maxLength={64}
-                  placeholder="输入账号（至少 3 个字符）"
+                  placeholder={tr('输入账号（至少 3 个字符）')}
                 />
               </Field>
-              <Field label="密码">
+              <Field label={tr('密码')}>
                 <input
                   name="password"
                   type="password"
@@ -489,16 +691,16 @@ export default function App() {
                   required
                   minLength={10}
                   maxLength={72}
-                  placeholder="至少 10 个字符，最多 72 字节"
+                  placeholder={tr('至少 10 个字符，最多 72 字节')}
                 />
               </Field>
               <button className="primary full" disabled={busy}>
-                {busy ? '正在处理…' : register ? '注册并进入' : '登录'}
+                {busy ? tr('正在处理…') : register ? tr('注册并进入') : tr('登录')}
                 <ArrowUpRight size={18} />
               </button>
             </form>
             <p>
-              {register ? '已有账号？' : '还没有账号？'}{' '}
+              {register ? tr('已有账号？') : tr('还没有账号？')}{' '}
               <button
                 className="text"
                 onClick={() => {
@@ -506,12 +708,12 @@ export default function App() {
                   setError('');
                 }}
               >
-                {register ? '登录' : '创建账号'}
+                {register ? tr('登录') : tr('创建账号')}
               </button>
             </p>
             <p className="privacy">
               <ShieldCheck size={16} />
-              个人数据按登录身份隔离
+              {tr('个人数据按登录身份隔离')}
             </p>
           </div>
         </section>
@@ -533,7 +735,7 @@ export default function App() {
           <div className="brand">
             <span>W</span> WorthPath
           </div>
-          <p className="nav-caption">我的资产空间</p>
+          <p className="nav-caption">{tr('我的资产空间')}</p>
           <nav style={{ gridTemplateColumns: `repeat(${visibleNav.length}, 1fr)` }}>
             {visibleNav.map(([key, Icon]) => (
               <button
@@ -545,7 +747,7 @@ export default function App() {
                 }}
               >
                 <Icon size={19} />
-                <span>{labels[key]}</span>
+                <span>{tr(labels[key])}</span>
               </button>
             ))}
           </nav>
@@ -553,11 +755,14 @@ export default function App() {
             <div className="avatar">{user.username.slice(0, 1).toUpperCase()}</div>
             <div>
               <strong>{user.username}</strong>
-              <small>个人账户 · {user.baseCurrency}</small>
+              <small>
+                {tr('个人账户 ·')}
+                {user.baseCurrency}
+              </small>
             </div>
             <button
               className="icon"
-              aria-label="退出登录"
+              aria-label={tr('退出登录')}
               disabled={busy}
               onClick={() => void logout()}
             >
@@ -568,12 +773,19 @@ export default function App() {
       }
       <main>
         <header className="topbar">
-          <span>个人财务 / {labels[page]}</span>
+          <span>
+            {tr('个人财务 /')}
+            {tr(labels[page])}
+          </span>
           <div>
-            <span className="currency-pill">本位币 {user.baseCurrency}</span>
+            <LanguagePicker />
+            <span className="currency-pill">
+              {tr('本位币')}
+              {user.baseCurrency}
+            </span>
             <button
               className="icon"
-              aria-label="刷新数据"
+              aria-label={tr('刷新数据')}
               disabled={loading}
               onClick={() => void load()}
             >
@@ -584,20 +796,20 @@ export default function App() {
         <div className="content">
           <div className="privacy-toolbar">
             <span>
-              {overview?.revealed
-                ? '当前包含隐藏项目 · 验证 5 分钟后自动锁定'
-                : '当前不包含隐藏账户、资产和债务，净资产按此范围计算'}
+              {user.revealed
+                ? tr('当前包含隐藏项目 · 验证 5 分钟后自动锁定')
+                : tr('当前不包含隐藏账户、资产和债务，净资产按此范围计算')}
             </span>
             <button
               className="secondary"
               disabled={busy}
               onClick={() =>
-                overview?.revealed
-                  ? void act(() => api('/auth/lock', 'POST'), '隐藏项目已锁定')
+                user.revealed
+                  ? void act(() => api('/auth/lock', 'POST'), tr('隐藏项目已锁定'))
                   : setModal({ kind: 'reveal' })
               }
             >
-              {overview?.revealed ? '锁定隐藏项目' : '显示隐藏资产（验证密码）'}
+              {user.revealed ? tr('锁定隐藏项目') : tr('显示隐藏资产（验证密码）')}
             </button>
           </div>
           <div className="page-heading">
@@ -605,22 +817,22 @@ export default function App() {
               <p className="eyebrow">WORTHPATH / {today()}</p>
               <h1>
                 {p?.iconId && (
-                  <img className="detail-icon" src={iconUrl(p.iconId)} alt="账户图标" />
+                  <img className="detail-icon" src={iconUrl(p.iconId)} alt={tr('账户图标')} />
                 )}
-                {p ? p.name : labels[page]}
+                {p ? p.name : tr(labels[page])}
               </h1>
               <p className="muted">
                 {page === 'overview'
-                  ? '你的财富全貌，从这里开始。'
+                  ? tr('你的财富全貌，从这里开始。')
                   : page === 'settings'
-                    ? '让数据始终可控，让换算清晰可靠。'
-                    : '保留原币金额，追踪长期变化。'}
+                    ? tr('让数据始终可控，让换算清晰可靠。')
+                    : tr('保留原币金额，追踪长期变化。')}
               </p>
             </div>
             <div className="actions">
               {page === 'account' && !p && (
                 <button className="secondary" onClick={() => setModal({ kind: 'transfer' })}>
-                  账户间转账
+                  {tr('账户间转账')}
                 </button>
               )}
               {['overview', 'account', 'asset', 'debt'].includes(page) && !p && newAction}
@@ -630,55 +842,92 @@ export default function App() {
             <div className="notice error" role="alert">
               {error}
               <button className="text" onClick={() => setError('')}>
-                关闭
+                {tr('关闭')}
               </button>
             </div>
           )}
           {success && (
             <div className="notice success" role="status">
-              {success}
+              {tr(success)}
               <button className="text" onClick={() => setSuccess('')}>
-                关闭
+                {tr('关闭')}
               </button>
             </div>
           )}
           {loading && (
             <p role="status" className="muted">
-              正在刷新数据…
+              {tr('正在刷新数据…')}
             </p>
+          )}
+          {page === 'overview' && (
+            <section className="panel">
+              {' '}
+              <div className="actions">
+                <label>
+                  {tr('开始')}
+                  <input
+                    type="date"
+                    value={rangeFrom}
+                    max={rangeTo}
+                    onChange={(e) => setRangeFrom(e.target.value)}
+                  />
+                </label>
+                <label>
+                  {tr('结束')}
+                  <input
+                    type="date"
+                    value={rangeTo}
+                    min={rangeFrom}
+                    max={today()}
+                    onChange={(e) => setRangeTo(e.target.value)}
+                  />
+                </label>
+                <select value={grain} onChange={(e) => setGrain(e.target.value)}>
+                  <option value="day">{tr('日（最多366天）')}</option>
+                  <option value="week">{tr('周（最多3年）')}</option>
+                  <option value="month">{tr('月（最多10年）')}</option>
+                </select>
+              </div>
+              <p className="muted">
+                {tr(
+                  '默认最近90天；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。',
+                )}
+              </p>
+            </section>
           )}
           {page === 'overview' && overview && (
             <>
               {!overview.complete && (
                 <div className="notice warning">
-                  缺少 {overview.missing.join('、')} 到 {user.baseCurrency}{' '}
-                  的汇率。以下仅展示已能换算的部分，不能作为完整总额。
+                  {tr('缺少')}
+                  {overview.missing.join('、')} {tr('到')}
+                  {user.baseCurrency} {tr('的汇率。以下仅展示已能换算的部分，不能作为完整总额。')}
                   <button className="text" onClick={() => setPage('settings')}>
-                    设置汇率
+                    {tr('设置汇率')}
                   </button>
                 </div>
               )}
               <div className="metrics">
                 {[
-                  ['总资产', overview.assets, 'asset'],
-                  ['总负债', overview.liabilities, 'debt'],
-                  ['净资产', overview.net, 'net'],
+                  [tr('总资产'), overview.assets, 'asset'],
+                  [tr('总负债'), overview.liabilities, 'debt'],
+                  [tr('净资产'), overview.net, 'net'],
                 ].map(([title, value, cls]) => (
                   <section className={'metric ' + cls} key={title}>
                     <div>
                       <span>
                         {title}
-                        {!overview.complete ? '（部分）' : ''}
+                        {!overview.complete ? tr('（部分）') : ''}
                       </span>
                       <ArrowUpRight size={18} />
                     </div>
                     <strong>{money(value, user.baseCurrency)}</strong>
                     <small>
-                      {title === '净资产'
-                        ? '总资产 − 总负债'
-                        : title === '总资产'
-                          ? '账户资产 + 独立资产'
-                          : '负债账户 + 独立债务'}
+                      {title === tr('净资产')
+                        ? tr('总资产 − 总负债')
+                        : title === tr('总资产')
+                          ? tr('账户资产 + 独立资产')
+                          : tr('负债账户 + 独立债务')}
                     </small>
                   </section>
                 ))}
@@ -686,15 +935,17 @@ export default function App() {
               <div className="dashboard-grid">
                 <section className="panel">
                   <div className="panel-title">
-                    <h2>净资产轨迹</h2>
-                    <span className="badge">按业务日期</span>
+                    <h2>{tr('净资产轨迹')}</h2>
+                    <span className="badge">{tr('按业务日期')}</span>
                   </div>
                   <Chart rows={overview.trend} base={user.baseCurrency} />
-                  <p className="muted">按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。</p>
+                  <p className="muted">
+                    {tr('按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。')}
+                  </p>
                 </section>
                 <section className="panel">
-                  <h2>资产与负债组成</h2>
-                  {positions.length ? (
+                  <h2>{tr('资产与负债组成')}</h2>
+                  {overview.items.length ? (
                     ['account', 'asset', 'debt'].map((k) => (
                       <button
                         className="composition"
@@ -705,62 +956,65 @@ export default function App() {
                         }}
                       >
                         <span>
-                          {labels[k]}
-                          <small>{positions.filter((p) => p.kind === k).length} 个项目</small>
+                          {tr(labels[k])}
+                          <small>
+                            {overview.items.filter((p) => p.kind === k).length} {tr('个项目')}
+                          </small>
                         </span>
                         <ArrowUpRight size={18} />
                       </button>
                     ))
                   ) : (
                     <Empty
-                      title="从一个账户开始"
-                      body="添加银行、现金或投资账户，建立你的资产全貌。"
+                      title={tr('从一个账户开始')}
+                      body={tr('添加银行、现金或投资账户，建立你的资产全貌。')}
                       action={newAction}
                     />
                   )}
                   <p className="privacy">
                     <ShieldCheck size={15} />
-                    关联关系不会重复计入总额
+                    {tr('关联关系不会重复计入总额')}
                   </p>
                 </section>
               </div>
               <section className="panel">
                 <div className="panel-title">
-                  <h2>最近变化</h2>
+                  <h2>{tr('最近变化')}</h2>
                   <button className="text" onClick={() => setPage('history')}>
-                    查看全部 →
+                    {tr('查看全部 →')}
                   </button>
                 </div>
                 <HistoryTable
                   rows={overview.recent}
                   open={(id) => {
                     setSelected(id);
-                    setPage(positions.find((p) => p.id === id)?.kind || 'account');
+                    setPage(overview.recent.find((h) => h.positionId === id)?.kind || 'account');
                   }}
                 />
               </section>
               <div className="fx-caption">
-                本位币 {user.baseCurrency} · 汇率日期：
+                {tr('本位币')}
+                {user.baseCurrency} {tr('· 汇率日期：')}
                 {[
                   ...new Set(
                     overview.items
                       .filter((i) => i.currency !== user.baseCurrency && i.rateDate)
                       .map((i) => i.rateDate),
                   ),
-                ].join(' / ') || '尚无外币汇率'}{' '}
-                · 每日尝试更新，失败保留已有数据；旧日期汇率可能产生换算偏差。
+                ].join(' / ') || tr('尚无外币汇率')}{' '}
+                {tr('· 每日尝试更新，失败保留已有数据；旧日期汇率可能产生换算偏差。')}
               </div>
               {overview.trend.length > 1 && (
                 <section className="panel">
-                  <h2>变化归因</h2>
+                  <h2>{tr('变化归因')}</h2>
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>日期</th>
-                          <th>余额 / 估值变化</th>
-                          <th>汇率变化</th>
-                          <th>净资产</th>
+                          <th>{tr('日期')}</th>
+                          <th>{tr('余额 / 估值变化')}</th>
+                          <th>{tr('汇率变化')}</th>
+                          <th>{tr('净资产')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -777,7 +1031,9 @@ export default function App() {
                                 ? '—'
                                 : money(r.fxChange, user.baseCurrency)}
                             </td>
-                            <td>{r.complete ? money(r.net, user.baseCurrency) : '汇率不完整'}</td>
+                            <td>
+                              {r.complete ? money(r.net, user.baseCurrency) : tr('汇率不完整')}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -792,31 +1048,77 @@ export default function App() {
               <>
                 <button className="text back" onClick={() => setSelected(null)}>
                   <ArrowLeft size={16} />
-                  返回列表
+                  {tr('返回列表')}
                 </button>
                 <section className="panel detail-summary">
                   <div>
                     <span className="badge">
-                      {categoryLabel(p)} · {p.side === 'asset' ? '资产' : '负债'}
-                      {p.archived ? ' · 已归档' : ''}
+                      {categoryLabel(p)} ·{' '}
+                      {p.kind === 'debt'
+                        ? tr(p.side === 'asset' ? '借出（应收）' : '借入（应付）')
+                        : p.side === 'asset'
+                          ? tr('资产')
+                          : tr('负债')}
+                      {p.archived ? tr(' · 已归档') : ''}
                     </span>
                     <h2>{money(p.amount, p.currency)}</h2>
-                    {p.hidden && <span className="badge">隐藏项目</span>}
+                    {p.hidden && <span className="badge">{tr('隐藏项目')}</span>}
                     <p className="muted">
-                      本位币：
-                      {overview?.items.find((i) => i.id === p.id)?.converted !== null
-                        ? money(
-                            overview?.items.find((i) => i.id === p.id)?.converted || '0',
-                            user.baseCurrency,
-                          )
-                        : '缺少汇率'}
+                      {tr('本位币：')}
+                      {p.converted !== null
+                        ? money(p.converted || '0', user.baseCurrency)
+                        : tr('缺少汇率')}
                     </p>
-                    <p className="notes-display">{p.notes || '暂无备注'}</p>
-                    <small>币种和资产负债属性创建后固定。归档项目仍计入总览。</small>
+                    <p className="notes-display">{p.notes || tr('暂无备注')}</p>
+                    <small>{tr('币种和资产负债属性创建后固定。归档项目仍计入总览。')}</small>
                   </div>
                   <div className="actions">
+                    {p.kind === 'account' && p.side === 'asset' && !p.archived && (
+                      <>
+                        <button
+                          className="primary"
+                          onClick={() => setModal({ kind: 'transfer', p })}
+                        >
+                          {tr('账户间转账')}
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() => setModal({ kind: 'debt-payment', p })}
+                        >
+                          {tr('债务收款 / 还款')}
+                        </button>
+                      </>
+                    )}
+                    {p.kind === 'debt' && !p.archived && (
+                      <>
+                        <button
+                          className="primary"
+                          onClick={() =>
+                            setModal({
+                              kind: 'debt-payment',
+                              p,
+                              operation: p.side === 'asset' ? 'collect' : 'repay',
+                            })
+                          }
+                        >
+                          {operationLabel(p.side === 'asset' ? 'collect' : 'repay')}
+                        </button>
+                        <button
+                          className="secondary"
+                          onClick={() =>
+                            setModal({
+                              kind: 'debt-payment',
+                              p,
+                              operation: p.side === 'asset' ? 'lend' : 'borrow',
+                            })
+                          }
+                        >
+                          {operationLabel(p.side === 'asset' ? 'lend' : 'borrow')}
+                        </button>
+                      </>
+                    )}
                     <button className="secondary" onClick={() => setModal({ kind: 'edit', p })}>
-                      编辑资料
+                      {tr('编辑资料')}
                     </button>
                     <button
                       className="secondary"
@@ -831,30 +1133,31 @@ export default function App() {
                               archived: !p.archived,
                               hidden: p.hidden,
                             }),
-                          p.archived ? '项目已恢复' : '项目已归档',
+                          p.archived ? tr('项目已恢复') : tr('项目已归档'),
                         )
                       }
                     >
-                      {p.archived ? '恢复项目' : '归档项目'}
+                      {p.archived ? tr('恢复项目') : tr('归档项目')}
                     </button>
                     <button
                       className="primary"
                       disabled={p.archived}
                       onClick={() => setModal({ kind: 'revision', p })}
                     >
-                      更新{p.kind === 'asset' ? '估值' : '余额'}
+                      {tr('更新')}
+                      {p.kind === 'asset' ? tr('估值') : tr('余额')}
                     </button>
                   </div>
                 </section>
                 {p.kind === 'debt' && (
                   <section className="panel">
                     <div className="panel-title">
-                      <h2>关联资产与账户</h2>
+                      <h2>{tr('关联资产与账户')}</h2>
                       <button className="text" onClick={() => setModal({ kind: 'links', p })}>
-                        管理关联
+                        {tr('管理关联')}
                       </button>
                     </div>
-                    <p className="muted">只展示关系，不改变资产或债务的统计。</p>
+                    <p className="muted">{tr('只展示关系，不改变资产或债务的统计。')}</p>
                     {p.outgoing.length ? (
                       p.outgoing.map((l) => (
                         <button
@@ -862,26 +1165,33 @@ export default function App() {
                           key={l.targetId}
                           onClick={() => {
                             setSelected(l.targetId);
-                            setPage(positions.find((v) => v.id === l.targetId)?.kind || 'asset');
+                            setPage(l.target.kind);
                           }}
                         >
-                          {positions.find((v) => v.id === l.targetId)?.name}
+                          {l.target.name}
                         </button>
                       ))
                     ) : (
-                      <p>尚未关联</p>
+                      <p>{tr('尚未关联')}</p>
                     )}
                   </section>
                 )}
                 <section className="panel">
-                  <h2>余额与估值历史</h2>
+                  <h2>{tr('余额与估值历史')}</h2>
                   <p className="muted">
-                    每次更新保留独立历史，同日按记录顺序展示。错误记录可单独更正，后续变化自动重算。
+                    {tr(
+                      '每次更新保留独立历史，同日按记录顺序展示。错误记录可单独更正，后续变化自动重算。',
+                    )}
                   </p>
                   <HistoryTable
-                    rows={[...p.history].reverse()}
+                    rows={historyRows}
                     correct={p.archived ? undefined : (h) => setModal({ kind: 'correction', p, h })}
                   />
+                  {historyCursor && (
+                    <button disabled={loading} onClick={() => void more('history')}>
+                      {tr('加载更早记录')}
+                    </button>
+                  )}
                 </section>
               </>
             ) : (
@@ -899,7 +1209,7 @@ export default function App() {
                           <div>
                             <span className="position-icon">
                               {p.iconId ? (
-                                <img src={iconUrl(p.iconId)} alt="账户图标" />
+                                <img src={iconUrl(p.iconId)} alt={tr('账户图标')} />
                               ) : p.kind === 'asset' ? (
                                 <Landmark />
                               ) : p.kind === 'debt' ? (
@@ -912,26 +1222,28 @@ export default function App() {
                           </div>
                           <h3>{p.name}</h3>
                           <p>
-                            {categoryLabel(p)} · {p.side === 'asset' ? '资产' : '负债'}
-                            {p.archived ? ' · 已归档' : ''}
+                            {categoryLabel(p)} ·{' '}
+                            {p.kind === 'debt'
+                              ? tr(p.side === 'asset' ? '借出（应收）' : '借入（应付）')
+                              : p.side === 'asset'
+                                ? tr('资产')
+                                : tr('负债')}
+                            {p.archived ? tr(' · 已归档') : ''}
                           </p>
                           <strong>{money(p.amount, p.currency)}</strong>
                           <small>
-                            折合{' '}
-                            {overview?.items.find((i) => i.id === p.id)?.converted === null
-                              ? '缺少汇率'
-                              : money(
-                                  overview?.items.find((i) => i.id === p.id)?.converted || '0',
-                                  user.baseCurrency,
-                                )}
+                            {tr('折合')}{' '}
+                            {p.converted === null
+                              ? tr('缺少汇率')
+                              : money(p.converted || '0', user.baseCurrency)}
                           </small>
                         </button>
                       ))}
                   </div>
                 ) : (
                   <Empty
-                    title={'还没有' + labels[page]}
-                    body="添加真实数据后，这里将展示原币余额和历史变化。"
+                    title={tr('还没有') + tr(labels[page])}
+                    body={tr('添加真实数据后，这里将展示原币余额和历史变化。')}
                     action={newAction}
                   />
                 )}
@@ -939,56 +1251,107 @@ export default function App() {
             ))}
           {page === 'history' && (
             <section className="panel">
-              <h2>账户转账</h2>
+              <div className="actions">
+                <label>
+                  {tr('开始')}
+                  <input
+                    type="date"
+                    value={rangeFrom}
+                    max={rangeTo}
+                    onChange={(e) => setRangeFrom(e.target.value)}
+                  />
+                </label>
+                <label>
+                  {tr('结束')}
+                  <input
+                    type="date"
+                    value={rangeTo}
+                    min={rangeFrom}
+                    max={today()}
+                    onChange={(e) => setRangeTo(e.target.value)}
+                  />
+                </label>
+              </div>
+              <h2>{tr('资金往来')}</h2>
               {transfers.length ? (
                 <div className="transfer-list">
                   {transfers.map((t) => (
                     <article key={t.id}>
                       <div>
                         <strong>
-                          {t.source.name} → {t.target.name}
+                          {operationLabel(t.operation || 'transfer')} ·
+                          <button
+                            className="text"
+                            onClick={() => {
+                              setSelected(t.sourceId);
+                              setPage(t.source.kind);
+                            }}
+                          >
+                            {t.source.name}
+                          </button>
+                          {' ↔ '}
+                          <button
+                            className="text"
+                            onClick={() => {
+                              setSelected(t.targetId);
+                              setPage(t.target.kind);
+                            }}
+                          >
+                            {t.target.name}
+                          </button>
                         </strong>
                         <small>{displayTime(t.date)}</small>
                       </div>
                       <p>
                         {money(t.amount, t.sourceCurrency)} → {money(t.received, t.targetCurrency)}{' '}
-                        · 手续费 {money(t.fee, t.sourceCurrency)}
+                        {tr('· 手续费')}
+                        {money(t.fee, t.sourceCurrency)}
                       </p>
                       {t.notes && <p className="muted notes-display">{t.notes}</p>}
                     </article>
                   ))}
                 </div>
               ) : (
-                <p className="muted">暂无账户间转账记录。</p>
+                <p className="muted">{tr('暂无账户间转账记录。')}</p>
               )}
-              <h2>全部金额变化</h2>
-              <p className="muted">原币绝对余额记录；负债减少即还款。选择项目可查看详情并更正。</p>
+              {transferCursor && (
+                <button disabled={loading} onClick={() => void more('transfers')}>
+                  {tr('加载更早转账')}
+                </button>
+              )}
+              <h2>{tr('全部金额变化')}</h2>
+              <p className="muted">
+                {tr('原币绝对余额记录；负债减少即还款。选择项目可查看详情并更正。')}
+              </p>
               <HistoryTable
-                rows={positions
-                  .flatMap((p) => p.history)
-                  .sort((a, b) => b.time.localeCompare(a.time) || b.sequence - a.sequence)}
+                rows={historyRows}
                 open={(id) => {
                   setSelected(id);
-                  setPage(positions.find((p) => p.id === id)?.kind || 'account');
+                  setPage(historyRows.find((h) => h.positionId === id)?.kind || 'account');
                 }}
               />
+              {historyCursor && (
+                <button disabled={loading} onClick={() => void more('history')}>
+                  {tr('加载更早记录')}
+                </button>
+              )}
             </section>
           )}
           {page === 'settings' && (
             <>
               <section className="settings-switch panel">
                 <label>
-                  设置分类
+                  {tr('设置分类')}
                   <select
                     value={settingsSection}
                     onChange={(e) => setSettingsSection(e.target.value)}
                   >
-                    <option value="general">个人与菜单设置</option>
-                    <option value="icons">图标库</option>
-                    <option value="rates">每日汇率</option>
-                    <option value="backup">备份与恢复</option>
+                    <option value="general">{tr('个人与菜单设置')}</option>
+                    <option value="icons">{tr('图标库')}</option>
+                    <option value="rates">{tr('每日汇率')}</option>
+                    <option value="backup">{tr('备份与恢复')}</option>
                     <option className="danger-text" value="clear">
-                      清空本账号数据
+                      {tr('清空本账号数据')}
                     </option>
                   </select>
                 </label>
@@ -1001,14 +1364,16 @@ export default function App() {
               <div className="settings-grid">
                 <section className="panel" hidden={settingsSection !== 'general'}>
                   <div className="panel-title">
-                    <h2>个人与菜单设置</h2>
+                    <h2>{tr('个人与菜单设置')}</h2>
                     <button className="text" disabled={busy} onClick={() => void logout()}>
                       <LogOut size={16} />
-                      退出登录
+                      {tr('退出登录')}
                     </button>
                   </div>
                   <p className="muted">
-                    账号：{user.username}。切换本位币会重新换算整个历史，原币数据保留。
+                    {tr('账号：')}
+                    {user.username}
+                    {tr('。切换本位币会重新换算整个历史，原币数据保留。')}
                   </p>
                   <form
                     onSubmit={(e) => {
@@ -1024,49 +1389,49 @@ export default function App() {
                             idleMinutes: Number(f.get('idleMinutes')),
                             showNotes: f.has('showNotes'),
                           }),
-                        '个人设置已保存',
+                        tr('个人设置已保存'),
                       );
                     }}
                   >
                     <p className="muted">
-                      选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。
+                      {tr('选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。')}
                     </p>
                     <div className="menu-preferences">
                       {['overview', 'account', 'asset', 'debt', 'history'].map((key) => (
                         <label key={key} className="switch-row">
-                          <span>{labels[key]}</span>
+                          <span>{tr(labels[key])}</span>
                           <input
                             type="checkbox"
                             role="switch"
-                            aria-label={labels[key] + '显示'}
+                            aria-label={tr(labels[key]) + tr('显示')}
                             name={'menu_' + key}
                             key={key + String(user.hiddenMenus)}
                             defaultChecked={!(user.hiddenMenus || []).includes(key)}
                           />
                           <span className="switch-state" aria-hidden="true">
-                            显示
+                            {tr('显示')}
                           </span>
                         </label>
                       ))}
                     </div>
                     <label className="switch-row">
-                      <span>显示备注</span>
+                      <span>{tr('显示备注')}</span>
                       <input
                         type="checkbox"
                         role="switch"
                         name="showNotes"
-                        aria-label="显示备注"
+                        aria-label={tr('显示备注')}
                         key={String(user.showNotes)}
                         defaultChecked={user.showNotes !== false}
                       />
                       <span className="switch-state" aria-hidden="true">
-                        显示
+                        {tr('显示')}
                       </span>
                     </label>
                     <p className="muted">
-                      关闭后隐藏列表、详情及编辑表单中的备注，已有备注仍会保留在备份中。
+                      {tr('关闭后隐藏列表、详情及编辑表单中的备注，已有备注仍会保留在备份中。')}
                     </p>
-                    <Field label="无操作自动退出（分钟）">
+                    <Field label={tr('无操作自动退出（分钟）')}>
                       <select
                         name="idleMinutes"
                         key={user.idleMinutes}
@@ -1076,15 +1441,17 @@ export default function App() {
                           .sort((a, b) => a - b)
                           .map((n) => (
                             <option key={n} value={n}>
-                              {n === 0 ? '关闭自动退出' : n + ' 分钟'}
+                              {n === 0 ? tr('关闭自动退出') : n + tr(' 分钟')}
                             </option>
                           ))}
                       </select>
                     </Field>
                     <p className="muted">
-                      0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。
+                      {tr(
+                        '0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。',
+                      )}
                     </p>
-                    <Field label="本位币">
+                    <Field label={tr('本位币')}>
                       <select
                         name="baseCurrency"
                         defaultValue={user.baseCurrency}
@@ -1096,28 +1463,30 @@ export default function App() {
                       </select>
                     </Field>
                     <button className="primary" disabled={busy}>
-                      保存设置
+                      {tr('保存设置')}
                     </button>
                   </form>
                 </section>
                 <section className="panel" hidden={settingsSection !== 'rates'}>
-                  <h2>每日汇率</h2>
+                  <h2>{tr('每日汇率')}</h2>
                   {fxStatus && (
                     <p
                       className={fxStatus.state === 'error' ? 'notice warning' : 'muted'}
                       role="status"
                     >
-                      {fxStatus.message}
+                      {tr(fxStatus.message)}
                       {fxStatus.attemptedAt
                         ? ' · ' +
-                          new Date(fxStatus.attemptedAt).toLocaleString('zh-CN', {
+                          new Date(fxStatus.attemptedAt).toLocaleString(locale, {
                             timeZone: 'Asia/Hong_Kong',
                           })
                         : ''}
                     </p>
                   )}
                   <p className="muted">
-                    服务器每小时检查当日是否已尝试更新。外部请求固定下载公共汇率表，不发送个人数据。失败保留已有汇率，可稍后重试。
+                    {tr(
+                      '服务器每小时检查当日是否已尝试更新。外部请求固定下载公共汇率表，不发送个人数据。失败保留已有汇率，可稍后重试。',
+                    )}
                   </p>
                   <button
                     className="secondary"
@@ -1125,27 +1494,29 @@ export default function App() {
                     onClick={() =>
                       void act(
                         () => api('/rates/refresh', 'POST'),
-                        '汇率已更新至数据源最新可用日期',
+                        tr('汇率已更新至数据源最新可用日期'),
                       )
                     }
                   >
                     <RefreshCw size={16} />
-                    立即更新
+                    {tr('立即更新')}
                   </button>
-                  <p className="muted">公共参考汇率可能与银行成交价不同；休市日日期可能滞后。</p>
+                  <p className="muted">
+                    {tr('公共参考汇率可能与银行成交价不同；休市日日期可能滞后。')}
+                  </p>
                 </section>
               </div>
               <section className="panel" hidden={settingsSection !== 'rates'}>
-                <h2>已保存汇率</h2>
+                <h2>{tr('已保存汇率')}</h2>
                 {rates.length ? (
                   <div className="table-wrap">
                     <table>
                       <thead>
                         <tr>
-                          <th>原币 → 本位币</th>
-                          <th>汇率</th>
-                          <th>日期</th>
-                          <th>来源</th>
+                          <th>{tr('原币 → 本位币')}</th>
+                          <th>{tr('汇率')}</th>
+                          <th>{tr('日期')}</th>
+                          <th>{tr('来源')}</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -1156,20 +1527,25 @@ export default function App() {
                             </td>
                             <td>{r.rate}</td>
                             <td>{r.date.slice(0, 10)}</td>
-                            <td>{r.source === 'manual' ? '历史导入' : 'Frankfurter'}</td>
+                            <td>{r.source === 'manual' ? tr('历史导入') : 'Frankfurter'}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   </div>
                 ) : (
-                  <Empty title="没有保存的外币汇率" body="添加外币项目后更新并保存自动汇率。" />
+                  <Empty
+                    title={tr('没有保存的外币汇率')}
+                    body={tr('添加外币项目后更新并保存自动汇率。')}
+                  />
                 )}
               </section>
               <section className="panel" hidden={settingsSection !== 'clear'}>
-                <h2 className="danger-text">清空本账号数据</h2>
+                <h2 className="danger-text">{tr('清空本账号数据')}</h2>
                 <p className="muted">
-                  清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏项目）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。
+                  {tr(
+                    '清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏项目）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。',
+                  )}
                 </p>
                 {clearStep === 0 ? (
                   <a
@@ -1179,7 +1555,7 @@ export default function App() {
                     onClick={() => setClearStep(1)}
                   >
                     <Download size={16} />
-                    第一步：下载备份
+                    {tr('第一步：下载备份')}
                   </a>
                 ) : clearStep === 1 ? (
                   <button
@@ -1188,56 +1564,62 @@ export default function App() {
                     onClick={async () => {
                       try {
                         const s = await api<{ ready: boolean }>('/backup/clear-status');
-                        if (!s.ready) throw new Error('备份尚未完成，请重新下载');
+                        if (!s.ready) throw new Error(tr('备份尚未完成，请重新下载'));
                         setClearStep(2);
                       } catch (e) {
                         report(e);
                       }
                     }}
                   >
-                    备份已保存，进入下一步
+                    {tr('备份已保存，进入下一步')}
                   </button>
                 ) : (
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      if (new FormData(e.currentTarget).get('confirmation') === '确定清空')
+                      if (new FormData(e.currentTarget).get('confirmation') === tr('确定清空'))
                         setClearConfirmation(1);
                     }}
                   >
-                    <Field label="输入“确定清空”以确认">
-                      <input name="confirmation" required pattern="确定清空" autoComplete="off" />
+                    <Field label={tr('输入“确定清空”以确认')}>
+                      <input
+                        name="confirmation"
+                        required
+                        pattern={tr('确定清空')}
+                        autoComplete="off"
+                      />
                     </Field>
                     <button className="danger" disabled={busy}>
-                      清空本账号数据
+                      {tr('清空本账号数据')}
                     </button>
                   </form>
                 )}
                 {clearStep > 0 && (
                   <button className="text" onClick={() => setClearStep(0)}>
-                    取消清空 / 重新下载
+                    {tr('取消清空 / 重新下载')}
                   </button>
                 )}
               </section>
               <section className="panel" hidden={settingsSection !== 'backup'}>
-                <h2>数据备份与恢复</h2>
+                <h2>{tr('数据备份与恢复')}</h2>
                 <p className="muted">
-                  ZIP 内分文件保存可读
-                  JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率、图标及配对转账，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
+                  {tr(
+                    'ZIP 内分文件保存可读 JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率、图标及配对转账，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。',
+                  )}
                 </p>
                 <div className="actions">
                   <a
                     className="secondary"
                     href="/api/backup"
                     download={'worthpath-' + today() + '.zip'}
-                    onClick={() => setSuccess('备份下载请求已发起，请检查浏览器下载列表')}
+                    onClick={() => setSuccess(tr('备份下载请求已发起，请检查浏览器下载列表'))}
                   >
                     <Download size={16} />
-                    下载我的数据备份
+                    {tr('下载我的数据备份')}
                   </a>
                   <label className="secondary file-button">
                     <Upload size={16} />
-                    选择备份并验证
+                    {tr('选择备份并验证')}
                     <input
                       type="file"
                       accept=".zip,application/zip,.json,application/json"
@@ -1252,7 +1634,7 @@ export default function App() {
                         setBusy(true);
                         try {
                           if (file.size > 512 * 1024 * 1024)
-                            throw new Error('ZIP 文件不能超过 512 MB（不限制记录条数）');
+                            throw new Error(tr('ZIP 文件不能超过 512 MB（不限制记录条数）'));
                           const form = new FormData();
                           form.append('file', file);
                           const response = await fetch('/api/backup/upload', {
@@ -1262,7 +1644,10 @@ export default function App() {
                           });
                           const result = await response.json();
                           if (!response.ok)
-                            throw new ApiError(result.message || 'ZIP 验证失败', response.status);
+                            throw new ApiError(
+                              result.message || tr('ZIP 验证失败'),
+                              response.status,
+                            );
                           if (uploadSession !== sessionGeneration.current) return;
                           setBackup(result.token);
                           setPreview(result);
@@ -1278,15 +1663,18 @@ export default function App() {
                 </div>
                 {preview && (
                   <div className="import-preview">
-                    <h3>导入预览</h3>
+                    <h3>{tr('导入预览')}</h3>
                     <p>
-                      {preview.positions} 个项目 · {preview.revisions} 条历史 · {preview.rates}{' '}
-                      条汇率
+                      {preview.positions} {tr('个项目 ·')}
+                      {preview.revisions} {tr('条历史 ·')}
+                      {preview.rates} {tr('条汇率')}
                     </p>
                     <p>
-                      备份本位币 {preview.baseCurrency} / 当前本位币 {preview.currentBaseCurrency}
+                      {tr('备份本位币')}
+                      {preview.baseCurrency} {tr('/ 当前本位币')}
+                      {preview.currentBaseCurrency}
                     </p>
-                    <p>{preview.message}</p>
+                    <p>{tr(preview.message)}</p>
                     <button
                       className="primary"
                       disabled={busy}
@@ -1298,10 +1686,10 @@ export default function App() {
                           });
                           setPreview(null);
                           setBackup(null);
-                        }, '备份已完整导入')
+                        }, tr('备份已完整导入'))
                       }
                     >
-                      确认追加导入
+                      {tr('确认追加导入')}
                     </button>
                     <button
                       className="text"
@@ -1310,21 +1698,23 @@ export default function App() {
                         setBackup(null);
                       }}
                     >
-                      取消
+                      {tr('取消')}
                     </button>
                   </div>
                 )}
               </section>
             </>
           )}
-          <footer>WorthPath · 记录你的积累，理解你的财富</footer>
+          <footer>{tr('WorthPath · 记录你的积累，理解你的财富')}</footer>
         </div>
       </main>
       {clearConfirmation > 0 && (
         <Modal
           key={clearConfirmation}
           title={
-            clearConfirmation === 1 ? '第一次确认：清空本账号数据' : '第二次确认：清空本账号数据'
+            clearConfirmation === 1
+              ? tr('第一次确认：清空本账号数据')
+              : tr('第二次确认：清空本账号数据')
           }
           close={() => {
             if (!busy) setClearConfirmation(0);
@@ -1332,10 +1722,10 @@ export default function App() {
         >
           <p className="danger-text">
             {clearConfirmation === 1
-              ? '将清空本账号全部财务数据及私有图标，请确认备份已保存。'
-              : '这是最后一次确认。清空后只能通过备份恢复，其他用户的数据不受影响。'}
+              ? tr('将清空本账号全部财务数据及私有图标，请确认备份已保存。')
+              : tr('这是最后一次确认。清空后只能通过备份恢复，其他用户的数据不受影响。')}
           </p>
-          <p className="muted">登录账号、个人设置和已发布的共享图标会保留。</p>
+          <p className="muted">{tr('登录账号、个人设置和已发布的共享图标会保留。')}</p>
           <div className="modal-actions clear-confirm-actions">
             {clearConfirmation === 1 ? (
               <>
@@ -1345,10 +1735,10 @@ export default function App() {
                   disabled={busy}
                   onClick={() => setClearConfirmation(0)}
                 >
-                  取消清空
+                  {tr('取消清空')}
                 </button>
                 <button className="danger" disabled={busy} onClick={() => setClearConfirmation(2)}>
-                  继续清空
+                  {tr('继续清空')}
                 </button>
               </>
             ) : (
@@ -1358,16 +1748,16 @@ export default function App() {
                   disabled={busy}
                   onClick={() =>
                     void act(async () => {
-                      await api('/backup/clear', 'POST', { confirmation: '确定清空' });
+                      await api('/backup/clear', 'POST', { confirmation: tr('确定清空') });
                       setClearConfirmation(0);
                       setClearStep(0);
                       setSelected(null);
                       setBackup(null);
                       setPreview(null);
-                    }, '本账号数据已清空')
+                    }, tr('本账号数据已清空'))
                   }
                 >
-                  {busy ? '正在清空…' : '最终确认清空'}
+                  {busy ? tr('正在清空…') : tr('最终确认清空')}
                 </button>
                 <button
                   autoFocus
@@ -1375,7 +1765,7 @@ export default function App() {
                   disabled={busy}
                   onClick={() => setClearConfirmation(0)}
                 >
-                  取消清空
+                  {tr('取消清空')}
                 </button>
               </>
             )}
@@ -1390,34 +1780,67 @@ export default function App() {
       {modal && (
         <Modal
           title={
-            modal.kind === 'transfer'
-              ? '账户间转账'
-              : modal.kind === 'reveal'
-                ? '验证密码以显示隐藏资产'
-                : modal.kind === 'edit'
-                  ? '编辑项目'
-                  : modal.kind === 'revision'
-                    ? '更新余额 / 估值'
-                    : modal.kind === 'correction'
-                      ? '更正历史记录'
-                      : modal.kind === 'links'
-                        ? '管理债务关联'
-                        : '新增' + labels[modal.kind]
+            modal.kind === 'debt-payment'
+              ? tr('债务收款 / 还款')
+              : modal.kind === 'transfer'
+                ? tr('账户间转账')
+                : modal.kind === 'reveal'
+                  ? tr('验证密码以显示隐藏资产')
+                  : modal.kind === 'edit'
+                    ? tr('编辑项目')
+                    : modal.kind === 'revision'
+                      ? tr('更新余额 / 估值')
+                      : modal.kind === 'correction'
+                        ? tr('更正历史记录')
+                        : modal.kind === 'links'
+                          ? tr('管理债务关联')
+                          : tr('新增') + tr(labels[modal.kind])
           }
           close={() => {
             if (!busy) setModal(null);
           }}
         >
-          {modal.kind === 'transfer' ? (
-            <TransferForm
-              accounts={positions.filter(
-                (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
-              )}
-              busy={busy}
-              submit={(v) =>
-                void act(() => api('/transfers', 'POST', v), '转账已保存，双方余额已更新')
-              }
-            />
+          {['transfer', 'debt-payment'].includes(modal.kind) ? (
+            movementLoading ? (
+              <p>{tr('正在刷新数据…')}</p>
+            ) : modal.kind === 'transfer' ? (
+              <TransferForm
+                accounts={movementPositions.filter(
+                  (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
+                )}
+                initialSourceId={modal.p?.kind === 'account' ? modal.p.id : undefined}
+                busy={busy}
+                submit={(v) =>
+                  void act(() => api('/transfers', 'POST', v), tr('转账已保存，双方余额已更新'))
+                }
+              />
+            ) : (
+              <DebtPaymentForm
+                accounts={movementPositions.filter(
+                  (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
+                )}
+                debts={movementPositions.filter((p) => p.kind === 'debt' && !p.archived)}
+                initialAccount={
+                  modal.p?.kind === 'account'
+                    ? modal.p.id
+                    : modal.p?.outgoing.find((link) =>
+                        movementPositions.some(
+                          (p) =>
+                            p.id === link.targetId &&
+                            p.kind === 'account' &&
+                            p.side === 'asset' &&
+                            !p.archived,
+                        ),
+                      )?.targetId
+                }
+                initialDebt={modal.p?.kind === 'debt' ? modal.p.id : undefined}
+                initialOperation={modal.operation}
+                busy={busy}
+                submit={(v) =>
+                  void act(() => api('/transfers', 'POST', v), tr('账户与债务已同步更新'))
+                }
+              />
+            )
           ) : (
             <form
               onSubmit={(e) => {
@@ -1429,7 +1852,7 @@ export default function App() {
                 if (kind === 'reveal') {
                   void act(
                     () => api('/auth/reveal', 'POST', { password: f.get('password') }),
-                    '隐藏项目已解锁 5 分钟',
+                    tr('隐藏项目已解锁 5 分钟'),
                   );
                 } else if (kind === 'links') {
                   void act(
@@ -1437,7 +1860,7 @@ export default function App() {
                       api('/positions/' + mp!.id + '/links', 'PUT', {
                         targetIds: f.getAll('targetIds'),
                       }),
-                    '关联已更新',
+                    tr('关联已更新'),
                   );
                 } else if (kind === 'revision' || kind === 'correction') {
                   void act(
@@ -1447,7 +1870,7 @@ export default function App() {
                         modal.h ? 'PUT' : 'POST',
                         v,
                       ),
-                    '金额历史已保存，总览已重新计算',
+                    tr('金额历史已保存，总览已重新计算'),
                   );
                 } else if (kind === 'edit') {
                   void act(
@@ -1458,15 +1881,16 @@ export default function App() {
                         archived: mp!.archived,
                         hidden: f.get('hidden') === 'on',
                       }),
-                    '项目资料已保存',
+                    tr('项目资料已保存'),
                   );
                 } else {
                   const category = String(v.category),
                     side =
-                      kind === 'debt' ||
-                      (kind === 'account' && ['credit_card', 'loan'].includes(category))
+                      kind === 'account' && ['credit_card', 'loan'].includes(category)
                         ? 'liability'
-                        : 'asset';
+                        : kind === 'debt'
+                          ? String(v.side)
+                          : 'asset';
                   void act(
                     () =>
                       api('/positions', 'POST', {
@@ -1476,13 +1900,13 @@ export default function App() {
                         side,
                         hidden: f.get('hidden') === 'on',
                       }),
-                    '项目已添加',
+                    tr('项目已添加'),
                   );
                 }
               }}
             >
               {modal.kind === 'reveal' && (
-                <Field label="登录密码">
+                <Field label={tr('登录密码')}>
                   <input
                     name="password"
                     type="password"
@@ -1496,12 +1920,12 @@ export default function App() {
                 <>
                   <label className="check-line">
                     <input name="hidden" type="checkbox" defaultChecked={modal.p?.hidden} />
-                    隐藏此项目（密码验证后可查看和编辑）
+                    {tr('隐藏此项目（密码验证后可查看和编辑）')}
                   </label>
                   {(modal.kind === 'account' || modal.p?.kind === 'account') && (
                     <IconPicker key={modal.p?.id || 'new-account'} initialId={modal.p?.iconId} />
                   )}
-                  <Field label="名称">
+                  <Field label={tr('名称')}>
                     <input
                       name="name"
                       defaultValue={modal.p?.name}
@@ -1510,25 +1934,42 @@ export default function App() {
                       autoFocus
                     />
                   </Field>
-                  <Field label="类别">
+                  <Field label={tr('类别')}>
                     <select
                       name="category"
                       defaultValue={modal.p?.category || categories[modal.kind]?.[0][0]}
                     >
                       {categories[modal.p?.kind || modal.kind].map(([v, label]) => (
                         <option key={v} value={v}>
-                          {label}
+                          {tr(label)}
                         </option>
                       ))}
                     </select>
                   </Field>
                   {modal.kind === 'account' && (
-                    <p className="muted">信用卡、贷款账户自动计入负债，其余账户计入资产。</p>
+                    <p className="muted">
+                      {tr('信用卡、贷款账户自动计入负债，其余账户计入资产。')}
+                    </p>
                   )}
                 </>
               )}
+              {modal.kind === 'debt' && (
+                <>
+                  <Field label={tr('债务方向')}>
+                    <select name="side" defaultValue="liability">
+                      <option value="liability">{tr('借入（应付）')}</option>
+                      <option value="asset">{tr('借出（应收）')}</option>
+                    </select>
+                  </Field>
+                  <p className="muted">
+                    {tr(
+                      '已有债务填写剩余本金；新借入或借出可先填0，保存后通过账户联动操作记录资金。',
+                    )}
+                  </p>
+                </>
+              )}
               {['account', 'asset', 'debt'].includes(modal.kind) && (
-                <Field label="原币币种">
+                <Field label={tr('原币币种')}>
                   <select name="currency" defaultValue={user.baseCurrency}>
                     {currencies.map((c) => (
                       <option key={c}>{c}</option>
@@ -1537,19 +1978,23 @@ export default function App() {
                 </Field>
               )}
               {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
-                <Field label={'变更后的绝对金额' + (modal.p ? '（' + modal.p.currency + '）' : '')}>
+                <Field
+                  label={tr('变更后的绝对金额') + (modal.p ? '（' + modal.p.currency + '）' : '')}
+                >
                   <input
                     name="amount"
                     inputMode="decimal"
                     required
                     pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,8})?"
-                    defaultValue={modal.h?.after || modal.p?.amount || ''}
+                    defaultValue={
+                      modal.h?.after || modal.p?.amount || (modal.kind === 'debt' ? '0' : '')
+                    }
                     placeholder="0.00"
                   />
                 </Field>
               )}
               {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
-                <Field label={'业务时间（北京时间，精确到分钟）'}>
+                <Field label={tr('业务时间（北京时间，精确到分钟）')}>
                   <input
                     type={'datetime-local'}
                     name="date"
@@ -1562,51 +2007,51 @@ export default function App() {
               )}
               {modal.kind === 'revision' && (
                 <>
-                  <Field label="变更原因">
+                  <Field label={tr('变更原因')}>
                     <select
                       name="reason"
                       defaultValue={modal.p?.kind === 'asset' ? 'valuation' : 'balance'}
                     >
-                      <option value="balance">余额更新</option>
-                      <option value="valuation">估值更新</option>
+                      <option value="balance">{tr('余额更新')}</option>
+                      <option value="valuation">{tr('估值更新')}</option>
                       {modal.p?.side === 'liability' && (
-                        <option value="repayment">还款（填写还款后欠款）</option>
+                        <option value="repayment">{tr('还款（填写还款后欠款）')}</option>
                       )}
                     </select>
                   </Field>
                   <p className="muted">
-                    填写更新后的余额或剩余欠款，每次保存会新增历史。已有错误记录请在历史中更正。
+                    {tr(
+                      '填写更新后的余额或剩余欠款，每次保存会新增历史。已有错误记录请在历史中更正。',
+                    )}
                   </p>
                 </>
               )}
               {modal.kind === 'correction' && (
                 <p className="notice warning">
-                  这将修改选中的历史金额并重算后续变化，请确认日期和余额。
+                  {tr('这将修改选中的历史金额并重算后续变化，请确认日期和余额。')}
                 </p>
               )}
               {modal.kind === 'links' ? (
                 <div className="link-options">
-                  {positions.filter((p) => p.kind !== 'debt').length ? (
-                    positions
-                      .filter((p) => p.kind !== 'debt')
-                      .map((p) => (
-                        <label key={p.id}>
-                          <input
-                            type="checkbox"
-                            name="targetIds"
-                            value={p.id}
-                            defaultChecked={modal.p!.outgoing.some((l) => l.targetId === p.id)}
-                          />
-                          {p.name} · {labels[p.kind]}
-                        </label>
-                      ))
+                  {linkOptions.length ? (
+                    linkOptions.map((p) => (
+                      <label key={p.id}>
+                        <input
+                          type="checkbox"
+                          name="targetIds"
+                          value={p.id}
+                          defaultChecked={modal.p!.outgoing.some((l) => l.targetId === p.id)}
+                        />
+                        {p.name} · {tr(labels[p.kind])}
+                      </label>
+                    ))
                   ) : (
-                    <p>请先创建账户或独立资产。</p>
+                    <p>{tr('请先创建账户或独立资产。')}</p>
                   )}
                 </div>
               ) : (
                 modal.kind !== 'reveal' && (
-                  <Field label="备注">
+                  <Field label={tr('备注')}>
                     <textarea
                       name="notes"
                       maxLength={2000}
@@ -1628,10 +2073,14 @@ export default function App() {
                   disabled={busy}
                   onClick={() => setModal(null)}
                 >
-                  取消
+                  {tr('取消')}
                 </button>
                 <button className="primary" disabled={busy}>
-                  {busy ? '正在保存…' : modal.kind === 'correction' ? '确认更正' : '保存'}
+                  {busy
+                    ? tr('正在保存…')
+                    : modal.kind === 'correction'
+                      ? tr('确认更正')
+                      : tr('保存')}
                 </button>
               </div>
             </form>
@@ -1655,12 +2104,12 @@ function HistoryTable({
       <table>
         <thead>
           <tr>
-            <th>项目 / 日期</th>
-            <th>变更前</th>
-            <th>变更后</th>
-            <th>变化额</th>
-            <th className="notes-cell">备注</th>
-            {correct && <th>操作</th>}
+            <th>{tr('项目 / 日期')}</th>
+            <th>{tr('变更前')}</th>
+            <th>{tr('变更后')}</th>
+            <th>{tr('变化额')}</th>
+            <th className="notes-cell">{tr('备注')}</th>
+            {correct && <th>{tr('操作')}</th>}
           </tr>
         </thead>
         <tbody>
@@ -1679,13 +2128,17 @@ function HistoryTable({
                   {
                     (
                       {
-                        initial: '初始记录',
-                        balance: '余额更新',
-                        valuation: '估值更新',
-                        repayment: '还款',
-                        correction: '更正',
-                        transfer_out: '转账转出',
-                        transfer_in: '转账到账',
+                        initial: tr('初始记录'),
+                        balance: tr('余额更新'),
+                        valuation: tr('估值更新'),
+                        repayment: tr('还款'),
+                        correction: tr('更正'),
+                        transfer_out: tr('转账转出'),
+                        transfer_in: tr('转账到账'),
+                        loan_borrow: tr('借入到账'),
+                        loan_lend: tr('借出付款'),
+                        loan_collect: tr('收回借款'),
+                        loan_repay: tr('偿还债务'),
                       } as Record<string, string>
                     )[h.reason]
                   }
@@ -1699,10 +2152,10 @@ function HistoryTable({
                 <td>
                   <button
                     className="text"
-                    disabled={h.reason.startsWith('transfer_')}
+                    disabled={h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')}
                     onClick={() => correct(h)}
                   >
-                    更正
+                    {tr('更正')}
                   </button>
                 </td>
               )}
@@ -1712,6 +2165,6 @@ function HistoryTable({
       </table>
     </div>
   ) : (
-    <Empty title="暂无变化记录" body="添加项目或更新金额后，历史会自动保存在这里。" />
+    <Empty title={tr('暂无变化记录')} body={tr('添加项目或更新金额后，历史会自动保存在这里。')} />
   );
 }

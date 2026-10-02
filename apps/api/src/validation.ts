@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import Decimal from 'decimal.js';
 export const currencies = [
   'CNY',
   'USD',
@@ -64,6 +65,10 @@ export const revisionInput = z
         'correction',
         'transfer_out',
         'transfer_in',
+        'loan_borrow',
+        'loan_lend',
+        'loan_collect',
+        'loan_repay',
       ])
       .default('balance'),
   })
@@ -90,7 +95,6 @@ export const positionInput = positionMeta
   .superRefine((p, c) => {
     if (
       (p.kind === 'asset' && p.side !== 'asset') ||
-      (p.kind === 'debt' && p.side !== 'liability') ||
       (p.kind === 'account' &&
         ['credit_card', 'loan'].includes(p.category) &&
         p.side !== 'liability')
@@ -124,14 +128,33 @@ export const hiddenMenus = z
   .refine((v) => new Set(v).size === v.length, '菜单不可重复');
 export const transferInput = z
   .object({
+    operation: z.enum(['transfer', 'borrow', 'lend', 'collect', 'repay']).default('transfer'),
     requestId: z.string().uuid().optional(),
     sourceId: z.string().uuid(),
     targetId: z.string().uuid(),
     amount: amount.refine((v) => /[1-9]/.test(v), '转出金额必须大于零'),
     received: amount.refine((v) => /[1-9]/.test(v), '到账金额必须大于零'),
-    fee: amount.default('0'),
+    fee: z
+      .string()
+      .regex(
+        /^-?(0|[1-9]\d{0,15})(\.\d{1,8})?$/,
+        '手续费可为负数表示优惠，最多 16 位整数和 8 位小数',
+      )
+      .default('0'),
     date: businessDate,
     notes,
   })
   .strict()
-  .refine((v) => v.sourceId !== v.targetId, '不能向同一账户转账');
+  .refine((v) => v.sourceId !== v.targetId, '不能向同一账户转账')
+  .refine((v) => new Decimal(v.fee).neg().lte(v.amount), {
+    message: '手续费优惠不能超过转出金额',
+    path: ['fee'],
+  });
+export const pairedReasons = [
+  'transfer_out',
+  'transfer_in',
+  'loan_borrow',
+  'loan_lend',
+  'loan_collect',
+  'loan_repay',
+];

@@ -6,6 +6,7 @@ import {
   Post,
   Req,
   Body,
+  Query,
   OnModuleInit,
   OnModuleDestroy,
   BadGatewayException,
@@ -165,7 +166,8 @@ export class SettingsController {
     private db: Database,
     private fx: RatesService,
   ) {}
-  @Get('settings') async settings(@Req() r: UserRequest) {
+  @Get('settings') async settings(@Req() r: UserRequest, @Query('rates') includeRates?: string) {
+    const showRates = z.enum(['true', 'false']).optional().parse(includeRates) === 'true';
     const u = await this.db.user.findUniqueOrThrow({
       where: { id: r.userId },
       select: {
@@ -186,11 +188,14 @@ export class SettingsController {
         ? (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } })).revealUntil
         : null,
       fxStatus: this.fx.status(r.userId),
-      rates: await this.db.exchangeRate.findMany({
-        where: { userId: r.userId },
-        select: { currency: true, baseCurrency: true, date: true, rate: true, source: true },
-        orderBy: { date: 'desc' },
-      }),
+      rates: showRates
+        ? await this.db.exchangeRate.findMany({
+            where: { userId: r.userId },
+            select: { currency: true, baseCurrency: true, date: true, rate: true, source: true },
+            orderBy: [{ date: 'desc' }, { id: 'desc' }],
+            take: 100,
+          })
+        : [],
     };
   }
   @Patch('settings') async update(@Req() r: UserRequest, @Body() b: unknown) {

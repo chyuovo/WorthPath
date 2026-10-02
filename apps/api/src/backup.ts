@@ -1,3 +1,5 @@
+import { movementDeltas } from './movement';
+import { pairedReasons } from './validation';
 import {
   Controller,
   Get,
@@ -159,9 +161,11 @@ export function validateBackup(raw: unknown) {
       !source ||
       !target ||
       source.kind !== 'account' ||
-      target.kind !== 'account' ||
       source.side !== 'asset' ||
-      target.side !== 'asset' ||
+      (t.operation === 'transfer'
+        ? target.kind !== 'account' || target.side !== 'asset'
+        : target.kind !== 'debt' ||
+          target.side !== (['borrow', 'repay'].includes(t.operation) ? 'liability' : 'asset')) ||
       source.currency !== t.sourceCurrency ||
       target.currency !== t.targetCurrency
     )
@@ -169,9 +173,10 @@ export function validateBackup(raw: unknown) {
     transferIds.add(origin);
     if (t.sourceCurrency === t.targetCurrency && !new Decimal(t.amount).eq(t.received))
       throw new BadRequestException('同币种转账金额不一致');
+    const deltas = movementDeltas(t.operation, t.amount, t.received, t.fee);
     for (const [p, revId, reason, delta] of [
-      [source, t.sourceRevisionId, 'transfer_out', new Decimal(t.amount).plus(t.fee).neg()],
-      [target, t.targetRevisionId, 'transfer_in', new Decimal(t.received)],
+      [source, t.sourceRevisionId, deltas.sourceReason, deltas.source],
+      [target, t.targetRevisionId, deltas.targetReason, deltas.target],
     ] as const) {
       const ordered = [...p.revisions].sort(
         (a, b) =>
@@ -195,7 +200,7 @@ export function validateBackup(raw: unknown) {
   }
   if (
     b.positions.some((p) =>
-      p.revisions.some((r) => r.reason.startsWith('transfer_') && !usedRevisions.has(r.id)),
+      p.revisions.some((r) => pairedReasons.includes(r.reason) && !usedRevisions.has(r.id)),
     )
   )
     throw new BadRequestException('缺少配对转账记录');
@@ -614,6 +619,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               amount: t.amount,
               received: t.received,
               fee: t.fee,
+              operation: t.operation,
               effectiveDate: toBusinessDate(t.date),
               notes: t.notes,
               createdAt: new Date(t.createdAt),

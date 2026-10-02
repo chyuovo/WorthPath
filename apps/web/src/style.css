@@ -1177,3 +1177,29 @@ footer {
 .notes-hidden label:has(.note-input) {
   display: none !important;
 }
+.language-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+.language-picker select {
+  width: auto;
+  min-width: 7rem;
+  padding: 0.4rem 0.65rem;
+}
+.auth-language {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  z-index: 2;
+}
+@media (max-width: 600px) {
+  .language-picker span {
+    display: none;
+  }
+  .topbar {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}

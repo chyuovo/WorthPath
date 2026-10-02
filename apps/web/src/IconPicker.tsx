@@ -1,3 +1,4 @@
+import { t as tr } from './i18n';
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { IconLibrary, iconUrl } from './IconLibrary';
@@ -39,13 +40,13 @@ export function IconPicker({ initialId }: { initialId?: string | null }) {
   return (
     <div className="account-icon-field">
       <input type="hidden" name="iconId" value={id} />
-      {id && <img src={iconUrl(id)} alt="已选账户图标" />}
+      {id && <img src={iconUrl(id)} alt={tr('已选账户图标')} />}
       <button type="button" className="secondary" onClick={() => setOpen(true)}>
-        {id ? '更换图标' : '选择图标'}
+        {id ? tr('更换图标') : tr('选择图标')}
       </button>
       {id && (
         <button type="button" className="text" onClick={() => setId('')}>
-          移除
+          {tr('移除')}
         </button>
       )}
       {open &&
@@ -61,12 +62,12 @@ export function IconPicker({ initialId }: { initialId?: string | null }) {
               className="icon-picker-dialog"
               role="dialog"
               aria-modal="true"
-              aria-label="选择账户图标"
+              aria-label={tr('选择账户图标')}
             >
               <div className="panel-title">
-                <h2>账户图标</h2>
+                <h2>{tr('账户图标')}</h2>
                 <button type="button" className="secondary" onClick={() => setOpen(false)}>
-                  关闭图标选择
+                  {tr('关闭图标选择')}
                 </button>
               </div>
               <IconLibrary

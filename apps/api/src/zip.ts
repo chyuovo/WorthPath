@@ -41,7 +41,7 @@ export function packBackup(b: Backup) {
   contents['manifest.json'] = JSON.stringify(
     {
       format: 'worthpath',
-      version: 5,
+      version: 6,
       exportedAt: b.exportedAt,
       files: files.map((name) => ({ name, sha256: sha(contents[name]) })),
     },
@@ -116,7 +116,7 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const manifest = z
       .object({
         format: z.literal('worthpath'),
-        version: z.union([z.literal(3), z.literal(4), z.literal(5)]),
+        version: z.union([z.literal(3), z.literal(4), z.literal(5), z.literal(6)]),
         exportedAt: z.iso.datetime(),
         files: z
           .array(

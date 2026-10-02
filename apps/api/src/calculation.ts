@@ -142,3 +142,79 @@ export function overview(positions: Holding[], rates: Rate[], base: string, date
       .slice(0, 20),
   };
 }
+
+// Sort once, advance each revision/rate once, and retain only the running balances.
+// Sampling uses end-of-period balances; attribution sums daily changes in the bucket.
+export function trend(
+  positions: Holding[],
+  rates: Rate[],
+  base: string,
+  from: string,
+  to: string,
+  grain: 'day' | 'week' | 'month' = 'day',
+) {
+  const streams = positions.map((p) => ({
+    p,
+    rows: [...p.revisions].sort(compareRevisions),
+    index: 0,
+    current: [] as Holding['revisions'],
+  }));
+  const fxRows = rates.filter((r) => r.baseCurrency === base).sort((a, b) => +a.date - +b.date);
+  let fxIndex = 0;
+  const fx = new Map<string, Rate>();
+  function advance(d: string) {
+    for (const s of streams)
+      while (s.index < s.rows.length && businessDay(s.rows[s.index].effectiveDate) <= d)
+        s.current = [s.rows[s.index++]];
+    while (fxIndex < fxRows.length && day(fxRows[fxIndex].date) <= d) {
+      const r = fxRows[fxIndex++];
+      fx.set(r.currency, r);
+    }
+    return totals(
+      streams.map((s) => ({ ...s.p, revisions: s.current })),
+      [...fx.values()],
+      base,
+      d,
+    );
+  }
+  let previous = advance(new Date(+new Date(from) - 86400000).toISOString().slice(0, 10));
+  const output: (Omit<ReturnType<typeof totals>, 'items'> & {
+    balanceChange: string | null;
+    fxChange: string | null;
+  })[] = [];
+  let balance = new Decimal(0),
+    exchange = new Decimal(0),
+    complete = true;
+  for (let time = +new Date(from); time <= +new Date(to); time += 86400000) {
+    const d = new Date(time).toISOString().slice(0, 10),
+      value = advance(d);
+    if (previous.complete && value.complete) {
+      let revalued = new Decimal(0);
+      for (const item of previous.items) {
+        const rate = item.currency === base ? new Decimal(1) : fx.get(item.currency)?.rate;
+        const v = new Decimal(item.amount).mul(rate?.toString() || '0');
+        revalued = revalued.plus(item.side === 'asset' ? v : v.neg());
+      }
+      exchange = exchange.plus(revalued.minus(previous.net));
+      balance = balance.plus(new Decimal(value.net).minus(revalued));
+    } else complete = false;
+    previous = value;
+    const next = new Date(time + 86400000);
+    if (
+      grain === 'day' ||
+      d === to ||
+      (grain === 'week' ? next.getUTCDay() === 1 : next.getUTCDate() === 1)
+    ) {
+      const { items, ...total } = value;
+      output.push({
+        ...total,
+        balanceChange: complete ? balance.toFixed(2) : null,
+        fxChange: complete ? exchange.toFixed(2) : null,
+      });
+      balance = new Decimal(0);
+      exchange = new Decimal(0);
+      complete = true;
+    }
+  }
+  return output;
+}

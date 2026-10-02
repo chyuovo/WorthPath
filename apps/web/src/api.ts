@@ -55,8 +55,9 @@ export type Position = {
   notes: string;
   archived: boolean;
   hidden: boolean;
-  history: History[];
-  outgoing: { targetId: string }[];
+  converted: string | null;
+  rateDate: string | null;
+  outgoing: { targetId: string; target: { name: string; kind: string } }[];
 };
 export type Total = {
   date: string;
@@ -75,6 +76,7 @@ export type Overview = Total & {
   recent: History[];
   items: {
     id: string;
+    kind: string;
     converted: string | null;
     rateDate: string | null;
     currency: string;
@@ -107,8 +109,11 @@ export function money(v: string, currency: string) {
 
 export type Transfer = {
   id: string;
-  source: { name: string };
-  target: { name: string };
+  operation: string;
+  sourceId: string;
+  targetId: string;
+  source: { name: string; kind: string };
+  target: { name: string; kind: string };
   sourceCurrency: string;
   targetCurrency: string;
   amount: string;
@@ -126,3 +131,5 @@ export function requestUuid() {
   const hex = Array.from(bytes, (v) => v.toString(16).padStart(2, '0')).join('');
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
+
+export type PageResult<T> = { items: T[]; nextCursor: string | null; revealed: boolean };

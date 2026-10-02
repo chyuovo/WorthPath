@@ -1,3 +1,4 @@
+import { t as tr } from './i18n';
 import { useEffect, useState, useRef } from 'react';
 import { api } from './api';
 type Icon = { id: string; name: string; shared: boolean; source: string | null };
@@ -55,15 +56,15 @@ export function IconLibrary({
     setError('');
     setNotice('');
     if (!image) {
-      setError('请选择图片');
+      setError(tr('请选择图片'));
       return;
     }
     if (!name.trim() || (shared && (!/\p{Script=Han}/u.test(name) || !confirmed))) {
-      setError('请填写名称；共享图标须含中文并确认公开');
+      setError(tr('请填写名称；共享图标须含中文并确认公开'));
       return;
     }
     if (image.size > 2 * 1024 * 1024) {
-      setError('图片不能超过 2 MB');
+      setError(tr('图片不能超过 2 MB'));
       return;
     }
     setBusy(true);
@@ -79,10 +80,12 @@ export function IconLibrary({
         credentials: 'same-origin',
       });
       const v = await res.json();
-      if (!res.ok) throw Error(v.message || '上传失败');
+      if (!res.ok) throw Error(v.message || tr('上传失败'));
       if (picker) select(v.id);
       setNotice(
-        shared ? '图标已发布，所有登录用户均可搜索和使用' : '图标已存入我的图标，仅自己可见',
+        shared
+          ? tr('图标已发布，所有登录用户均可搜索和使用')
+          : tr('图标已存入我的图标，仅自己可见'),
       );
       setName('');
       setConfirmed(false);
@@ -99,7 +102,7 @@ export function IconLibrary({
   return (
     <section
       className="icon-library"
-      aria-label="账户图标库"
+      aria-label={tr('账户图标库')}
       onKeyDown={(e) => {
         if (
           e.key === 'Enter' &&
@@ -109,31 +112,31 @@ export function IconLibrary({
           e.preventDefault();
       }}
     >
-      <h2>{picker ? '选择账户图标' : '图标库'}</h2>
+      <h2>{picker ? tr('选择账户图标') : tr('图标库')}</h2>
       <p className="muted">
-        搜索共享图标和我的图标，选择后可在多个账户复用。直接上传默认仅自己可见。
+        {tr('搜索共享图标和我的图标，选择后可在多个账户复用。直接上传默认仅自己可见。')}
       </p>
       {picker && (
         <div className="icon-selection">
           {selected ? (
             <>
-              <img src={iconUrl(selected)} alt="当前账户图标" />
-              <span>已选择图标</span>
+              <img src={iconUrl(selected)} alt={tr('当前账户图标')} />
+              <span>{tr('已选择图标')}</span>
               <button type="button" className="text" onClick={() => select('')}>
-                移除图标
+                {tr('移除图标')}
               </button>
             </>
           ) : (
-            <span>使用默认账户图标</span>
+            <span>{tr('使用默认账户图标')}</span>
           )}
         </div>
       )}
       <label>
-        搜索图标名称
+        {tr('搜索图标名称')}
         <input
           type="search"
           value={q}
-          placeholder="例如：工商银行、支付宝"
+          placeholder={tr('例如：工商银行、支付宝')}
           onChange={(e) => {
             search(e.target.value);
             setPage(1);
@@ -142,7 +145,7 @@ export function IconLibrary({
         />
       </label>
       {loading ? (
-        <p role="status">正在加载图标…</p>
+        <p role="status">{tr('正在加载图标…')}</p>
       ) : (
         <>
           <div className="icon-grid">
@@ -157,27 +160,30 @@ export function IconLibrary({
                 >
                   <img src={iconUrl(i.id)} alt="" loading="lazy" />
                   <span>{i.name}</span>
-                  <small>{i.shared ? '共享' : '仅自己'}</small>
+                  <small>{i.shared ? tr('共享') : tr('仅自己')}</small>
                 </button>
               ) : (
                 <div className="icon-option" key={i.id}>
                   <img src={iconUrl(i.id)} alt="" loading="lazy" />
                   <span>{i.name}</span>
-                  <small>{i.shared ? '共享' : '仅自己'}</small>
+                  <small>{i.shared ? tr('共享') : tr('仅自己')}</small>
                 </div>
               ),
             )}
           </div>
-          {!items.length && <p>没有匹配图标，可以在下方上传。</p>}
+          {!items.length && <p>{tr('没有匹配图标，可以在下方上传。')}</p>}
           <div className="icon-pagination">
-            <span>共 {total} 个图标</span>
+            <span>
+              {tr('共')}
+              {total} {tr('个图标')}
+            </span>
             <button
               className="secondary"
               type="button"
               disabled={page === 1}
               onClick={() => setPage((n) => n - 1)}
             >
-              上一页
+              {tr('上一页')}
             </button>
             <button
               className="secondary"
@@ -185,24 +191,24 @@ export function IconLibrary({
               disabled={page * 60 >= total}
               onClick={() => setPage((n) => n + 1)}
             >
-              下一页
+              {tr('下一页')}
             </button>
           </div>
         </>
       )}
       {onSelect && (
         <button type="button" className="primary" onClick={() => onSelect(selected)}>
-          应用所选图标
+          {tr('应用所选图标')}
         </button>
       )}
       <details className="icon-upload">
-        <summary>上传我的图标 / 导入共享图标</summary>
+        <summary>{tr('上传我的图标 / 导入共享图标')}</summary>
         <label>
-          图标名称（共享时必须含中文）
+          {tr('图标名称（共享时必须含中文）')}
           <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} />
         </label>
         <label>
-          图片文件（PNG、JPG、WebP，最大 2 MB）
+          {tr('图片文件（PNG、JPG、WebP，最大 2 MB）')}
           <input ref={file} type="file" accept="image/png,image/jpeg,image/webp" />
         </label>
         <label className="check-line">
@@ -214,7 +220,7 @@ export function IconLibrary({
               setConfirmed(false);
             }}
           />
-          发布到共享图标库
+          {tr('发布到共享图标库')}
         </label>
         {shared && (
           <label className="check-line">
@@ -223,19 +229,19 @@ export function IconLibrary({
               checked={confirmed}
               onChange={(e) => setConfirmed(e.target.checked)}
             />
-            确认此图片可公开，所有用户均可搜索并复用；已发布图标会保留供他人使用
+            {tr('确认此图片可公开，所有用户均可搜索并复用；已发布图标会保留供他人使用')}
           </label>
         )}
         <button className="primary" type="button" disabled={busy} onClick={() => void upload()}>
-          {busy ? '正在上传…' : shared ? '导入共享图标' : '上传私有图标'}
+          {busy ? tr('正在上传…') : shared ? tr('导入共享图标') : tr('上传私有图标')}
         </button>
       </details>
       {error && (
         <p role="alert" className="icon-error">
-          {error}
+          {tr(error)}
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && <p role="status">{tr(notice)}</p>}
     </section>
   );
 }

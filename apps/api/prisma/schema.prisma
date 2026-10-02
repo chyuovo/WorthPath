@@ -5,15 +5,25 @@ datasource db {
   provider = "mysql"
   url = env("DATABASE_URL")
 }
+/// 用户及个人设置
 model User {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 登录用户名，唯一
   username String @unique @db.VarChar(64)
+  /// 登录密码的 bcrypt 哈希，不存储明文
   passwordHash String @db.VarChar(255)
+  /// 本位币代码
   baseCurrency String @default("CNY") @db.Char(3)
+  /// 隐藏菜单标识列表
   hiddenMenus String @default("") @db.VarChar(128)
+  /// 是否显示备注
   showNotes Boolean @default(true)
+  /// 无操作退出分钟数，0 表示关闭
   idleMinutes Int @default(30)
+  /// 记录创建时间，UTC
   createdAt DateTime @default(now())
+  /// 记录更新时间，UTC
   updatedAt DateTime @updatedAt
   positions Position[]
   rates ExchangeRate[]
@@ -21,32 +31,55 @@ model User {
   icons Icon[]
   transfers Transfer[]
 }
+/// 登录会话与隐藏项目查看授权
 model Session {
+  /// 随机会话令牌的 SHA-256 摘要
   id String @id @db.Char(64)
+  /// 所属用户标识，用于数据隔离
   userId String @db.Char(36)
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  /// 会话过期时间，UTC
   expiresAt DateTime
+  /// 最后有效交互时间，UTC
   lastActivity DateTime @default(now())
+  /// 隐藏项目授权截止时间，UTC；空表示未解锁
   revealUntil DateTime?
+  /// 已下载备份内容的 SHA-256 摘要
   backupDigest String? @db.Char(64)
+  /// 备份清空确认凭据截止时间，UTC
   backupExpiresAt DateTime?
   @@index([userId])
 }
+/// 持有项目：账户、独立资产和借入借出债务
 model Position {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 备份导入来源项目标识，用于重复导入识别
   importedFromId String? @db.Char(36)
+  /// 所属用户标识，用于数据隔离
   userId String @db.Char(36)
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  /// 项目类型：account 账户、asset 独立资产、debt 债务
   kind String @db.VarChar(16)
+  /// 统计方向：asset 资产或借出应收、liability 负债或借入应付
   side String @db.VarChar(16)
+  /// 显示名称
   name String @db.VarChar(100)
+  /// 项目分类代码
   category String @db.VarChar(40)
+  /// 原始币种代码
   currency String @db.Char(3)
+  /// 用户备注，原文保留
   notes String @db.Text
+  /// 是否归档；归档项目仍计入总额
   archived Boolean @default(false)
+  /// 是否隐藏；未解锁时不参与可见范围统计
   hidden Boolean @default(false)
+  /// 记录创建时间，UTC
   createdAt DateTime @default(now())
+  /// 记录更新时间，UTC
   updatedAt DateTime @updatedAt
+  /// 关联账户图标标识
   iconId String? @db.Char(36)
   icon Icon? @relation(fields:[iconId],references:[id],onDelete:SetNull)
   revisions Revision[]
@@ -57,73 +90,123 @@ model Position {
   @@index([userId,kind])
   @@unique([userId,importedFromId])
 }
+/// 余额历史：金额为变更后的绝对余额
 model Revision {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 数据库自增唯一顺序，同业务时间按此排序
   sequence Int @unique @default(autoincrement())
+  /// 所属持有项目标识
   positionId String @db.Char(36)
   position Position @relation(fields:[positionId],references:[id],onDelete:Cascade)
+  /// 变更后的原币绝对余额，不是收支增量，禁止对全部历史求和
   amount Decimal @db.Decimal(24,8)
+  /// 北京时间业务时间对应的 UTC，精确到分钟
   effectiveDate DateTime @db.DateTime(3)
+  /// 用户备注，原文保留
   notes String @db.Text
+  /// 变更原因：初始、余额、估值、转账或借贷配对操作
   reason String @db.VarChar(20)
+  /// 记录创建时间，UTC
   createdAt DateTime @default(now())
+  /// 记录更新时间，UTC
   updatedAt DateTime @updatedAt
-  @@index([positionId,effectiveDate])
+  @@index([positionId,effectiveDate,sequence])
+  @@index([positionId,reason,effectiveDate,sequence])
 }
+/// 项目关联关系，不参与金额求和
 model PositionLink {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 关联来源项目标识，通常为债务
   sourceId String @db.Char(36)
+  /// 关联目标项目标识，通常为账户或资产
   targetId String @db.Char(36)
   source Position @relation("Source",fields:[sourceId],references:[id],onDelete:Cascade)
   target Position @relation("Target",fields:[targetId],references:[id],onDelete:Cascade)
   @@unique([sourceId,targetId])
 }
+/// 用户原币兑本位币的历史汇率
 model ExchangeRate {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 所属用户标识，用于数据隔离
   userId String @db.Char(36)
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  /// 原始币种代码
   currency String @db.Char(3)
+  /// 本位币代码
   baseCurrency String @db.Char(3)
+  /// 汇率业务日期
   date DateTime @db.Date
+  /// 每单位原币对应的本位币金额
   rate Decimal @db.Decimal(24,12)
+  /// 汇率来源标识，保留已有历史来源
   source String @db.VarChar(30)
   @@unique([userId,currency,baseCurrency,date])
 }
 
+/// 可复用账户图标
 model Icon {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 上传用户标识；空可表示系统图标或原用户已删除
   ownerId String? @db.Char(36)
   owner User? @relation(fields:[ownerId],references:[id],onDelete:SetNull)
+  /// 显示名称
   name String @db.VarChar(100)
+  /// 是否公开共享给已登录用户
   shared Boolean @default(false)
+  /// 规范化图标内容的 SHA-256 摘要
   hash String @db.Char(64)
+  /// 规范化静态 PNG 图片二进制
   data Bytes @db.MediumBlob
+  /// 可选公开来源网址
   source String? @db.VarChar(500)
+  /// 记录创建时间，UTC
   createdAt DateTime @default(now())
   positions Position[]
   @@unique([ownerId,hash,shared])
   @@index([shared,name])
 }
 
+/// 资金往来及账户与债务的双边配对记账
 model Transfer {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 备份导入来源项目标识，用于重复导入识别
   importedFromId String? @db.Char(36)
+  /// 所属用户标识，用于数据隔离
   userId String @db.Char(36)
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  /// 来源资产账户标识
   sourceId String @db.Char(36)
+  /// 目标账户或债务标识
   targetId String @db.Char(36)
   source Position @relation("TransferSource",fields:[sourceId],references:[id],onDelete:Cascade)
   target Position @relation("TransferTarget",fields:[targetId],references:[id],onDelete:Cascade)
+  /// 来源账户配对余额历史标识
   sourceRevisionId String @unique @db.Char(36)
+  /// 目标项目配对余额历史标识
   targetRevisionId String @unique @db.Char(36)
+  /// 来源账户币种
   sourceCurrency String @db.Char(3)
+  /// 目标项目币种
   targetCurrency String @db.Char(3)
+  /// 本次来源账户本金金额，不是变更后余额
   amount Decimal @db.Decimal(24,8)
+  /// 本次目标到账金额或债务本金金额
   received Decimal @db.Decimal(24,8)
+  /// 来源币种手续费；负数表示优惠
   fee Decimal @db.Decimal(24,8)
+  /// 北京时间业务时间对应的 UTC，精确到分钟
   effectiveDate DateTime @db.DateTime(3)
+  /// 用户备注，原文保留
   notes String @db.Text
+  /// 操作类型：transfer 转账、borrow 借入、lend 借出、collect 收款、repay 还款
+  operation String @default("transfer") @db.VarChar(16)
+  /// 记录创建时间，UTC
   createdAt DateTime @default(now())
   @@unique([userId,importedFromId])
-  @@index([userId,effectiveDate])
+  @@index([userId,effectiveDate,id])
 }

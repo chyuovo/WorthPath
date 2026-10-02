@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { history, overview, totals, type Holding, type Rate } from '../src/calculation';
+import { history, overview, totals, trend, type Holding, type Rate } from '../src/calculation';
 import { positionInput, date, amount, businessDate, toBusinessDate } from '../src/validation';
 import { validateBackup } from '../src/backup';
 import { RatesService } from '../src/rates';
@@ -43,6 +43,29 @@ const rate = (value: string, day: string): Rate => ({
   date: new Date(day),
   rate: value,
   source: 'manual',
+});
+test('bounded replay seeds the range, preserves same-time order, FX attribution and missing rates', () => {
+  const a = p('asset', 'USD');
+  a.revisions = [
+    { ...rev('110', '2026-09-02'), sequence: 4 },
+    { ...rev('100', '2026-08-31'), sequence: 1 },
+    { ...rev('105', '2026-09-02'), sequence: 3 },
+  ];
+  const rates = [rate('7', '2026-08-31'), rate('8', '2026-09-02')];
+  const rows = trend([a], rates, 'CNY', '2026-09-01', '2026-09-03');
+  assert.equal(rows[0].net, '700.00');
+  assert.equal(rows[1].fxChange, '100.00');
+  assert.equal(rows[1].balanceChange, '80.00');
+  assert.equal(rows[2].net, '880.00');
+  assert.equal('items' in rows[0], false);
+  const sampled = trend([a], rates, 'CNY', '2026-09-01', '2026-09-03', 'month');
+  assert.equal(sampled.length, 1);
+  assert.equal(sampled[0].fxChange, '100.00');
+  assert.equal(sampled[0].balanceChange, '80.00');
+  const missing = trend([a], [rate('8', '2026-09-02')], 'CNY', '2026-09-01', '2026-09-03');
+  assert.equal(missing[0].complete, false);
+  assert.equal(missing[1].fxChange, null);
+  assert.equal(missing[2].balanceChange, '0.00');
 });
 test('decimal totals and liability sign', () => {
   const a = p(),

@@ -1,5 +1,7 @@
 # WorthPath 首版设计
 
+2026-10-02 更新：查询、历史分页、趋势重放、借入借出联动及三语言的当前实现和实测见 [性能与联动验收](performance.md)。以下首版设计中的历史 ZIP v3/v4 说明保留作格式沿革；当前导出为 v6，兼容读取 v3/v4/v5/v6 ZIP 和旧 JSON。
+
 NestJS API、React/Vite 前端和 MySQL；同源 /api，开发环境由 Vite 代理。
 
 用户拥有持有项目 Position（account/asset/debt）、汇率及登录会话。账户独立保留 asset/liability 属性；信用卡与贷款固定为负债。债务可链接到多个同用户项目，链接不参与求和。每个金额均为非负原币余额，负债按 side 减去。
