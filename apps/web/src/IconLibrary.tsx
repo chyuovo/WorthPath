@@ -5,9 +5,11 @@ export const iconUrl = (id: string) => '/api/icons/' + encodeURIComponent(id) + 
 export function IconLibrary({
   initialId,
   picker = false,
+  onSelect,
 }: {
   initialId?: string | null;
   picker?: boolean;
+  onSelect?: (id: string) => void;
 }) {
   const [selected, select] = useState(initialId || ''),
     [q, search] = useState(''),
@@ -113,7 +115,6 @@ export function IconLibrary({
       </p>
       {picker && (
         <div className="icon-selection">
-          <input type="hidden" name="iconId" value={selected} />
           {selected ? (
             <>
               <img src={iconUrl(selected)} alt="当前账户图标" />
@@ -188,6 +189,11 @@ export function IconLibrary({
             </button>
           </div>
         </>
+      )}
+      {onSelect && (
+        <button type="button" className="primary" onClick={() => onSelect(selected)}>
+          应用所选图标
+        </button>
       )}
       <details className="icon-upload">
         <summary>上传我的图标 / 导入共享图标</summary>

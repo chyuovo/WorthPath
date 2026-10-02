@@ -16,6 +16,7 @@ const files = [
   'links.json',
   'rates.json',
   'icons.json',
+  'transfers.json',
 ] as const;
 const sha = (s: Buffer | string) => createHash('sha256').update(s).digest('hex');
 export function packBackup(b: Backup) {
@@ -32,6 +33,7 @@ export function packBackup(b: Backup) {
     'links.json': b.links,
     'rates.json': b.rates,
     'icons.json': b.icons || [],
+    'transfers.json': b.transfers || [],
   };
   const contents = Object.fromEntries(
     files.map((name) => [name, JSON.stringify(data[name], null, 2)]),
@@ -39,7 +41,7 @@ export function packBackup(b: Backup) {
   contents['manifest.json'] = JSON.stringify(
     {
       format: 'worthpath',
-      version: 4,
+      version: 5,
       exportedAt: b.exportedAt,
       files: files.map((name) => ({ name, sha256: sha(contents[name]) })),
     },
@@ -114,18 +116,22 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const manifest = z
       .object({
         format: z.literal('worthpath'),
-        version: z.union([z.literal(3), z.literal(4)]),
+        version: z.union([z.literal(3), z.literal(4), z.literal(5)]),
         exportedAt: z.iso.datetime(),
         files: z
           .array(
             z.object({ name: z.enum(files), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
           )
-          .min(files.length - 1)
+          .min(files.length - 2)
           .max(files.length),
       })
       .strict()
       .parse(parse('manifest.json'));
-    const expected = manifest.version === 3 ? files.filter((f) => f !== 'icons.json') : [...files];
+    const expected = files.filter(
+      (f) =>
+        (manifest.version >= 4 || f !== 'icons.json') &&
+        (manifest.version >= 5 || f !== 'transfers.json'),
+    );
     if (
       contents.size !== expected.length + 1 ||
       new Set(manifest.files.map((f) => f.name)).size !== expected.length ||
@@ -137,7 +143,12 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
       .object({
         baseCurrency: z.string(),
         preferences: z
-          .object({ showSidebar: z.boolean(), idleMinutes: z.number().int().min(0).max(1440) })
+          .object({
+            showSidebar: z.boolean().optional(),
+            hiddenMenus: z.array(z.string()).optional(),
+            showNotes: z.boolean().optional(),
+            idleMinutes: z.number().int().min(0).max(1440),
+          })
           .strict()
           .optional(),
       })
@@ -169,7 +180,8 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
       positions: positions.map((p) => ({ ...p, revisions: grouped.get(p.id) || [] })),
       links: parse('links.json'),
       rates: parse('rates.json'),
-      ...(manifest.version === 4 ? { icons: parse('icons.json') } : {}),
+      ...(manifest.version >= 5 ? { transfers: parse('transfers.json') } : {}),
+      ...(manifest.version >= 4 ? { icons: parse('icons.json') } : {}),
     };
   } catch {
     throw new BadRequestException(

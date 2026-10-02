@@ -53,7 +53,7 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
             'Content-Type': 'application/json',
             Origin: 'https://untrusted.invalid',
           },
-          body: JSON.stringify({ showSidebar: true }),
+          body: JSON.stringify({ hiddenMenus: [] }),
         })
       ).status,
       process.env.WEB_ORIGIN === '*' ? 200 : 403,

@@ -20,7 +20,8 @@ export async function api<T>(path: string, method = 'GET', data?: unknown): Prom
 export type User = {
   username: string;
   baseCurrency: string;
-  showSidebar: boolean;
+  hiddenMenus: string[];
+  showNotes: boolean;
   idleMinutes: number;
   revealed?: boolean;
   revealUntil?: string | null;
@@ -102,4 +103,26 @@ export const displayTime = (s: string) => s.replace('T', ' ');
 export function money(v: string, currency: string) {
   const [whole, frac] = v.split('.');
   return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac !== undefined ? '.' + frac : ''}`;
+}
+
+export type Transfer = {
+  id: string;
+  source: { name: string };
+  target: { name: string };
+  sourceCurrency: string;
+  targetCurrency: string;
+  amount: string;
+  received: string;
+  fee: string;
+  date: string;
+  notes: string;
+};
+
+// getRandomValues also works when a development tunnel uses plain HTTP.
+export function requestUuid() {
+  const bytes = crypto.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 15) | 64;
+  bytes[8] = (bytes[8] & 63) | 128;
+  const hex = Array.from(bytes, (v) => v.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }

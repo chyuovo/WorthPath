@@ -236,11 +236,12 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
     assert.equal(await db.position.count({ where: { userId: b.id } }), 3);
     assert.equal((await call('/auth/me', 'GET', undefined, a.cookie)).status, 200);
     assert.equal(
-      (await call('/settings', 'PATCH', { showSidebar: false, idleMinutes: 1 }, a.cookie)).status,
+      (await call('/settings', 'PATCH', { hiddenMenus: ['asset'], idleMinutes: 1 }, a.cookie))
+        .status,
       200,
     );
     const prefs = (await call('/settings', 'GET', undefined, a.cookie)).data;
-    assert.equal(prefs.showSidebar, false);
+    assert.deepEqual(prefs.hiddenMenus, ['asset']);
     assert.equal(prefs.idleMinutes, 1);
     assert.equal((await call('/settings', 'PATCH', { idleMinutes: -1 }, a.cookie)).status, 400);
     await db.session.update({

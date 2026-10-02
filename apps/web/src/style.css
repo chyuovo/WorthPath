@@ -6,6 +6,111 @@
   font-weight: 400;
   line-height: 1.6;
 }
+/* Keep native hidden panels hidden even when component classes use grid/flex. */
+[hidden] {
+  display: none !important;
+}
+.settings-grid {
+  grid-template-columns: 1fr !important;
+}
+.settings-switch {
+  max-width: 560px;
+  margin-bottom: 20px;
+}
+.settings-switch label,
+.transfer-form label {
+  display: grid;
+  gap: 8px;
+}
+.menu-preferences,
+.form-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0 18px;
+}
+.transfer-form {
+  display: grid;
+  gap: 16px;
+}
+.account-icon-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 14px 0 22px;
+}
+.account-icon-field img {
+  width: 42px;
+  height: 42px;
+  object-fit: contain;
+}
+.icon-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: #19392d70;
+  backdrop-filter: blur(5px);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.icon-picker-dialog {
+  width: min(800px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+  background: #f7faf8;
+  border-radius: 20px;
+  box-shadow: 0 20px 60px #14342940;
+}
+.icon-option {
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 12px;
+  transition: background 0.15s;
+}
+button.icon-option:hover {
+  background: #e7f1eb !important;
+}
+.icon-option.selected {
+  background: #dceee4 !important;
+  box-shadow: inset 0 0 0 2px #388569;
+}
+.position-icon {
+  background: transparent !important;
+}
+.transfer-list {
+  display: grid;
+  gap: 12px;
+  margin: 20px 0 30px;
+}
+.transfer-list article {
+  border: 1px solid #dce5df;
+  border-radius: 12px;
+  padding: 16px;
+}
+.transfer-list article > div {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.transfer-list p {
+  margin: 8px 0 0;
+}
+@media (max-width: 600px) {
+  .menu-preferences,
+  .form-columns {
+    grid-template-columns: 1fr;
+  }
+  .icon-picker-backdrop {
+    padding: 10px;
+  }
+  .icon-picker-dialog {
+    padding: 18px;
+    max-height: 94vh;
+    border-radius: 14px;
+  }
+}
 * {
   box-sizing: border-box;
 }
@@ -995,4 +1100,80 @@ footer {
   object-fit: contain;
   vertical-align: middle;
   margin-right: 12px;
+}
+
+.danger-text {
+  color: #b42318 !important;
+}
+.clear-confirm-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.switch-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+.switch-row > span:first-child {
+  flex: 1;
+}
+.switch-row input[role='switch'] {
+  appearance: none;
+  width: 44px;
+  height: 26px;
+  min-height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 20px;
+  background: #c8d0cd;
+  cursor: pointer;
+  position: relative;
+  margin: 0;
+  transition: background 0.2s;
+  flex-shrink: 0;
+}
+.switch-row input[role='switch']::after {
+  content: '';
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  left: 3px;
+  top: 3px;
+  background: white;
+  box-shadow: 0 1px 3px #0002;
+  transition: transform 0.2s;
+}
+.switch-row input[role='switch']:checked {
+  background: #167b5b;
+}
+.switch-row input[role='switch']:checked::after {
+  transform: translateX(18px);
+}
+.switch-row input[role='switch']:focus-visible {
+  outline: 3px solid #a4d8c1;
+  outline-offset: 3px;
+}
+.switch-state {
+  min-width: 32px;
+  font-size: 13px;
+  color: #167b5b;
+}
+.switch-row input:not(:checked) + .switch-state {
+  font-size: 0;
+  color: #68766f;
+}
+.switch-row input:not(:checked) + .switch-state::after {
+  content: '隐藏';
+  font-size: 13px;
+}
+.notes-hidden .note-field,
+.notes-hidden .notes-display,
+.notes-hidden .notes-cell,
+.notes-hidden label:has(.note-input) {
+  display: none !important;
 }

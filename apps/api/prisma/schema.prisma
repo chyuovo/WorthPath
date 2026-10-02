@@ -10,7 +10,8 @@ model User {
   username String @unique @db.VarChar(64)
   passwordHash String @db.VarChar(255)
   baseCurrency String @default("CNY") @db.Char(3)
-  showSidebar Boolean @default(true)
+  hiddenMenus String @default("") @db.VarChar(128)
+  showNotes Boolean @default(true)
   idleMinutes Int @default(30)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -18,6 +19,7 @@ model User {
   rates ExchangeRate[]
   sessions Session[]
   icons Icon[]
+  transfers Transfer[]
 }
 model Session {
   id String @id @db.Char(64)
@@ -50,6 +52,8 @@ model Position {
   revisions Revision[]
   outgoing PositionLink[] @relation("Source")
   incoming PositionLink[] @relation("Target")
+  transfersOut Transfer[] @relation("TransferSource")
+  transfersIn Transfer[] @relation("TransferTarget")
   @@index([userId,kind])
   @@unique([userId,importedFromId])
 }
@@ -99,4 +103,27 @@ model Icon {
   positions Position[]
   @@unique([ownerId,hash,shared])
   @@index([shared,name])
+}
+
+model Transfer {
+  id String @id @default(uuid()) @db.Char(36)
+  importedFromId String? @db.Char(36)
+  userId String @db.Char(36)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  sourceId String @db.Char(36)
+  targetId String @db.Char(36)
+  source Position @relation("TransferSource",fields:[sourceId],references:[id],onDelete:Cascade)
+  target Position @relation("TransferTarget",fields:[targetId],references:[id],onDelete:Cascade)
+  sourceRevisionId String @unique @db.Char(36)
+  targetRevisionId String @unique @db.Char(36)
+  sourceCurrency String @db.Char(3)
+  targetCurrency String @db.Char(3)
+  amount Decimal @db.Decimal(24,8)
+  received Decimal @db.Decimal(24,8)
+  fee Decimal @db.Decimal(24,8)
+  effectiveDate DateTime @db.DateTime(3)
+  notes String @db.Text
+  createdAt DateTime @default(now())
+  @@unique([userId,importedFromId])
+  @@index([userId,effectiveDate])
 }

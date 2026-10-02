@@ -156,10 +156,17 @@ export class AuthController {
     return { username: user.username, baseCurrency: user.baseCurrency };
   }
   @Get('auth/me') async me(@Req() req: UserRequest) {
-    return this.db.user.findUniqueOrThrow({
+    const user = await this.db.user.findUniqueOrThrow({
       where: { id: req.userId },
-      select: { username: true, baseCurrency: true, showSidebar: true, idleMinutes: true },
+      select: {
+        username: true,
+        baseCurrency: true,
+        hiddenMenus: true,
+        showNotes: true,
+        idleMinutes: true,
+      },
     });
+    return { ...user, hiddenMenus: user.hiddenMenus.split(',').filter(Boolean) };
   }
   @Post('auth/activity') async activity(@Req() r: UserRequest) {
     await this.db.session.update({

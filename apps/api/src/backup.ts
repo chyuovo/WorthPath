@@ -25,7 +25,15 @@ import { Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
 import { Database } from './database';
 import { UserRequest } from './auth';
-import { positionInput, positionMeta, currency, revisionInput, rateInput } from './validation';
+import {
+  positionInput,
+  positionMeta,
+  currency,
+  revisionInput,
+  rateInput,
+  hiddenMenus,
+  transferInput,
+} from './validation';
 import { createHash } from 'node:crypto';
 import { toBusinessDate } from './validation';
 import { iconName, validateStoredIcon } from './icons';
@@ -65,7 +73,12 @@ const backupSchema = z
     baseCurrency: currency,
     currencies: z.array(currency).max(10),
     preferences: z
-      .object({ showSidebar: z.boolean(), idleMinutes: z.number().int().min(0).max(1440) })
+      .object({
+        showSidebar: z.boolean().optional(),
+        hiddenMenus: hiddenMenus.optional(),
+        showNotes: z.boolean().optional(),
+        idleMinutes: z.number().int().min(0).max(1440),
+      })
       .strict()
       .optional(),
     icons: z
@@ -79,6 +92,19 @@ const backupSchema = z
             hash: z.string().regex(/^[a-f0-9]{64}$/),
           })
           .strict(),
+      )
+      .optional(),
+    transfers: z
+      .array(
+        transferInput.safeExtend({
+          id: z.string().uuid(),
+          importedFromId: z.string().uuid().nullable().optional(),
+          sourceRevisionId: z.string().uuid(),
+          targetRevisionId: z.string().uuid(),
+          sourceCurrency: currency,
+          targetCurrency: currency,
+          createdAt: timestamp,
+        }),
       )
       .optional(),
     positions: z.array(record),
@@ -122,6 +148,57 @@ export function validateBackup(raw: unknown) {
     }
     if (!b.currencies.includes(p.currency)) throw new BadRequestException('币种清单不完整');
   }
+  const transferIds = new Set<string>(),
+    usedRevisions = new Set<string>();
+  for (const t of b.transfers || []) {
+    const source = ids.get(t.sourceId),
+      target = ids.get(t.targetId);
+    const origin = t.importedFromId || t.id;
+    if (
+      transferIds.has(origin) ||
+      !source ||
+      !target ||
+      source.kind !== 'account' ||
+      target.kind !== 'account' ||
+      source.side !== 'asset' ||
+      target.side !== 'asset' ||
+      source.currency !== t.sourceCurrency ||
+      target.currency !== t.targetCurrency
+    )
+      throw new BadRequestException('转账关联无效');
+    transferIds.add(origin);
+    if (t.sourceCurrency === t.targetCurrency && !new Decimal(t.amount).eq(t.received))
+      throw new BadRequestException('同币种转账金额不一致');
+    for (const [p, revId, reason, delta] of [
+      [source, t.sourceRevisionId, 'transfer_out', new Decimal(t.amount).plus(t.fee).neg()],
+      [target, t.targetRevisionId, 'transfer_in', new Decimal(t.received)],
+    ] as const) {
+      const ordered = [...p.revisions].sort(
+        (a, b) =>
+          a.date.localeCompare(b.date) ||
+          (a.sequence || 0) - (b.sequence || 0) ||
+          a.createdAt.localeCompare(b.createdAt),
+      );
+      const index = ordered.findIndex((r) => r.id === revId),
+        current = ordered[index];
+      if (
+        usedRevisions.has(revId) ||
+        index < 1 ||
+        !current ||
+        current.reason !== reason ||
+        current.date !== t.date ||
+        !new Decimal(current.amount).minus(ordered[index - 1].amount).eq(delta)
+      )
+        throw new BadRequestException('转账历史与双方金额不一致');
+      usedRevisions.add(revId);
+    }
+  }
+  if (
+    b.positions.some((p) =>
+      p.revisions.some((r) => r.reason.startsWith('transfer_') && !usedRevisions.has(r.id)),
+    )
+  )
+    throw new BadRequestException('缺少配对转账记录');
   const links = new Set<string>();
   for (const l of b.links) {
     const s = ids.get(l.sourceId),
@@ -187,7 +264,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     const [user, ps, rates] = await Promise.all([
       client.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { baseCurrency: true, showSidebar: true, idleMinutes: true },
+        select: { baseCurrency: true, hiddenMenus: true, showNotes: true, idleMinutes: true },
       }),
       client.position.findMany({
         where: { userId },
@@ -234,12 +311,17 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         ],
       },
     });
+    const transfers = await client.transfer.findMany({ where: { userId } });
     return backupSchema.parse({
       format: 'worthpath',
       version: 2,
       exportedAt: new Date().toISOString(),
       baseCurrency: user.baseCurrency,
-      preferences: { showSidebar: user.showSidebar, idleMinutes: user.idleMinutes },
+      preferences: {
+        hiddenMenus: user.hiddenMenus.split(',').filter(Boolean),
+        showNotes: user.showNotes,
+        idleMinutes: user.idleMinutes,
+      },
       currencies: [
         ...new Set([
           user.baseCurrency,
@@ -253,6 +335,14 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         shared: i.shared,
         hash: i.hash,
         image: Buffer.from(i.data).toString('base64'),
+      })),
+      transfers: transfers.map(({ userId, effectiveDate, ...t }) => ({
+        ...t,
+        amount: t.amount.toString(),
+        received: t.received.toString(),
+        fee: t.fee.toString(),
+        date: businessTime(effectiveDate),
+        createdAt: t.createdAt.toISOString(),
       })),
       positions,
       links: ps.flatMap((p) =>
@@ -353,6 +443,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       (a.currency + a.baseCurrency + a.date).localeCompare(b.currency + b.baseCurrency + b.date),
     );
     data.currencies.sort();
+    data.transfers?.sort((a, b) => a.id.localeCompare(b.id));
     data.icons?.sort((a, b) => a.id.localeCompare(b.id));
     return createHash('sha256').update(JSON.stringify(data)).digest('hex');
   }
@@ -393,6 +484,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       revisions: b.positions.reduce((n, p) => n + p.revisions.length, 0),
       rates: b.rates.length,
       icons: (b.icons || []).length,
+      transfers: (b.transfers || []).length,
       baseCurrency: b.baseCurrency,
       currentBaseCurrency: existing.baseCurrency,
       message:
@@ -458,7 +550,8 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
           });
           iconMapping.set(i.id, row.id);
         }
-        const mapping = new Map<string, string>();
+        const mapping = new Map<string, string>(),
+          revisionMapping = new Map<string, string>();
         for (const p of b.positions) {
           const row = await tx.position.create({
             data: {
@@ -495,7 +588,37 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
             },
           });
           mapping.set(p.id, row.id);
+          const originals = [...p.revisions].sort(
+            (a, b) =>
+              a.date.localeCompare(b.date) ||
+              (a.sequence || 0) - (b.sequence || 0) ||
+              a.createdAt.localeCompare(b.createdAt),
+          );
+          const restored = await tx.revision.findMany({
+            where: { positionId: row.id },
+            orderBy: { sequence: 'asc' },
+          });
+          originals.forEach((v, i) => revisionMapping.set(v.id, restored[i].id));
         }
+        for (const t of b.transfers || [])
+          await tx.transfer.create({
+            data: {
+              userId: r.userId,
+              importedFromId: t.importedFromId || t.id,
+              sourceId: mapping.get(t.sourceId)!,
+              targetId: mapping.get(t.targetId)!,
+              sourceRevisionId: revisionMapping.get(t.sourceRevisionId)!,
+              targetRevisionId: revisionMapping.get(t.targetRevisionId)!,
+              sourceCurrency: t.sourceCurrency,
+              targetCurrency: t.targetCurrency,
+              amount: t.amount,
+              received: t.received,
+              fee: t.fee,
+              effectiveDate: toBusinessDate(t.date),
+              notes: t.notes,
+              createdAt: new Date(t.createdAt),
+            },
+          });
         for (const l of b.links)
           await tx.positionLink.create({
             data: { sourceId: mapping.get(l.sourceId)!, targetId: mapping.get(l.targetId)! },
@@ -516,7 +639,12 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         if (!ps.length && !rs.length)
           await tx.user.update({
             where: { id: r.userId },
-            data: { baseCurrency: b.baseCurrency, ...b.preferences },
+            data: {
+              baseCurrency: b.baseCurrency,
+              idleMinutes: b.preferences?.idleMinutes,
+              hiddenMenus: b.preferences?.hiddenMenus?.join(','),
+              showNotes: b.preferences?.showNotes,
+            },
           });
         return { ok: true, positions: b.positions.length };
       },

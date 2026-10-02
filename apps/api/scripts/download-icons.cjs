@@ -33,7 +33,7 @@ async function main() {
     source: banks.find((b) => b.name === name + '@3x.png')?.download_url,
   }));
   sources.push(
-    { name: '支付宝', source: 'https://i.alipayobjects.com/common/favicon/favicon.ico' },
+    { name: '支付宝', source: 'https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/alipay.svg' },
     { name: '微信', source: 'https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico' },
     { name: '京东金融', source: 'https://jr.jd.com/logo.png' },
   );
@@ -43,6 +43,9 @@ async function main() {
     const res = await fetch(item.source, { signal: AbortSignal.timeout(20000) });
     if (!res.ok) throw Error('Public icon download failed');
     const raw = Buffer.from(await res.arrayBuffer());
+    // Alipay's catalog SVG is an inverse mark. Mask within the glyph bounds to omit its frame.
+    const glyphPath = item.name === '支付宝' ? raw.toString().match(/<path d="([^"]+)"/)[1] : '';
+    const rasterSource = item.name === '支付宝' ? Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><defs><mask id="glyph"><rect x="1.5" y="3.17" width="22.3" height="17" fill="white"/><path d="${glyphPath}" fill="black"/></mask></defs><rect width="24" height="24" fill="#1677ff" mask="url(#glyph)"/></svg>`) : raw;
     const file =
       String(manifest.length + 1).padStart(2, '0') +
       (item.source.endsWith('.ico') ? '.ico' : '.png');
@@ -50,7 +53,7 @@ async function main() {
     else
       await fs.writeFile(
         path.join(dir, file),
-        await sharp(raw)
+        await sharp(rasterSource, { density: 768 })
           .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
           .png()
           .toBuffer(),

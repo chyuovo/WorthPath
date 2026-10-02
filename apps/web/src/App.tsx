@@ -33,6 +33,9 @@ import {
   type Total,
 } from './api';
 import './style.css';
+import { IconPicker } from './IconPicker';
+import { TransferForm } from './TransferForm';
+import type { Transfer } from './api';
 import { IconLibrary, iconUrl } from './IconLibrary';
 const labels: Record<string, string> = {
   overview: '资产总览',
@@ -77,7 +80,7 @@ function Currency({ value, onChange }: { value: string; onChange: (v: string) =>
 }
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="field">
+    <label className={label === '备注' ? 'field note-field' : 'field'}>
       <span>{label}</span>
       {children}
     </label>
@@ -101,7 +104,7 @@ function Modal({
     >
       <section role="dialog" aria-modal="true" aria-label={title} className="modal">
         <header>
-          <h2>{title}</h2>
+          <h2 className={title.includes('清空本账号数据') ? 'danger-text' : undefined}>{title}</h2>
           <button className="icon" aria-label="关闭" onClick={close}>
             <X size={20} />
           </button>
@@ -217,10 +220,14 @@ export default function App() {
       baseCurrency: string;
       currentBaseCurrency: string;
     } | null>(null);
-  const [clearStep, setClearStep] = useState(0);
+  const [clearStep, setClearStep] = useState(0),
+    [clearConfirmation, setClearConfirmation] = useState(0);
+  const [settingsSection, setSettingsSection] = useState('general'),
+    [transfers, setTransfers] = useState<Transfer[]>([]);
   const activityAt = useRef(0);
   function clearAccount() {
     setClearStep(0);
+    setClearConfirmation(0);
     activityAt.current = 0;
     sessionGeneration.current++;
     loadGeneration.current++;
@@ -228,6 +235,7 @@ export default function App() {
     setPositions([]);
     setOverview(null);
     setRates([]);
+    setTransfers([]);
     setFxStatus(null);
     setModal(null);
     setSelected(null);
@@ -249,7 +257,7 @@ export default function App() {
       request = ++loadGeneration.current;
     setLoading(true);
     try {
-      const [p, o, s] = await Promise.all([
+      const [p, o, s, t] = await Promise.all([
         api<Position[]>('/positions'),
         api<Overview>('/overview'),
         api<
@@ -258,6 +266,7 @@ export default function App() {
             fxStatus: { state: string; message: string; attemptedAt: string | null };
           }
         >('/settings'),
+        api<Transfer[]>('/transfers'),
       ]);
       if (session !== sessionGeneration.current || request !== loadGeneration.current) return;
       if (o.revealed !== !!s.revealed) {
@@ -272,8 +281,10 @@ export default function App() {
       setPositions(s.revealed ? p : p.filter((position) => !position.hidden));
       setOverview(o);
       setRates(s.rates);
+      setTransfers(t);
       setFxStatus(s.fxStatus);
       setUser(s);
+      setPage((current) => (s.hiddenMenus.includes(current) ? 'settings' : current));
     } catch (e) {
       if (session === sessionGeneration.current && request === loadGeneration.current) report(e);
     } finally {
@@ -514,16 +525,17 @@ export default function App() {
     ['history', HistoryIcon],
     ['settings', Settings],
   ] as const;
+  const visibleNav = nav.filter(([key]) => !(user.hiddenMenus || []).includes(key));
   return (
-    <div className={'app' + (user.showSidebar === false ? ' sidebar-hidden' : '')}>
-      {user.showSidebar !== false && (
+    <div className={user.showNotes === false ? 'app notes-hidden' : 'app'}>
+      {
         <aside className="sidebar">
           <div className="brand">
             <span>W</span> WorthPath
           </div>
           <p className="nav-caption">我的资产空间</p>
-          <nav>
-            {nav.map(([key, Icon]) => (
+          <nav style={{ gridTemplateColumns: `repeat(${visibleNav.length}, 1fr)` }}>
+            {visibleNav.map(([key, Icon]) => (
               <button
                 key={key}
                 className={page === key ? 'active' : ''}
@@ -553,26 +565,10 @@ export default function App() {
             </button>
           </div>
         </aside>
-      )}
+      }
       <main>
         <header className="topbar">
           <span>个人财务 / {labels[page]}</span>
-          {user.showSidebar === false && (
-            <select
-              aria-label="页面导航"
-              value={page}
-              onChange={(e) => {
-                setPage(e.target.value);
-                setSelected(null);
-              }}
-            >
-              {nav.map(([key]) => (
-                <option key={key} value={key}>
-                  {labels[key]}
-                </option>
-              ))}
-            </select>
-          )}
           <div>
             <span className="currency-pill">本位币 {user.baseCurrency}</span>
             <button
@@ -621,7 +617,14 @@ export default function App() {
                     : '保留原币金额，追踪长期变化。'}
               </p>
             </div>
-            {['overview', 'account', 'asset', 'debt'].includes(page) && !p && newAction}
+            <div className="actions">
+              {page === 'account' && !p && (
+                <button className="secondary" onClick={() => setModal({ kind: 'transfer' })}>
+                  账户间转账
+                </button>
+              )}
+              {['overview', 'account', 'asset', 'debt'].includes(page) && !p && newAction}
+            </div>
           </div>
           {error && (
             <div className="notice error" role="alert">
@@ -808,7 +811,7 @@ export default function App() {
                           )
                         : '缺少汇率'}
                     </p>
-                    <p>{p.notes || '暂无备注'}</p>
+                    <p className="notes-display">{p.notes || '暂无备注'}</p>
                     <small>币种和资产负债属性创建后固定。归档项目仍计入总览。</small>
                   </div>
                   <div className="actions">
@@ -936,6 +939,28 @@ export default function App() {
             ))}
           {page === 'history' && (
             <section className="panel">
+              <h2>账户转账</h2>
+              {transfers.length ? (
+                <div className="transfer-list">
+                  {transfers.map((t) => (
+                    <article key={t.id}>
+                      <div>
+                        <strong>
+                          {t.source.name} → {t.target.name}
+                        </strong>
+                        <small>{displayTime(t.date)}</small>
+                      </div>
+                      <p>
+                        {money(t.amount, t.sourceCurrency)} → {money(t.received, t.targetCurrency)}{' '}
+                        · 手续费 {money(t.fee, t.sourceCurrency)}
+                      </p>
+                      {t.notes && <p className="muted notes-display">{t.notes}</p>}
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <p className="muted">暂无账户间转账记录。</p>
+              )}
               <h2>全部金额变化</h2>
               <p className="muted">原币绝对余额记录；负债减少即还款。选择项目可查看详情并更正。</p>
               <HistoryTable
@@ -951,13 +976,32 @@ export default function App() {
           )}
           {page === 'settings' && (
             <>
-              <section className="panel">
-                <IconLibrary />
+              <section className="settings-switch panel">
+                <label>
+                  设置分类
+                  <select
+                    value={settingsSection}
+                    onChange={(e) => setSettingsSection(e.target.value)}
+                  >
+                    <option value="general">个人与菜单设置</option>
+                    <option value="icons">图标库</option>
+                    <option value="rates">每日汇率</option>
+                    <option value="backup">备份与恢复</option>
+                    <option className="danger-text" value="clear">
+                      清空本账号数据
+                    </option>
+                  </select>
+                </label>
               </section>
-              <div className="settings-grid">
+              {settingsSection === 'icons' && (
                 <section className="panel">
+                  <IconLibrary />
+                </section>
+              )}
+              <div className="settings-grid">
+                <section className="panel" hidden={settingsSection !== 'general'}>
                   <div className="panel-title">
-                    <h2>本位币与个人设置</h2>
+                    <h2>个人与菜单设置</h2>
                     <button className="text" disabled={busy} onClick={() => void logout()}>
                       <LogOut size={16} />
                       退出登录
@@ -974,33 +1018,68 @@ export default function App() {
                         () =>
                           api('/settings', 'PATCH', {
                             baseCurrency: f.get('baseCurrency'),
-                            showSidebar: f.get('showSidebar') === 'true',
+                            hiddenMenus: ['overview', 'account', 'asset', 'debt', 'history'].filter(
+                              (key) => !f.has('menu_' + key),
+                            ),
                             idleMinutes: Number(f.get('idleMinutes')),
+                            showNotes: f.has('showNotes'),
                           }),
                         '个人设置已保存',
                       );
                     }}
                   >
-                    <Field label="左侧菜单栏">
-                      <select
-                        name="showSidebar"
-                        key={String(user.showSidebar)}
-                        defaultValue={String(user.showSidebar)}
-                      >
-                        <option value="true">显示</option>
-                        <option value="false">隐藏（顶部仍可切换页面）</option>
-                      </select>
-                    </Field>
-                    <Field label="无操作自动退出（分钟）">
+                    <p className="muted">
+                      选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。
+                    </p>
+                    <div className="menu-preferences">
+                      {['overview', 'account', 'asset', 'debt', 'history'].map((key) => (
+                        <label key={key} className="switch-row">
+                          <span>{labels[key]}</span>
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            aria-label={labels[key] + '显示'}
+                            name={'menu_' + key}
+                            key={key + String(user.hiddenMenus)}
+                            defaultChecked={!(user.hiddenMenus || []).includes(key)}
+                          />
+                          <span className="switch-state" aria-hidden="true">
+                            显示
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <label className="switch-row">
+                      <span>显示备注</span>
                       <input
-                        name="idleMinutes"
-                        type="number"
-                        min="0"
-                        max="1440"
-                        required
-                        defaultValue={user.idleMinutes}
-                        key={user.idleMinutes}
+                        type="checkbox"
+                        role="switch"
+                        name="showNotes"
+                        aria-label="显示备注"
+                        key={String(user.showNotes)}
+                        defaultChecked={user.showNotes !== false}
                       />
+                      <span className="switch-state" aria-hidden="true">
+                        显示
+                      </span>
+                    </label>
+                    <p className="muted">
+                      关闭后隐藏列表、详情及编辑表单中的备注，已有备注仍会保留在备份中。
+                    </p>
+                    <Field label="无操作自动退出（分钟）">
+                      <select
+                        name="idleMinutes"
+                        key={user.idleMinutes}
+                        defaultValue={user.idleMinutes}
+                      >
+                        {[...new Set([0, 5, 15, 30, 60, 120, 1440, user.idleMinutes])]
+                          .sort((a, b) => a - b)
+                          .map((n) => (
+                            <option key={n} value={n}>
+                              {n === 0 ? '关闭自动退出' : n + ' 分钟'}
+                            </option>
+                          ))}
+                      </select>
                     </Field>
                     <p className="muted">
                       0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。
@@ -1021,7 +1100,7 @@ export default function App() {
                     </button>
                   </form>
                 </section>
-                <section className="panel">
+                <section className="panel" hidden={settingsSection !== 'rates'}>
                   <h2>每日汇率</h2>
                   {fxStatus && (
                     <p
@@ -1056,7 +1135,7 @@ export default function App() {
                   <p className="muted">公共参考汇率可能与银行成交价不同；休市日日期可能滞后。</p>
                 </section>
               </div>
-              <section className="panel">
+              <section className="panel" hidden={settingsSection !== 'rates'}>
                 <h2>已保存汇率</h2>
                 {rates.length ? (
                   <div className="table-wrap">
@@ -1087,8 +1166,8 @@ export default function App() {
                   <Empty title="没有保存的外币汇率" body="添加外币项目后更新并保存自动汇率。" />
                 )}
               </section>
-              <section className="panel">
-                <h2>清空本账号数据</h2>
+              <section className="panel" hidden={settingsSection !== 'clear'}>
+                <h2 className="danger-text">清空本账号数据</h2>
                 <p className="muted">
                   清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏项目）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。
                 </p>
@@ -1122,14 +1201,8 @@ export default function App() {
                   <form
                     onSubmit={(e) => {
                       e.preventDefault();
-                      const confirmation = new FormData(e.currentTarget).get('confirmation');
-                      void act(async () => {
-                        await api('/backup/clear', 'POST', { confirmation });
-                        setClearStep(0);
-                        setSelected(null);
-                        setBackup(null);
-                        setPreview(null);
-                      }, '本账号数据已清空');
+                      if (new FormData(e.currentTarget).get('confirmation') === '确定清空')
+                        setClearConfirmation(1);
                     }}
                   >
                     <Field label="输入“确定清空”以确认">
@@ -1145,11 +1218,12 @@ export default function App() {
                     取消清空 / 重新下载
                   </button>
                 )}
-                <hr />
+              </section>
+              <section className="panel" hidden={settingsSection !== 'backup'}>
                 <h2>数据备份与恢复</h2>
                 <p className="muted">
                   ZIP 内分文件保存可读
-                  JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率及图标，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
+                  JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率、图标及配对转账，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。
                 </p>
                 <div className="actions">
                   <a
@@ -1246,245 +1320,322 @@ export default function App() {
           <footer>WorthPath · 记录你的积累，理解你的财富</footer>
         </div>
       </main>
+      {clearConfirmation > 0 && (
+        <Modal
+          key={clearConfirmation}
+          title={
+            clearConfirmation === 1 ? '第一次确认：清空本账号数据' : '第二次确认：清空本账号数据'
+          }
+          close={() => {
+            if (!busy) setClearConfirmation(0);
+          }}
+        >
+          <p className="danger-text">
+            {clearConfirmation === 1
+              ? '将清空本账号全部财务数据及私有图标，请确认备份已保存。'
+              : '这是最后一次确认。清空后只能通过备份恢复，其他用户的数据不受影响。'}
+          </p>
+          <p className="muted">登录账号、个人设置和已发布的共享图标会保留。</p>
+          <div className="modal-actions clear-confirm-actions">
+            {clearConfirmation === 1 ? (
+              <>
+                <button
+                  autoFocus
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setClearConfirmation(0)}
+                >
+                  取消清空
+                </button>
+                <button className="danger" disabled={busy} onClick={() => setClearConfirmation(2)}>
+                  继续清空
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="danger"
+                  disabled={busy}
+                  onClick={() =>
+                    void act(async () => {
+                      await api('/backup/clear', 'POST', { confirmation: '确定清空' });
+                      setClearConfirmation(0);
+                      setClearStep(0);
+                      setSelected(null);
+                      setBackup(null);
+                      setPreview(null);
+                    }, '本账号数据已清空')
+                  }
+                >
+                  {busy ? '正在清空…' : '最终确认清空'}
+                </button>
+                <button
+                  autoFocus
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setClearConfirmation(0)}
+                >
+                  取消清空
+                </button>
+              </>
+            )}
+          </div>
+          {error && (
+            <p role="alert" className="notice error">
+              {error}
+            </p>
+          )}
+        </Modal>
+      )}
       {modal && (
         <Modal
           title={
-            modal.kind === 'reveal'
-              ? '验证密码以显示隐藏资产'
-              : modal.kind === 'edit'
-                ? '编辑项目'
-                : modal.kind === 'revision'
-                  ? '更新余额 / 估值'
-                  : modal.kind === 'correction'
-                    ? '更正历史记录'
-                    : modal.kind === 'links'
-                      ? '管理债务关联'
-                      : '新增' + labels[modal.kind]
+            modal.kind === 'transfer'
+              ? '账户间转账'
+              : modal.kind === 'reveal'
+                ? '验证密码以显示隐藏资产'
+                : modal.kind === 'edit'
+                  ? '编辑项目'
+                  : modal.kind === 'revision'
+                    ? '更新余额 / 估值'
+                    : modal.kind === 'correction'
+                      ? '更正历史记录'
+                      : modal.kind === 'links'
+                        ? '管理债务关联'
+                        : '新增' + labels[modal.kind]
           }
           close={() => {
             if (!busy) setModal(null);
           }}
         >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              const f = new FormData(e.currentTarget),
-                v = Object.fromEntries(f.entries()),
-                kind = modal.kind,
-                mp = modal.p;
-              if (kind === 'reveal') {
-                void act(
-                  () => api('/auth/reveal', 'POST', { password: f.get('password') }),
-                  '隐藏项目已解锁 5 分钟',
-                );
-              } else if (kind === 'links') {
-                void act(
-                  () =>
-                    api('/positions/' + mp!.id + '/links', 'PUT', {
-                      targetIds: f.getAll('targetIds'),
-                    }),
-                  '关联已更新',
-                );
-              } else if (kind === 'revision' || kind === 'correction') {
-                void act(
-                  () =>
-                    api(
-                      '/positions/' + mp!.id + '/revisions' + (modal.h ? '/' + modal.h.id : ''),
-                      modal.h ? 'PUT' : 'POST',
-                      v,
-                    ),
-                  '金额历史已保存，总览已重新计算',
-                );
-              } else if (kind === 'edit') {
-                void act(
-                  () =>
-                    api('/positions/' + mp!.id, 'PATCH', {
-                      ...v,
-                      ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
-                      archived: mp!.archived,
-                      hidden: f.get('hidden') === 'on',
-                    }),
-                  '项目资料已保存',
-                );
-              } else {
-                const category = String(v.category),
-                  side =
-                    kind === 'debt' ||
-                    (kind === 'account' && ['credit_card', 'loan'].includes(category))
-                      ? 'liability'
-                      : 'asset';
-                void act(
-                  () =>
-                    api('/positions', 'POST', {
-                      ...v,
-                      ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
-                      kind,
-                      side,
-                      hidden: f.get('hidden') === 'on',
-                    }),
-                  '项目已添加',
-                );
+          {modal.kind === 'transfer' ? (
+            <TransferForm
+              accounts={positions.filter(
+                (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
+              )}
+              busy={busy}
+              submit={(v) =>
+                void act(() => api('/transfers', 'POST', v), '转账已保存，双方余额已更新')
               }
-            }}
-          >
-            {modal.kind === 'reveal' && (
-              <Field label="登录密码">
-                <input
-                  name="password"
-                  type="password"
-                  autoComplete="current-password"
-                  required
-                  maxLength={72}
-                />
-              </Field>
-            )}
-            {['account', 'asset', 'debt', 'edit'].includes(modal.kind) && (
-              <>
-                <label className="check-line">
-                  <input name="hidden" type="checkbox" defaultChecked={modal.p?.hidden} />
-                  隐藏此项目（密码验证后可查看和编辑）
-                </label>
-                {(modal.kind === 'account' || modal.p?.kind === 'account') && (
-                  <IconLibrary
-                    key={modal.p?.id || 'new-account'}
-                    picker
-                    initialId={modal.p?.iconId}
-                  />
-                )}
-                <Field label="名称">
+            />
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const f = new FormData(e.currentTarget),
+                  v = Object.fromEntries(f.entries()),
+                  kind = modal.kind,
+                  mp = modal.p;
+                if (kind === 'reveal') {
+                  void act(
+                    () => api('/auth/reveal', 'POST', { password: f.get('password') }),
+                    '隐藏项目已解锁 5 分钟',
+                  );
+                } else if (kind === 'links') {
+                  void act(
+                    () =>
+                      api('/positions/' + mp!.id + '/links', 'PUT', {
+                        targetIds: f.getAll('targetIds'),
+                      }),
+                    '关联已更新',
+                  );
+                } else if (kind === 'revision' || kind === 'correction') {
+                  void act(
+                    () =>
+                      api(
+                        '/positions/' + mp!.id + '/revisions' + (modal.h ? '/' + modal.h.id : ''),
+                        modal.h ? 'PUT' : 'POST',
+                        v,
+                      ),
+                    '金额历史已保存，总览已重新计算',
+                  );
+                } else if (kind === 'edit') {
+                  void act(
+                    () =>
+                      api('/positions/' + mp!.id, 'PATCH', {
+                        ...v,
+                        ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
+                        archived: mp!.archived,
+                        hidden: f.get('hidden') === 'on',
+                      }),
+                    '项目资料已保存',
+                  );
+                } else {
+                  const category = String(v.category),
+                    side =
+                      kind === 'debt' ||
+                      (kind === 'account' && ['credit_card', 'loan'].includes(category))
+                        ? 'liability'
+                        : 'asset';
+                  void act(
+                    () =>
+                      api('/positions', 'POST', {
+                        ...v,
+                        ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
+                        kind,
+                        side,
+                        hidden: f.get('hidden') === 'on',
+                      }),
+                    '项目已添加',
+                  );
+                }
+              }}
+            >
+              {modal.kind === 'reveal' && (
+                <Field label="登录密码">
                   <input
-                    name="name"
-                    defaultValue={modal.p?.name}
+                    name="password"
+                    type="password"
+                    autoComplete="current-password"
                     required
-                    maxLength={100}
-                    autoFocus
+                    maxLength={72}
                   />
                 </Field>
-                <Field label="类别">
-                  <select
-                    name="category"
-                    defaultValue={modal.p?.category || categories[modal.kind]?.[0][0]}
-                  >
-                    {categories[modal.p?.kind || modal.kind].map(([v, label]) => (
-                      <option key={v} value={v}>
-                        {label}
-                      </option>
+              )}
+              {['account', 'asset', 'debt', 'edit'].includes(modal.kind) && (
+                <>
+                  <label className="check-line">
+                    <input name="hidden" type="checkbox" defaultChecked={modal.p?.hidden} />
+                    隐藏此项目（密码验证后可查看和编辑）
+                  </label>
+                  {(modal.kind === 'account' || modal.p?.kind === 'account') && (
+                    <IconPicker key={modal.p?.id || 'new-account'} initialId={modal.p?.iconId} />
+                  )}
+                  <Field label="名称">
+                    <input
+                      name="name"
+                      defaultValue={modal.p?.name}
+                      required
+                      maxLength={100}
+                      autoFocus
+                    />
+                  </Field>
+                  <Field label="类别">
+                    <select
+                      name="category"
+                      defaultValue={modal.p?.category || categories[modal.kind]?.[0][0]}
+                    >
+                      {categories[modal.p?.kind || modal.kind].map(([v, label]) => (
+                        <option key={v} value={v}>
+                          {label}
+                        </option>
+                      ))}
+                    </select>
+                  </Field>
+                  {modal.kind === 'account' && (
+                    <p className="muted">信用卡、贷款账户自动计入负债，其余账户计入资产。</p>
+                  )}
+                </>
+              )}
+              {['account', 'asset', 'debt'].includes(modal.kind) && (
+                <Field label="原币币种">
+                  <select name="currency" defaultValue={user.baseCurrency}>
+                    {currencies.map((c) => (
+                      <option key={c}>{c}</option>
                     ))}
                   </select>
                 </Field>
-                {modal.kind === 'account' && (
-                  <p className="muted">信用卡、贷款账户自动计入负债，其余账户计入资产。</p>
-                )}
-              </>
-            )}
-            {['account', 'asset', 'debt'].includes(modal.kind) && (
-              <Field label="原币币种">
-                <select name="currency" defaultValue={user.baseCurrency}>
-                  {currencies.map((c) => (
-                    <option key={c}>{c}</option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
-              <Field label={'变更后的绝对金额' + (modal.p ? '（' + modal.p.currency + '）' : '')}>
-                <input
-                  name="amount"
-                  inputMode="decimal"
-                  required
-                  pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,8})?"
-                  defaultValue={modal.h?.after || modal.p?.amount || ''}
-                  placeholder="0.00"
-                />
-              </Field>
-            )}
-            {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
-              <Field label={'业务时间（北京时间，精确到分钟）'}>
-                <input
-                  type={'datetime-local'}
-                  name="date"
-                  required
-                  min={'1900-01-01T00:00'}
-                  max={nowMinute()}
-                  defaultValue={modal.h?.time || nowMinute()}
-                />
-              </Field>
-            )}
-            {modal.kind === 'revision' && (
-              <>
-                <Field label="变更原因">
-                  <select
-                    name="reason"
-                    defaultValue={modal.p?.kind === 'asset' ? 'valuation' : 'balance'}
-                  >
-                    <option value="balance">余额更新</option>
-                    <option value="valuation">估值更新</option>
-                    {modal.p?.side === 'liability' && (
-                      <option value="repayment">还款（填写还款后欠款）</option>
-                    )}
-                  </select>
-                </Field>
-                <p className="muted">
-                  填写更新后的余额或剩余欠款，每次保存会新增历史。已有错误记录请在历史中更正。
-                </p>
-              </>
-            )}
-            {modal.kind === 'correction' && (
-              <p className="notice warning">
-                这将修改选中的历史金额并重算后续变化，请确认日期和余额。
-              </p>
-            )}
-            {modal.kind === 'links' ? (
-              <div className="link-options">
-                {positions.filter((p) => p.kind !== 'debt').length ? (
-                  positions
-                    .filter((p) => p.kind !== 'debt')
-                    .map((p) => (
-                      <label key={p.id}>
-                        <input
-                          type="checkbox"
-                          name="targetIds"
-                          value={p.id}
-                          defaultChecked={modal.p!.outgoing.some((l) => l.targetId === p.id)}
-                        />
-                        {p.name} · {labels[p.kind]}
-                      </label>
-                    ))
-                ) : (
-                  <p>请先创建账户或独立资产。</p>
-                )}
-              </div>
-            ) : (
-              modal.kind !== 'reveal' && (
-                <Field label="备注">
-                  <textarea
-                    name="notes"
-                    maxLength={2000}
-                    rows={3}
-                    defaultValue={modal.h?.notes || modal.p?.notes || ''}
+              )}
+              {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
+                <Field label={'变更后的绝对金额' + (modal.p ? '（' + modal.p.currency + '）' : '')}>
+                  <input
+                    name="amount"
+                    inputMode="decimal"
+                    required
+                    pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,8})?"
+                    defaultValue={modal.h?.after || modal.p?.amount || ''}
+                    placeholder="0.00"
                   />
                 </Field>
-              )
-            )}
-            {error && (
-              <div role="alert" className="notice error">
-                {error}
+              )}
+              {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
+                <Field label={'业务时间（北京时间，精确到分钟）'}>
+                  <input
+                    type={'datetime-local'}
+                    name="date"
+                    required
+                    min={'1900-01-01T00:00'}
+                    max={nowMinute()}
+                    defaultValue={modal.h?.time || nowMinute()}
+                  />
+                </Field>
+              )}
+              {modal.kind === 'revision' && (
+                <>
+                  <Field label="变更原因">
+                    <select
+                      name="reason"
+                      defaultValue={modal.p?.kind === 'asset' ? 'valuation' : 'balance'}
+                    >
+                      <option value="balance">余额更新</option>
+                      <option value="valuation">估值更新</option>
+                      {modal.p?.side === 'liability' && (
+                        <option value="repayment">还款（填写还款后欠款）</option>
+                      )}
+                    </select>
+                  </Field>
+                  <p className="muted">
+                    填写更新后的余额或剩余欠款，每次保存会新增历史。已有错误记录请在历史中更正。
+                  </p>
+                </>
+              )}
+              {modal.kind === 'correction' && (
+                <p className="notice warning">
+                  这将修改选中的历史金额并重算后续变化，请确认日期和余额。
+                </p>
+              )}
+              {modal.kind === 'links' ? (
+                <div className="link-options">
+                  {positions.filter((p) => p.kind !== 'debt').length ? (
+                    positions
+                      .filter((p) => p.kind !== 'debt')
+                      .map((p) => (
+                        <label key={p.id}>
+                          <input
+                            type="checkbox"
+                            name="targetIds"
+                            value={p.id}
+                            defaultChecked={modal.p!.outgoing.some((l) => l.targetId === p.id)}
+                          />
+                          {p.name} · {labels[p.kind]}
+                        </label>
+                      ))
+                  ) : (
+                    <p>请先创建账户或独立资产。</p>
+                  )}
+                </div>
+              ) : (
+                modal.kind !== 'reveal' && (
+                  <Field label="备注">
+                    <textarea
+                      name="notes"
+                      maxLength={2000}
+                      rows={3}
+                      defaultValue={modal.h?.notes || modal.p?.notes || ''}
+                    />
+                  </Field>
+                )
+              )}
+              {error && (
+                <div role="alert" className="notice error">
+                  {error}
+                </div>
+              )}
+              <div className="modal-actions">
+                <button
+                  className="secondary"
+                  type="button"
+                  disabled={busy}
+                  onClick={() => setModal(null)}
+                >
+                  取消
+                </button>
+                <button className="primary" disabled={busy}>
+                  {busy ? '正在保存…' : modal.kind === 'correction' ? '确认更正' : '保存'}
+                </button>
               </div>
-            )}
-            <div className="modal-actions">
-              <button
-                className="secondary"
-                type="button"
-                disabled={busy}
-                onClick={() => setModal(null)}
-              >
-                取消
-              </button>
-              <button className="primary" disabled={busy}>
-                {busy ? '正在保存…' : modal.kind === 'correction' ? '确认更正' : '保存'}
-              </button>
-            </div>
-          </form>
+            </form>
+          )}
         </Modal>
       )}
     </div>
@@ -1508,7 +1659,7 @@ function HistoryTable({
             <th>变更前</th>
             <th>变更后</th>
             <th>变化额</th>
-            <th>备注</th>
+            <th className="notes-cell">备注</th>
             {correct && <th>操作</th>}
           </tr>
         </thead>
@@ -1533,6 +1684,8 @@ function HistoryTable({
                         valuation: '估值更新',
                         repayment: '还款',
                         correction: '更正',
+                        transfer_out: '转账转出',
+                        transfer_in: '转账到账',
                       } as Record<string, string>
                     )[h.reason]
                   }
@@ -1544,7 +1697,11 @@ function HistoryTable({
               <td className="notes-cell">{h.notes || '—'}</td>
               {correct && (
                 <td>
-                  <button className="text" onClick={() => correct(h)}>
+                  <button
+                    className="text"
+                    disabled={h.reason.startsWith('transfer_')}
+                    onClick={() => correct(h)}
+                  >
                     更正
                   </button>
                 </td>

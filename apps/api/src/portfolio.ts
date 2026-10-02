@@ -102,6 +102,7 @@ export class PortfolioController {
     @Body() b: unknown,
   ) {
     const v = revisionInput.parse(b);
+    if (v.reason.startsWith('transfer_')) throw new BadRequestException('请使用账户转账接口');
     return this.db.$transaction(
       async (tx) => {
         const p = await tx.position.findFirst({
@@ -109,6 +110,12 @@ export class PortfolioController {
         });
         if (!p) throw new NotFoundException('项目不存在');
         if (p.archived) throw new ConflictException('请先恢复归档项目');
+        const lastTransfer = await tx.revision.findFirst({
+          where: { positionId: p.id, reason: { in: ['transfer_out', 'transfer_in'] } },
+          orderBy: [{ effectiveDate: 'desc' }, { sequence: 'desc' }],
+        });
+        if (lastTransfer && toBusinessDate(v.date) < lastTransfer.effectiveDate)
+          throw new ConflictException('余额调整时间不能早于已有转账；请使用当前时间调整');
         if (v.reason === 'repayment') {
           if (p.side !== 'liability') throw new BadRequestException('还款记录只能用于负债');
           const prior = await tx.revision.findFirst({
@@ -137,22 +144,43 @@ export class PortfolioController {
     @Param('revisionId') revisionId: string,
     @Body() b: unknown,
   ) {
-    const v = revisionInput.parse(b),
-      p = await this.own(r.userId, id, r.revealed);
-    if (p.archived) throw new ConflictException('请先恢复归档项目');
-    if (!p.revisions.some((x) => x.id === revisionId))
-      throw new NotFoundException('历史记录不存在');
-    await this.db.revision.update({
-      where: { id: revisionId },
-      data: {
-        amount: v.amount,
-        effectiveDate: toBusinessDate(v.date),
-        notes: v.notes,
-        reason: 'correction',
+    const v = revisionInput.parse(b);
+    return this.db.$transaction(
+      async (tx) => {
+        const p = await tx.position.findFirst({
+          where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
+          include: { revisions: true },
+        });
+        if (!p) throw new NotFoundException('项目不存在');
+        if (p.archived) throw new ConflictException('请先恢复归档项目');
+        const original = p.revisions.find((h) => h.id === revisionId);
+        if (!original) throw new NotFoundException('历史记录不存在');
+        if (
+          p.revisions.some(
+            (h) =>
+              h.reason.startsWith('transfer_') &&
+              (+h.effectiveDate >= +original.effectiveDate ||
+                toBusinessDate(v.date) < h.effectiveDate),
+          )
+        )
+          throw new ConflictException(
+            '转账及其之前的历史不可单独更正；请新增余额调整，保留转账双方一致',
+          );
+        await tx.revision.update({
+          where: { id: revisionId },
+          data: {
+            amount: v.amount,
+            effectiveDate: toBusinessDate(v.date),
+            notes: v.notes,
+            reason: 'correction',
+          },
+        });
+        return { ok: true };
       },
-    });
-    return { ok: true };
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+    );
   }
+
   @Put('positions/:id/links') async link(
     @Req() r: UserRequest,
     @Param('id') id: string,

@@ -1,11 +1,13 @@
 import 'reflect-metadata';
 import 'dotenv/config';
+import { setupOpenApi } from './openapi';
 import { Module, Catch, ArgumentsHost, ExceptionFilter, HttpException } from '@nestjs/common';
 import { NestFactory, APP_GUARD } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { json } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
+import { TransfersController } from './transfers';
 import { PortfolioController } from './portfolio';
 import { BackupController } from './backup';
 import { IconsController, IconsService } from './icons';
@@ -50,6 +52,7 @@ class SafeErrors implements ExceptionFilter {
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
   controllers: [
+    TransfersController,
     IconsController,
     AuthController,
     PortfolioController,
@@ -74,6 +77,7 @@ async function bootstrap() {
     next();
   });
   app.useGlobalFilters(new SafeErrors());
+  setupOpenApi(app);
   app.enableShutdownHooks();
   await app.listen(Number(process.env.PORT || 3100), '0.0.0.0');
   console.log('WorthPath API ready');

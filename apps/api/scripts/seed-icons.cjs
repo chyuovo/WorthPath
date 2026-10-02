@@ -3,17 +3,15 @@ const { PrismaClient } = require('@prisma/client');
 const { readFile } = require('node:fs/promises');
 const { join } = require('node:path');
 const { createHash } = require('node:crypto');
-const sharp = require('sharp');
+require('reflect-metadata');
+const { normalizeIcon } = require('../dist/icons');
 const db = new PrismaClient();
 async function main() {
   const dir = join(__dirname, '../assets/icons');
   const sources = JSON.parse(await readFile(join(dir, 'sources.json'), 'utf8'));
-  // Deterministic IDs make repeated runs safe, without overwriting existing records.
+  // Update only deterministic built-in image IDs; preserve user uploads and financial data.
   for (const item of sources) {
-    const data = await sharp(await readFile(join(dir, item.file)))
-      .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
-      .png()
-      .toBuffer();
+    const data = await normalizeIcon(await readFile(join(dir, item.file)));
     const hex = createHash('sha256')
       .update('worthpath-builtin:' + item.name)
       .digest('hex');
@@ -28,7 +26,7 @@ async function main() {
         source: item.source,
         hash: createHash('sha256').update(data).digest('hex'),
       },
-      update: {},
+      update: { data, source: item.source, hash: createHash('sha256').update(data).digest('hex') },
     });
   }
   console.log(`Shared icon catalog ready: ${sources.length} icons.`);

@@ -5,3 +5,4 @@ allowBuilds:
   '@prisma/engines': true
   prisma: true
   esbuild: true
+  '@scarf/scarf': false

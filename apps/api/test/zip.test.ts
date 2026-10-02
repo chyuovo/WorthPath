@@ -10,9 +10,10 @@ const empty = () =>
     version: 2,
     exportedAt: new Date().toISOString(),
     baseCurrency: 'CNY',
-    preferences: { showSidebar: false, idleMinutes: 9 },
+    preferences: { hiddenMenus: ['asset'], showNotes: false, idleMinutes: 9 },
     currencies: ['CNY'],
     icons: [],
+    transfers: [],
     positions: [],
     rates: [],
     links: [],
@@ -43,6 +44,7 @@ test('ZIP contains separate JSON files and restores settings without authenticat
     'manifest.json',
     'rates.json',
     'settings.json',
+    'transfers.json',
   ]);
   assert.doesNotMatch(JSON.stringify(contents), /password|token|session|userId/i);
   assert.deepEqual(validateBackup(await readBackupZip(await archive(contents))), b);
@@ -99,11 +101,28 @@ test('backup accepts over 1000 positions, 10000 revisions per position and 20000
 test('legacy v3 ZIP remains readable without icons', async () => {
   const contents = packBackup(empty());
   delete contents['icons.json'];
+  delete contents['transfers.json'];
   const manifest = JSON.parse(contents['manifest.json']);
   manifest.version = 3;
-  manifest.files = manifest.files.filter((f: { name: string }) => f.name !== 'icons.json');
+  manifest.files = manifest.files.filter(
+    (f: { name: string }) => !['icons.json', 'transfers.json'].includes(f.name),
+  );
   contents['manifest.json'] = JSON.stringify(manifest);
   const restored = validateBackup(await readBackupZip(await archive(contents)));
   assert.equal(restored.icons, undefined);
   assert.deepEqual(restored.positions, []);
+});
+
+test('legacy v4 ZIP remains readable without transfers', async () => {
+  const contents = packBackup(empty());
+  delete contents['transfers.json'];
+  const manifest = JSON.parse(contents['manifest.json']);
+  manifest.version = 4;
+  manifest.files = manifest.files.filter((f: { name: string }) => f.name !== 'transfers.json');
+  contents['manifest.json'] = JSON.stringify(manifest);
+  const restored = validateBackup(await readBackupZip(await archive(contents)));
+  assert.deepEqual(restored.icons, []);
+  assert.equal(restored.transfers, undefined);
+  assert.equal(restored.preferences?.showNotes, false);
+  assert.deepEqual(restored.preferences?.hiddenMenus, ['asset']);
 });

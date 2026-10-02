@@ -56,7 +56,15 @@ export const revisionInput = z
     date: businessDate,
     notes,
     reason: z
-      .enum(['initial', 'balance', 'valuation', 'repayment', 'correction'])
+      .enum([
+        'initial',
+        'balance',
+        'valuation',
+        'repayment',
+        'correction',
+        'transfer_out',
+        'transfer_in',
+      ])
       .default('balance'),
   })
   .strict();
@@ -108,3 +116,22 @@ export const credentials = z
       .refine((s) => Buffer.byteLength(s, 'utf8') <= 72, '密码最多 72 字节'),
   })
   .strict();
+
+export const menuKey = z.enum(['overview', 'account', 'asset', 'debt', 'history']);
+export const hiddenMenus = z
+  .array(menuKey)
+  .max(5)
+  .refine((v) => new Set(v).size === v.length, '菜单不可重复');
+export const transferInput = z
+  .object({
+    requestId: z.string().uuid().optional(),
+    sourceId: z.string().uuid(),
+    targetId: z.string().uuid(),
+    amount: amount.refine((v) => /[1-9]/.test(v), '转出金额必须大于零'),
+    received: amount.refine((v) => /[1-9]/.test(v), '到账金额必须大于零'),
+    fee: amount.default('0'),
+    date: businessDate,
+    notes,
+  })
+  .strict()
+  .refine((v) => v.sourceId !== v.targetId, '不能向同一账户转账');

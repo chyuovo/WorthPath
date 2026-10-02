@@ -32,9 +32,20 @@ export async function normalizeIcon(data: Buffer) {
     const meta = await image.metadata();
     if (!['png', 'jpeg', 'webp'].includes(meta.format || '') || (meta.pages || 1) > 1)
       throw Error();
-    return await image
+    const resized = await image
       .rotate()
       .resize(256, 256, { fit: 'inside', withoutEnlargement: true })
+      .ensureAlpha()
+      .raw()
+      .toBuffer({ resolveWithObject: true });
+    // Neutral white logo backgrounds become transparent; coloured marks remain unchanged.
+    const { data: pixels, info } = resized;
+    for (let i = 0; i < pixels.length; i += 4) {
+      const low = Math.min(pixels[i], pixels[i + 1], pixels[i + 2]);
+      const high = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
+      if (low >= 245 && high - low <= 8) pixels[i + 3] = 0;
+    }
+    return await sharp(pixels, { raw: { width: info.width, height: info.height, channels: 4 } })
       .png()
       .toBuffer();
   } catch {
@@ -95,7 +106,7 @@ export class IconsController {
     if (!icon) throw new NotFoundException('图标不存在');
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.send(Buffer.from(icon.data));
+    res.send(await normalizeIcon(Buffer.from(icon.data)));
   }
   @Post('upload')
   @UseInterceptors(

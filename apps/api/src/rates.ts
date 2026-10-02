@@ -12,7 +12,7 @@ import {
 } from '@nestjs/common';
 import { Database } from './database';
 import { UserRequest } from './auth';
-import { currency, date, rateValue, today } from './validation';
+import { currency, date, rateValue, today, hiddenMenus } from './validation';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 // Fixed public request; no user currency choices, identifiers or amounts leave the server.
@@ -168,10 +168,17 @@ export class SettingsController {
   @Get('settings') async settings(@Req() r: UserRequest) {
     const u = await this.db.user.findUniqueOrThrow({
       where: { id: r.userId },
-      select: { username: true, baseCurrency: true, showSidebar: true, idleMinutes: true },
+      select: {
+        username: true,
+        baseCurrency: true,
+        hiddenMenus: true,
+        showNotes: true,
+        idleMinutes: true,
+      },
     });
     return {
       ...u,
+      hiddenMenus: u.hiddenMenus.split(',').filter(Boolean),
       lastActivity: (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } }))
         .lastActivity,
       revealed: r.revealed,
@@ -190,13 +197,17 @@ export class SettingsController {
     const data = z
       .object({
         baseCurrency: currency.optional(),
-        showSidebar: z.boolean().optional(),
+        hiddenMenus: hiddenMenus.optional(),
+        showNotes: z.boolean().optional(),
         idleMinutes: z.number().int().min(0).max(1440).optional(),
       })
       .strict()
       .refine((v) => Object.keys(v).length > 0)
       .parse(b);
-    await this.db.user.update({ where: { id: r.userId }, data });
+    await this.db.user.update({
+      where: { id: r.userId },
+      data: { ...data, hiddenMenus: data.hiddenMenus?.join(',') },
+    });
     this.fx.invalidate(r.userId);
     return { ok: true };
   }
