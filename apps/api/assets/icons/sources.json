@@ -184,5 +184,23 @@
     "source": "https://bin.bnbstatic.com/static/images/common/favicon.ico",
     "file": "31.png",
     "sha256": "8318ebbcb1cb4729eb0f78bb058dc618c3b63f9f9f0070a1a7a3265fdc79b833"
+  },
+  {
+    "name": "ZA BANK 众安银行",
+    "source": "https://cdn.za.group/if/za-group-portal-web/assets/images/share-logo.png",
+    "file": "32.png",
+    "sha256": "e67a4839b9f81bdd94a104f15ec8c1fc9fad1df1949b4e216662c2089c84246e"
+  },
+  {
+    "name": "微众银行 WeBank",
+    "source": "https://tctp.tctpwebankcdn.net/owb-res/owb-res/assets/mainGenerator.811f2078.js",
+    "file": "33.png",
+    "sha256": "ec3be0bf19bbb8c633ee7e13636f96d5c70584cefe0febfb8da294bcdaec6104"
+  },
+  {
+    "name": "大象银行 EleBank",
+    "file": "34.png",
+    "source": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d4/bc/60/d4bc6004-3898-c9c3-3571-f3ffe4b46b48/Bank-Airstar-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg",
+    "sha256": "fa7306514308f0a8cc73fa3847002d768094cec25aceeca324da440fbbee2934"
   }
 ]

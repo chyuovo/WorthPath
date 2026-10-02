@@ -41,3 +41,5 @@ Icon 存储 name、ownerId、shared、SHA-256、规范静态 PNG 的 MediumBlob 
 Transfer 归属于 User，关联转出/转入 Position（启用资产账户）及两条 Revision ID。金额、到账金额和额外手续费使用 Decimal(24,8)，记录双方原币和业务分钟；账户关系用于配对展示，Transfer 本身不再次计入总额。服务端 Serializable 事务同时创建配对绝对余额及转账记录；请求 UUID 支持相同内容重试。历史修正限制防止改变已配对转账的基准余额。
 
 User.hiddenMenus 保存受枚举校验的菜单键，settings 不可隐藏；User.showNotes 默认 true，仅控制客户端显示，财务备注和导出保持完整。ZIP v5 新增 transfers.json，追加恢复时映射账户及配对历史 ID，空空间恢复显示偏好，已有空间保留当前设置。
+
+2026-10-02 记录编辑更新：允许更正转账之前的独立余额历史。`replay.ts` 重放涉及项目的历史，绝对余额保留为锚点，配对资金往来与定时支出按增量更新；整笔修改/删除与两侧余额在同一事务提交。单侧配对历史仍禁止直接更正/删除。日历读取保存后的账户历史重算。完整边界见 [更新说明](update-2026-10-02.md)。

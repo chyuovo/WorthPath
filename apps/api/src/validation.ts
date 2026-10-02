@@ -128,10 +128,18 @@ export const credentials = z
   })
   .strict();
 
-export const menuKey = z.enum(['overview', 'account', 'asset', 'debt', 'history', 'calendar']);
+export const menuKey = z.enum([
+  'overview',
+  'account',
+  'asset',
+  'debt',
+  'history',
+  'calendar',
+  'schedules',
+]);
 export const hiddenMenus = z
   .array(menuKey)
-  .max(6)
+  .max(7)
   .refine((v) => new Set(v).size === v.length, '菜单不可重复');
 export const transferInput = z
   .object({

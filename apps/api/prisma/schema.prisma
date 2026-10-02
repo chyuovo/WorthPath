@@ -216,20 +216,34 @@ model Transfer {
 
 /// 按需执行的定时支出或转账计划
 model Schedule {
+  /// 唯一标识
   id String @id @default(uuid()) @db.Char(36)
+  /// 所属用户标识，用于数据隔离
   userId String @db.Char(36)
   user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  /// 备份来源计划标识，用于重复导入识别
   importedFromId String? @db.Char(36)
+  /// 计划显示名称
   name String @db.VarChar(100)
+  /// 操作类型：expense 支出或 transfer 转账
   operation String @db.VarChar(16)
+  /// 支出或转出资产账户标识
   sourceId String @db.Char(36)
+  /// 转入账户标识；支出计划为空
   targetId String? @db.Char(36)
+  /// 原币支出或转出金额
   amount Decimal @db.Decimal(24,8)
+  /// 原币到账金额；支出计划为零
   received Decimal @db.Decimal(24,8)
+  /// 下次到期业务时间对应的 UTC
   nextAt DateTime @db.DateTime(3)
+  /// 重复间隔天数；零表示仅执行一次
   intervalDays Int
+  /// 是否启用计划
   enabled Boolean @default(true)
+  /// 一次性计划是否已执行完毕
   completed Boolean @default(false)
+  /// 用户备注，原文保留
   notes String @db.Text
   @@index([userId,enabled,nextAt])
   @@unique([userId,importedFromId])

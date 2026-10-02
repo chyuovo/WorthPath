@@ -1,6 +1,6 @@
 {
-  "tableCount": 8,
-  "columnCount": 73,
+  "tableCount": 9,
+  "columnCount": 88,
   "tables": [
     {
       "TABLE_NAME": "exchangerate",
@@ -21,6 +21,10 @@
     {
       "TABLE_NAME": "revision",
       "TABLE_COMMENT": "余额历史：金额为变更后的绝对余额"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "TABLE_COMMENT": "按需执行的定时支出或转账计划"
     },
     {
       "TABLE_NAME": "session",
@@ -182,6 +186,11 @@
       "COLUMN_COMMENT": "关联账户图标标识"
     },
     {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "groupName",
+      "COLUMN_COMMENT": "自定义账户分组"
+    },
+    {
       "TABLE_NAME": "positionlink",
       "COLUMN_NAME": "id",
       "COLUMN_COMMENT": "唯一标识"
@@ -240,6 +249,76 @@
       "TABLE_NAME": "revision",
       "COLUMN_NAME": "sequence",
       "COLUMN_COMMENT": "数据库自增唯一顺序，同业务时间按此排序"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "唯一标识"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "importedFromId",
+      "COLUMN_COMMENT": "备份来源计划标识，用于重复导入识别"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "name",
+      "COLUMN_COMMENT": "计划显示名称"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "operation",
+      "COLUMN_COMMENT": "操作类型：expense 支出或 transfer 转账"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "sourceId",
+      "COLUMN_COMMENT": "支出或转出资产账户标识"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "targetId",
+      "COLUMN_COMMENT": "转入账户标识；支出计划为空"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "amount",
+      "COLUMN_COMMENT": "原币支出或转出金额"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "received",
+      "COLUMN_COMMENT": "原币到账金额；支出计划为零"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "nextAt",
+      "COLUMN_COMMENT": "下次到期业务时间对应的 UTC"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "intervalDays",
+      "COLUMN_COMMENT": "重复间隔天数；零表示仅执行一次"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "enabled",
+      "COLUMN_COMMENT": "是否启用计划"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "completed",
+      "COLUMN_COMMENT": "一次性计划是否已执行完毕"
+    },
+    {
+      "TABLE_NAME": "schedule",
+      "COLUMN_NAME": "notes",
+      "COLUMN_COMMENT": "用户备注，原文保留"
     },
     {
       "TABLE_NAME": "session",

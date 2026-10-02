@@ -61,12 +61,12 @@ export function SchedulePanel({
     }
   }
   return (
-    <details className="schedule-panel">
-      <summary>
+    <section className="schedule-panel">
+      <h2>
         {tr('定时计划')} ({rows.length})
-      </summary>
+      </h2>
       <p className="muted">
-        {tr('打开账户页时处理到期计划。每次最多执行20项，离线期间的计划会逐次补记。')}
+        {tr('打开账户页或点击执行时处理到期计划。每次最多执行20项，离线期间的计划会逐次补记。')}
       </p>
       <div className="actions">
         <button type="button" disabled={busy || !accounts.length} onClick={() => setOpen(!open)}>
@@ -227,6 +227,6 @@ export function SchedulePanel({
         </p>
       )}
       {status && <p role="status">{status}</p>}
-    </details>
+    </section>
   );
 }

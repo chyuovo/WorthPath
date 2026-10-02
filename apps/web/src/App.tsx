@@ -51,6 +51,7 @@ const labels: Record<string, string> = {
   debt: '债务',
   history: '变化记录',
   calendar: '收支日历',
+  schedules: '定时计划',
   settings: '设置与备份',
 };
 const categories: Record<string, [string, string][]> = {
@@ -221,6 +222,7 @@ export default function App() {
       kind: string;
       p?: Position;
       h?: History;
+      transfer?: Transfer;
       operation?: DebtOperation;
     } | null>(null),
     [busy, setBusy] = useState(false),
@@ -340,6 +342,9 @@ export default function App() {
           return;
         }
         setOverview({ ...o, trend: t.items, recent: recent.items });
+      } else if (page === 'schedules') {
+        const rows = await api<Position[]>('/positions?kind=account');
+        if (active()) setPositions(rows);
       } else if (['account', 'asset', 'debt'].includes(page)) {
         if (page === 'account' && !rangeOnly) {
           const result = await api<{
@@ -741,6 +746,29 @@ export default function App() {
         </section>
       </div>
     );
+  async function correctHistory(h: History) {
+    if (h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')) {
+      setSelected(null);
+      setPage('history');
+      return;
+    }
+    const session = sessionGeneration.current,
+      view = viewRef.current;
+    try {
+      const p = await api<Position>('/positions/' + h.positionId);
+      if (session !== sessionGeneration.current || view !== viewRef.current) return;
+      setModal({ kind: 'correction', p, h });
+    } catch (e) {
+      if (session === sessionGeneration.current && view === viewRef.current) report(e);
+    }
+  }
+  function deleteHistory(h: History) {
+    if (!window.confirm(tr('删除这条余额记录并重算后续余额？'))) return;
+    void act(
+      () => api('/positions/' + h.positionId + '/revisions/' + h.id, 'DELETE'),
+      tr('记录已删除，余额和日历已更新'),
+    );
+  }
   const nav = [
     ['overview', LayoutDashboard],
     ['account', Wallet],
@@ -748,6 +776,7 @@ export default function App() {
     ['debt', HandCoins],
     ['history', HistoryIcon],
     ['calendar', CalendarDays],
+    ['schedules', HistoryIcon],
     ['settings', Settings],
   ] as const;
   const visibleNav = nav.filter(([key]) => !(user.hiddenMenus || []).includes(key));
@@ -882,42 +911,6 @@ export default function App() {
               {tr('正在刷新数据…')}
             </p>
           )}
-          {page === 'overview' && (
-            <section className="panel">
-              {' '}
-              <div className="actions">
-                <label>
-                  {tr('开始')}
-                  <input
-                    type="date"
-                    value={rangeFrom}
-                    max={rangeTo}
-                    onChange={(e) => setRangeFrom(e.target.value)}
-                  />
-                </label>
-                <label>
-                  {tr('结束')}
-                  <input
-                    type="date"
-                    value={rangeTo}
-                    min={rangeFrom}
-                    max={today()}
-                    onChange={(e) => setRangeTo(e.target.value)}
-                  />
-                </label>
-                <select value={grain} onChange={(e) => setGrain(e.target.value)}>
-                  <option value="day">{tr('日（最多366天）')}</option>
-                  <option value="week">{tr('周（最多3年）')}</option>
-                  <option value="month">{tr('月（最多10年）')}</option>
-                </select>
-              </div>
-              <p className="muted">
-                {tr(
-                  '默认最近90天；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。',
-                )}
-              </p>
-            </section>
-          )}
           {page === 'overview' && overview && (
             <>
               {!overview.complete && (
@@ -967,6 +960,41 @@ export default function App() {
                     <h2>{tr('净资产轨迹')}</h2>
                     <span className="badge">{tr('按业务日期')}</span>
                   </div>
+                  <div className="actions overview-filters">
+                    <label>
+                      {tr('开始')}
+                      <input
+                        type="date"
+                        value={rangeFrom}
+                        max={rangeTo}
+                        onChange={(e) => setRangeFrom(e.target.value)}
+                      />
+                    </label>
+                    <label>
+                      {tr('结束')}
+                      <input
+                        type="date"
+                        value={rangeTo}
+                        min={rangeFrom}
+                        max={today()}
+                        onChange={(e) => setRangeTo(e.target.value)}
+                      />
+                    </label>
+                    <select
+                      aria-label={tr('统计粒度')}
+                      value={grain}
+                      onChange={(e) => setGrain(e.target.value)}
+                    >
+                      <option value="day">{tr('日（最多366天）')}</option>
+                      <option value="week">{tr('周（最多3年）')}</option>
+                      <option value="month">{tr('月（最多10年）')}</option>
+                    </select>
+                  </div>
+                  <p className="muted">
+                    {tr(
+                      '默认最近90天；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。',
+                    )}
+                  </p>
                   <Chart rows={overview.trend} base={user.baseCurrency} />
                   <p className="muted">
                     {tr('按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。')}
@@ -1014,7 +1042,7 @@ export default function App() {
                   </button>
                 </div>
                 <HistoryTable
-                  rows={overview.recent}
+                  rows={overview.recent.slice(0, 6)}
                   open={(id) => {
                     setSelected(id);
                     setPage(overview.recent.find((h) => h.positionId === id)?.kind || 'account');
@@ -1034,8 +1062,8 @@ export default function App() {
                 {tr('· 每日尝试更新，失败保留已有数据；旧日期汇率可能产生换算偏差。')}
               </div>
               {overview.trend.length > 1 && (
-                <section className="panel">
-                  <h2>{tr('变化归因')}</h2>
+                <details className="panel attribution">
+                  <summary>{tr('变化归因')}</summary>
                   <div className="table-wrap">
                     <table>
                       <thead>
@@ -1068,7 +1096,7 @@ export default function App() {
                       </tbody>
                     </table>
                   </div>
-                </section>
+                </details>
               )}
             </>
           )}
@@ -1211,7 +1239,8 @@ export default function App() {
                   </p>
                   <HistoryTable
                     rows={historyRows}
-                    correct={p.archived ? undefined : (h) => setModal({ kind: 'correction', p, h })}
+                    correct={p.archived ? undefined : (h) => void correctHistory(h)}
+                    remove={p.archived ? undefined : deleteHistory}
                   />
                   {historyCursor && (
                     <button disabled={loading} onClick={() => void more('history')}>
@@ -1252,12 +1281,6 @@ export default function App() {
                       </select>
                     </div>
                     {quickMode && <p className="muted">{tr('点击账户卡片，直接填写当前余额。')}</p>}
-                    <SchedulePanel
-                      accounts={positions.filter(
-                        (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
-                      )}
-                      refresh={() => load(false, true)}
-                    />
                   </>
                 )}
                 {positions.some((p) => p.kind === page) ? (
@@ -1392,6 +1415,28 @@ export default function App() {
                           {money(t.fee, t.sourceCurrency)}
                         </p>
                         {t.notes && <p className="muted notes-display">{t.notes}</p>}
+                        <div className="actions record-actions">
+                          <button
+                            className="text"
+                            disabled={busy}
+                            onClick={() => setModal({ kind: 'transfer-edit', transfer: t })}
+                          >
+                            {tr('修改')}
+                          </button>
+                          <button
+                            className="text danger-text"
+                            disabled={busy}
+                            onClick={() => {
+                              if (window.confirm(tr('删除这笔资金往来并重算双方余额？')))
+                                void act(
+                                  () => api('/transfers/' + t.id, 'DELETE'),
+                                  tr('记录已删除，余额和日历已更新'),
+                                );
+                            }}
+                          >
+                            {tr('删除')}
+                          </button>
+                        </div>
                       </article>
                     ))}
                   </div>
@@ -1409,6 +1454,8 @@ export default function App() {
                 </p>
                 <HistoryTable
                   rows={historyRows}
+                  correct={(h) => void correctHistory(h)}
+                  remove={deleteHistory}
                   open={(id) => {
                     setSelected(id);
                     setPage(historyRows.find((h) => h.positionId === id)?.kind || 'account');
@@ -1421,6 +1468,16 @@ export default function App() {
                 )}
               </section>
             </>
+          )}
+          {page === 'schedules' && (
+            <section className="panel">
+              <SchedulePanel
+                accounts={positions.filter(
+                  (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
+                )}
+                refresh={() => load(false, true)}
+              />
+            </section>
           )}
           {page === 'calendar' && (
             <Calendar revealed={!!user.revealed} refreshVersion={calendarRefresh} />
@@ -1471,9 +1528,15 @@ export default function App() {
                         () =>
                           api('/settings', 'PATCH', {
                             baseCurrency: f.get('baseCurrency'),
-                            hiddenMenus: ['overview', 'account', 'asset', 'debt', 'history'].filter(
-                              (key) => !f.has('menu_' + key),
-                            ),
+                            hiddenMenus: [
+                              'overview',
+                              'account',
+                              'asset',
+                              'debt',
+                              'history',
+                              'calendar',
+                              'schedules',
+                            ].filter((key) => !f.has('menu_' + key)),
                             idleMinutes: Number(f.get('idleMinutes')),
                             showNotes: f.has('showNotes'),
                           }),
@@ -1485,7 +1548,15 @@ export default function App() {
                       {tr('选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。')}
                     </p>
                     <div className="menu-preferences">
-                      {['overview', 'account', 'asset', 'debt', 'history'].map((key) => (
+                      {[
+                        'overview',
+                        'account',
+                        'asset',
+                        'debt',
+                        'history',
+                        'calendar',
+                        'schedules',
+                      ].map((key) => (
                         <label key={key} className="switch-row">
                           <span>{tr(labels[key])}</span>
                           <input
@@ -1865,7 +1936,76 @@ export default function App() {
           )}
         </Modal>
       )}
-      {modal && (
+      {modal?.kind === 'transfer-edit' && modal.transfer && (
+        <Modal
+          title={tr('修改资金往来')}
+          close={() => {
+            if (!busy) setModal(null);
+          }}
+        >
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              const t = modal.transfer!,
+                f = Object.fromEntries(new FormData(e.currentTarget));
+              void act(
+                () =>
+                  api('/transfers/' + t.id, 'PUT', {
+                    ...f,
+                    sourceId: t.sourceId,
+                    targetId: t.targetId,
+                    operation: t.operation,
+                  }),
+                tr('记录已修改，余额和日历已更新'),
+              );
+            }}
+          >
+            <p>
+              {modal.transfer.source.name} ↔ {modal.transfer.target.name}
+            </p>
+            <Field label={tr('转出金额（') + modal.transfer.sourceCurrency + '）'}>
+              <input
+                name="amount"
+                required
+                inputMode="decimal"
+                defaultValue={modal.transfer.amount}
+              />
+            </Field>
+            <Field label={tr('实际到账（') + modal.transfer.targetCurrency + '）'}>
+              <input
+                name="received"
+                required
+                inputMode="decimal"
+                defaultValue={modal.transfer.received}
+              />
+            </Field>
+            <Field label={tr('手续费 / 优惠（') + modal.transfer.sourceCurrency + '）'}>
+              <input name="fee" required inputMode="decimal" defaultValue={modal.transfer.fee} />
+            </Field>
+            <Field label={tr('记录时间（UTC+8）')}>
+              <input
+                name="date"
+                type="datetime-local"
+                required
+                max={nowMinute()}
+                defaultValue={modal.transfer.date}
+              />
+            </Field>
+            <Field label={tr('备注')}>
+              <textarea name="notes" maxLength={2000} defaultValue={modal.transfer.notes} />
+            </Field>
+            {error && (
+              <p role="alert" className="notice error">
+                {error}
+              </p>
+            )}
+            <button className="primary" disabled={busy}>
+              {tr(busy ? '正在保存…' : '保存')}
+            </button>
+          </form>
+        </Modal>
+      )}
+      {modal && modal.kind !== 'transfer-edit' && (
         <Modal
           title={
             modal.kind === 'debt-payment'
@@ -2215,10 +2355,12 @@ function HistoryTable({
   rows,
   open,
   correct,
+  remove,
 }: {
   rows: History[];
   open?: (id: string) => void;
   correct?: (h: History) => void;
+  remove?: (h: History) => void;
 }) {
   return rows.length ? (
     <div className="table-wrap">
@@ -2307,13 +2449,18 @@ function HistoryTable({
               <td className="notes-cell">{h.notes || '—'}</td>
               {correct && (
                 <td>
-                  <button
-                    className="text"
-                    disabled={h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')}
-                    onClick={() => correct(h)}
-                  >
-                    {tr('更正')}
+                  <button className="text" onClick={() => correct(h)}>
+                    {tr(
+                      h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')
+                        ? '查看资金往来'
+                        : '更正',
+                    )}
                   </button>
+                  {remove && !h.reason.startsWith('transfer_') && !h.reason.startsWith('loan_') && (
+                    <button className="text danger-text" onClick={() => remove(h)}>
+                      {tr('删除')}
+                    </button>
+                  )}
                 </td>
               )}
             </tr>

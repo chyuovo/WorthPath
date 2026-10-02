@@ -4,6 +4,7 @@ import {
   Post,
   Patch,
   Put,
+  Delete,
   Body,
   Req,
   Param,
@@ -28,6 +29,7 @@ import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { IconsService } from './icons';
 import { RatesService } from './rates';
+import { captureReplay } from './replay';
 @Controller('api')
 export class PortfolioController {
   constructor(
@@ -204,23 +206,9 @@ export class PortfolioController {
         throw new BadRequestException('仅资产账户支持负余额');
       const original = await tx.revision.findFirst({ where: { id: revisionId, positionId: p.id } });
       if (!original) throw new NotFoundException('历史记录不存在');
-      const transfer = await tx.revision.findFirst({
-        where: {
-          positionId: p.id,
-          reason: { in: pairedReasons },
-          OR: [
-            { effectiveDate: { gt: original.effectiveDate } },
-            { effectiveDate: original.effectiveDate, sequence: { gte: original.sequence } },
-            { effectiveDate: { gt: toBusinessDate(v.date) } },
-            { effectiveDate: toBusinessDate(v.date), sequence: { gte: original.sequence } },
-          ],
-        },
-        select: { id: true },
-      });
-      if (transfer)
-        throw new ConflictException(
-          '转账及其之前的历史不可单独更正；请新增余额调整，保留转账双方一致',
-        );
+      if (pairedReasons.includes(original.reason))
+        throw new ConflictException('请在资金往来中修改完整配对记录');
+      const replay = await captureReplay(tx, r.userId, [id]);
       await tx.revision.update({
         where: { id: revisionId },
         data: {
@@ -230,6 +218,29 @@ export class PortfolioController {
           reason: 'correction',
         },
       });
+      await replay();
+      return { ok: true };
+    });
+  }
+
+  @Delete('positions/:id/revisions/:revisionId') async deleteRevision(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Param('revisionId') revisionId: string,
+  ) {
+    return this.db.serial(async (tx) => {
+      const replay = await captureReplay(tx, r.userId, [id]);
+      const p = await tx.position.findFirst({
+        where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
+      });
+      if (!p) throw new NotFoundException('项目不存在');
+      if (p.archived) throw new ConflictException('请先恢复归档项目');
+      const row = await tx.revision.findFirst({ where: { id: revisionId, positionId: id } });
+      if (!row) throw new NotFoundException('历史记录不存在');
+      if (pairedReasons.includes(row.reason))
+        throw new ConflictException('请在资金往来中删除完整配对记录');
+      await tx.revision.delete({ where: { id: revisionId } });
+      await replay();
       return { ok: true };
     });
   }

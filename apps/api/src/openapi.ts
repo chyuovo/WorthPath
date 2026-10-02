@@ -36,6 +36,7 @@ export function setupOpenApi(app: INestApplication) {
       .object({ targetIds: z.array(z.string().uuid()).max(20) })
       .strict(),
     'POST /api/transfers': transferInput,
+    'PUT /api/transfers/{id}': transferInput,
     'POST /api/schedules': scheduleInput,
     'PATCH /api/schedules/{id}': z.object({ enabled: z.boolean() }).strict(),
     'PATCH /api/settings': z
@@ -53,7 +54,7 @@ export function setupOpenApi(app: INestApplication) {
     }),
   };
   for (const [path, entry] of Object.entries(document.paths)) {
-    for (const method of ['get', 'post', 'patch', 'put'] as const) {
+    for (const method of ['get', 'post', 'patch', 'put', 'delete'] as const) {
       const operation = entry[method];
       if (!operation) continue;
       operation.summary = `${method.toUpperCase()} ${path}`;

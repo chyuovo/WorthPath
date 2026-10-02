@@ -51,11 +51,12 @@ export function AccountPicker({
           onChange={(e) => setQuery(e.target.value)}
         />
         <div className="actions">
-          <button type="button" aria-pressed={!grouped} onClick={() => setGrouped(false)}>
-            {tr('全部账户')}
-          </button>
-          <button type="button" aria-pressed={grouped} onClick={() => setGrouped(true)}>
-            {tr('按分组显示')}
+          <button
+            className="secondary picker-view-toggle"
+            type="button"
+            onClick={() => setGrouped(!grouped)}
+          >
+            {tr(grouped ? '显示全部账户' : '按分组显示')} <span aria-hidden="true">⇄</span>
           </button>
         </div>
         {groups.map((group) => (

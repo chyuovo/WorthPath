@@ -2,6 +2,10 @@ import {
   Controller,
   Get,
   Post,
+  Put,
+  Delete,
+  Param,
+  NotFoundException,
   Body,
   Req,
   Query,
@@ -15,6 +19,7 @@ import { UserRequest } from './auth';
 import { transferInput, toBusinessDate } from './validation';
 import { businessTime } from './calculation';
 import { movementDeltas } from './movement';
+import { captureReplay } from './replay';
 import { pageInput, encodeCursor, latestRevisions, transferPageIds } from './queries';
 @Controller('api/transfers')
 export class TransfersController {
@@ -42,6 +47,61 @@ export class TransfersController {
       nextCursor: rows.length > q.limit ? encodeCursor(last.effectiveDate, last.id) : null,
       revealed: r.revealed,
     };
+  }
+  @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
+    const v = transferInput.parse(body);
+    return this.change(r, id, v);
+  }
+  @Delete(':id') async remove(@Req() r: UserRequest, @Param('id') id: string) {
+    return this.change(r, id);
+  }
+  private async change(r: UserRequest, id: string, v?: ReturnType<typeof transferInput.parse>) {
+    return this.db.serial(async (tx) => {
+      const row = await tx.transfer.findFirst({
+        where: {
+          id,
+          userId: r.userId,
+          ...(r.revealed ? {} : { source: { hidden: false }, target: { hidden: false } }),
+        },
+        include: { source: true, target: true },
+      });
+      if (!row) throw new NotFoundException('资金往来记录不存在');
+      if (row.source.archived || row.target.archived)
+        throw new ConflictException('请先恢复归档项目');
+      const replay = await captureReplay(tx, r.userId, [row.sourceId, row.targetId]);
+      if (v) {
+        if (
+          v.sourceId !== row.sourceId ||
+          v.targetId !== row.targetId ||
+          v.operation !== row.operation
+        )
+          throw new BadRequestException('修改记录不能更换账户或操作类型，请删除后重新创建');
+        if (row.sourceCurrency === row.targetCurrency && !new Decimal(v.amount).eq(v.received))
+          throw new BadRequestException('同币种转出与到账金额必须一致，手续费单独填写');
+        const effectiveDate = toBusinessDate(v.date);
+        await tx.transfer.update({
+          where: { id },
+          data: {
+            amount: v.amount,
+            received: v.received,
+            fee: v.fee,
+            notes: v.notes,
+            effectiveDate,
+          },
+        });
+        await tx.revision.updateMany({
+          where: { id: { in: [row.sourceRevisionId, row.targetRevisionId] } },
+          data: { effectiveDate, notes: v.notes },
+        });
+      } else {
+        await tx.transfer.delete({ where: { id } });
+        await tx.revision.deleteMany({
+          where: { id: { in: [row.sourceRevisionId, row.targetRevisionId] } },
+        });
+      }
+      await replay();
+      return { ok: true };
+    });
   }
   @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
     const v = transferInput.parse(body);
