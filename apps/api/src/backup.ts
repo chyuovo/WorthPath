@@ -1,3 +1,4 @@
+import { scheduleInput } from './schedules';
 import { movementDeltas } from './movement';
 import { pairedReasons } from './validation';
 import {
@@ -109,6 +110,16 @@ const backupSchema = z
         }),
       )
       .optional(),
+    schedules: z
+      .array(
+        scheduleInput.safeExtend({
+          id: z.string().uuid(),
+          importedFromId: z.string().uuid().nullable().optional(),
+          enabled: z.boolean(),
+          completed: z.boolean().default(false),
+        }),
+      )
+      .optional(),
     positions: z.array(record),
     links: z.array(z.object({ sourceId: z.string().uuid(), targetId: z.string().uuid() }).strict()),
     rates: z.array(rateInput.safeExtend({ source: z.enum(['manual', 'frankfurter']) })),
@@ -132,6 +143,7 @@ export function validateBackup(raw: unknown) {
     positionInput.parse({
       name: p.name,
       category: p.category,
+      groupName: p.groupName,
       kind: p.kind,
       side: p.side,
       currency: p.currency,
@@ -149,6 +161,31 @@ export function validateBackup(raw: unknown) {
       revisionIds.add(r.id);
     }
     if (!b.currencies.includes(p.currency)) throw new BadRequestException('币种清单不完整');
+  }
+  for (const p of b.positions)
+    if (
+      (p.kind !== 'account' || p.side !== 'asset') &&
+      p.revisions.some((r) => r.amount.startsWith('-'))
+    )
+      throw new BadRequestException('仅资产账户支持负余额');
+  const planIds = new Set<string>();
+  for (const plan of b.schedules || []) {
+    const source = ids.get(plan.sourceId),
+      target = plan.targetId ? ids.get(plan.targetId) : null;
+    if (
+      planIds.has(plan.importedFromId || plan.id) ||
+      !source ||
+      source.kind !== 'account' ||
+      source.side !== 'asset' ||
+      (plan.operation === 'expense'
+        ? !!plan.targetId
+        : !target ||
+          target.kind !== 'account' ||
+          target.side !== 'asset' ||
+          (source.currency === target.currency && !new Decimal(plan.amount).eq(plan.received)))
+    )
+      throw new BadRequestException('计划账户关联无效');
+    planIds.add(plan.importedFromId || plan.id);
   }
   const transferIds = new Set<string>(),
     usedRevisions = new Set<string>();
@@ -288,6 +325,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       kind: p.kind,
       side: p.side,
       category: p.category,
+      groupName: p.groupName,
       currency: p.currency,
       notes: p.notes,
       archived: p.archived,
@@ -317,6 +355,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       },
     });
     const transfers = await client.transfer.findMany({ where: { userId } });
+    const schedules = await client.schedule.findMany({ where: { userId } });
     return backupSchema.parse({
       format: 'worthpath',
       version: 2,
@@ -348,6 +387,12 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         fee: t.fee.toString(),
         date: businessTime(effectiveDate),
         createdAt: t.createdAt.toISOString(),
+      })),
+      schedules: schedules.map(({ userId, ...v }) => ({
+        ...v,
+        amount: v.amount.toString(),
+        received: v.received.toString(),
+        nextAt: businessTime(v.nextAt),
       })),
       positions,
       links: ps.flatMap((p) =>
@@ -467,6 +512,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
           throw new BadRequestException('请先下载当前账号备份，再进入下一步（10 分钟内有效）');
         if (this.fingerprint(await this.data(r.userId, tx)) !== s.backupDigest)
           throw new ConflictException('数据已变化，请重新下载备份');
+        await tx.schedule.deleteMany({ where: { userId: r.userId } });
         await tx.position.deleteMany({ where: { userId: r.userId } });
         await tx.icon.deleteMany({ where: { ownerId: r.userId, shared: false } });
         await tx.exchangeRate.deleteMany({ where: { userId: r.userId } });
@@ -490,6 +536,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       rates: b.rates.length,
       icons: (b.icons || []).length,
       transfers: (b.transfers || []).length,
+      schedules: (b.schedules || []).length,
       baseCurrency: b.baseCurrency,
       currentBaseCurrency: existing.baseCurrency,
       message:
@@ -567,6 +614,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               kind: p.kind,
               side: p.side,
               category: p.category,
+              groupName: p.groupName,
               currency: p.currency,
               notes: p.notes,
               archived: p.archived,
@@ -625,6 +673,19 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               createdAt: new Date(t.createdAt),
             },
           });
+        for (const plan of b.schedules || []) {
+          const { id, importedFromId, ...v } = plan;
+          await tx.schedule.create({
+            data: {
+              ...v,
+              userId: r.userId,
+              importedFromId: importedFromId || id,
+              sourceId: mapping.get(plan.sourceId)!,
+              targetId: plan.targetId ? mapping.get(plan.targetId)! : null,
+              nextAt: new Date(plan.nextAt + ':00+08:00'),
+            },
+          });
+        }
         for (const l of b.links)
           await tx.positionLink.create({
             data: { sourceId: mapping.get(l.sourceId)!, targetId: mapping.get(l.targetId)! },

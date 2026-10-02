@@ -131,7 +131,7 @@ export async function historyPage(db: Reader, userId: string, revealed: boolean,
       ...(revealed ? {} : { hidden: false }),
       ...(q.positionId ? { id: q.positionId } : {}),
     },
-    select: { id: true, name: true, kind: true, currency: true },
+    select: { id: true, name: true, kind: true, side: true, currency: true },
   });
   // Bound every account's index scan before merging. A global JOIN + ORDER BY can
   // sort an entire user's history (and evaluate the predecessor for every row).
@@ -172,7 +172,13 @@ export async function historyPage(db: Reader, userId: string, revealed: boolean,
             take: q.limit + 1,
           })
           .then((rows) =>
-            rows.map((r) => ({ ...r, name: p.name, kind: p.kind, currency: p.currency })),
+            rows.map((r) => ({
+              ...r,
+              name: p.name,
+              kind: p.kind,
+              side: p.side,
+              currency: p.currency,
+            })),
           ),
       ),
     )
@@ -203,7 +209,7 @@ export async function historyPage(db: Reader, userId: string, revealed: boolean,
       id: r.positionId,
       name: r.name,
       kind: r.kind,
-      side: '',
+      side: r.side,
       currency: r.currency,
       revisions: [r],
     })[0],

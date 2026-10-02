@@ -2,6 +2,7 @@ import { t as tr, useLocale, LanguagePicker } from './i18n';
 import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard,
+  CalendarDays,
   Wallet,
   Landmark,
   HandCoins,
@@ -23,6 +24,7 @@ import {
   ApiError,
   currencies,
   money,
+  positionAmount,
   today,
   nowMinute,
   displayTime,
@@ -35,6 +37,8 @@ import {
   type PageResult,
 } from './api';
 import './style.css';
+import { Calendar } from './Calendar';
+import { SchedulePanel } from './SchedulePanel';
 import { IconPicker } from './IconPicker';
 import { TransferForm } from './TransferForm';
 import { DebtPaymentForm, operationLabel, type DebtOperation } from './DebtPaymentForm';
@@ -46,6 +50,7 @@ const labels: Record<string, string> = {
   asset: '独立资产',
   debt: '债务',
   history: '变化记录',
+  calendar: '收支日历',
   settings: '设置与备份',
 };
 const categories: Record<string, [string, string][]> = {
@@ -154,7 +159,7 @@ function Chart({ rows, base }: { rows: Total[]; base: string }) {
     <>
       <div className="legend">
         <span className="green">{tr('总资产')}</span>
-        <span className="orange">{tr('总负债')}</span>
+        <span className="danger-text">{tr('总负债')}</span>
         <span className="blue">{tr('净资产')}</span>
         <small>{base}</small>
       </div>
@@ -176,7 +181,7 @@ function Chart({ rows, base }: { rows: Total[]; base: string }) {
               )
               .join(' ')}
             fill="none"
-            stroke={['#199b76', '#dc9463', '#457bca'][i]}
+            stroke={['#199b76', '#c73542', '#457bca'][i]}
             strokeWidth="3"
           />
         ))}
@@ -222,6 +227,9 @@ export default function App() {
     [loading, setLoading] = useState(false),
     [error, setError] = useState(''),
     [success, setSuccess] = useState('');
+  const [calendarRefresh, setCalendarRefresh] = useState(0);
+  const [quickMode, setQuickMode] = useState(false),
+    [accountGroup, setAccountGroup] = useState('');
   const [fxStatus, setFxStatus] = useState<{
     state: string;
     message: string;
@@ -255,6 +263,8 @@ export default function App() {
   userRef.current = user;
   const activityAt = useRef(0);
   function clearAccount() {
+    setQuickMode(false);
+    setAccountGroup('');
     setClearStep(0);
     setClearConfirmation(0);
     activityAt.current = 0;
@@ -331,6 +341,16 @@ export default function App() {
         }
         setOverview({ ...o, trend: t.items, recent: recent.items });
       } else if (['account', 'asset', 'debt'].includes(page)) {
+        if (page === 'account' && !rangeOnly) {
+          const result = await api<{
+            executed: number;
+            errors: { message: string }[];
+            hasMore: boolean;
+          }>('/schedules/run', 'POST', {});
+          if (!active()) return;
+          if (result.errors.length) setError(result.errors[0].message);
+          if (result.executed) setSuccess(tr('到期计划已记账') + ` (${result.executed})`);
+        }
         const [p, h] = await Promise.all([
           api<Position[]>('/positions?kind=' + page),
           selected
@@ -359,6 +379,8 @@ export default function App() {
         setHistoryCursor(h.nextCursor);
         setTransfers(t.items);
         setTransferCursor(t.nextCursor);
+      } else if (page === 'calendar') {
+        setCalendarRefresh((value) => value + 1);
       } else if (page === 'settings') {
         const settings = await api<User & { rates: Rate[]; fxStatus: typeof fxStatus }>(
           '/settings' + (settingsSection === 'rates' ? '?rates=true' : ''),
@@ -725,6 +747,7 @@ export default function App() {
     ['asset', Landmark],
     ['debt', HandCoins],
     ['history', HistoryIcon],
+    ['calendar', CalendarDays],
     ['settings', Settings],
   ] as const;
   const visibleNav = nav.filter(([key]) => !(user.hiddenMenus || []).includes(key));
@@ -921,7 +944,13 @@ export default function App() {
                       </span>
                       <ArrowUpRight size={18} />
                     </div>
-                    <strong>{money(value, user.baseCurrency)}</strong>
+                    <strong
+                      className={
+                        cls === 'debt' || value.startsWith('-') ? 'danger-text' : undefined
+                      }
+                    >
+                      {money(value, user.baseCurrency)}
+                    </strong>
                     <small>
                       {title === tr('净资产')
                         ? tr('总资产 − 总负债')
@@ -1055,18 +1084,26 @@ export default function App() {
                     <span className="badge">
                       {categoryLabel(p)} ·{' '}
                       {p.kind === 'debt'
-                        ? tr(p.side === 'asset' ? '借出（应收）' : '借入（应付）')
+                        ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
                         : p.side === 'asset'
                           ? tr('资产')
                           : tr('负债')}
                       {p.archived ? tr(' · 已归档') : ''}
                     </span>
-                    <h2>{money(p.amount, p.currency)}</h2>
+                    <h2
+                      className={
+                        p.side === 'liability' || p.amount.startsWith('-')
+                          ? 'danger-text'
+                          : undefined
+                      }
+                    >
+                      {money(positionAmount(p), p.currency)}
+                    </h2>
                     {p.hidden && <span className="badge">{tr('隐藏项目')}</span>}
                     <p className="muted">
                       {tr('本位币：')}
                       {p.converted !== null
-                        ? money(p.converted || '0', user.baseCurrency)
+                        ? money(positionAmount(p, p.converted || '0'), user.baseCurrency)
                         : tr('缺少汇率')}
                     </p>
                     <p className="notes-display">{p.notes || tr('暂无备注')}</p>
@@ -1085,7 +1122,7 @@ export default function App() {
                           className="secondary"
                           onClick={() => setModal({ kind: 'debt-payment', p })}
                         >
-                          {tr('债务收款 / 还款')}
+                          {tr('收款 / 还款')}
                         </button>
                       </>
                     )}
@@ -1103,18 +1140,6 @@ export default function App() {
                         >
                           {operationLabel(p.side === 'asset' ? 'collect' : 'repay')}
                         </button>
-                        <button
-                          className="secondary"
-                          onClick={() =>
-                            setModal({
-                              kind: 'debt-payment',
-                              p,
-                              operation: p.side === 'asset' ? 'lend' : 'borrow',
-                            })
-                          }
-                        >
-                          {operationLabel(p.side === 'asset' ? 'lend' : 'borrow')}
-                        </button>
                       </>
                     )}
                     <button className="secondary" onClick={() => setModal({ kind: 'edit', p })}>
@@ -1129,6 +1154,7 @@ export default function App() {
                             api('/positions/' + p.id, 'PATCH', {
                               name: p.name,
                               category: p.category,
+                              groupName: p.groupName,
                               notes: p.notes,
                               archived: !p.archived,
                               hidden: p.hidden,
@@ -1196,15 +1222,63 @@ export default function App() {
               </>
             ) : (
               <section className="panel">
+                {page === 'account' && (
+                  <>
+                    <div className="actions account-tools">
+                      <button
+                        className={quickMode ? 'primary' : 'secondary'}
+                        aria-pressed={quickMode}
+                        onClick={() => setQuickMode(!quickMode)}
+                      >
+                        {tr(quickMode ? '退出快速记账' : '快速记账')}
+                      </button>
+                      <select
+                        aria-label={tr('账户分组')}
+                        value={accountGroup}
+                        onChange={(e) => setAccountGroup(e.target.value)}
+                      >
+                        <option value="">{tr('全部账户')}</option>
+                        {[
+                          ...new Set(
+                            positions
+                              .filter((p) => p.kind === 'account')
+                              .map((p) => p.groupName || '未分组'),
+                          ),
+                        ].map((g) => (
+                          <option key={g} value={g}>
+                            {tr(g)}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    {quickMode && <p className="muted">{tr('点击账户卡片，直接填写当前余额。')}</p>}
+                    <SchedulePanel
+                      accounts={positions.filter(
+                        (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
+                      )}
+                      refresh={() => load(false, true)}
+                    />
+                  </>
+                )}
                 {positions.some((p) => p.kind === page) ? (
                   <div className="position-grid">
                     {positions
-                      .filter((p) => p.kind === page)
+                      .filter(
+                        (p) =>
+                          p.kind === page &&
+                          (page !== 'account' ||
+                            !accountGroup ||
+                            (p.groupName || '未分组') === accountGroup),
+                      )
                       .map((p) => (
                         <button
                           className="position-card"
                           key={p.id}
-                          onClick={() => setSelected(p.id)}
+                          onClick={() =>
+                            page === 'account' && quickMode && !p.archived
+                              ? setModal({ kind: 'revision', p })
+                              : setSelected(p.id)
+                          }
                         >
                           <div>
                             <span className="position-icon">
@@ -1221,21 +1295,30 @@ export default function App() {
                             <ArrowUpRight size={18} />
                           </div>
                           <h3>{p.name}</h3>
+                          {p.groupName && <span className="badge">{p.groupName}</span>}
                           <p>
                             {categoryLabel(p)} ·{' '}
                             {p.kind === 'debt'
-                              ? tr(p.side === 'asset' ? '借出（应收）' : '借入（应付）')
+                              ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
                               : p.side === 'asset'
                                 ? tr('资产')
                                 : tr('负债')}
                             {p.archived ? tr(' · 已归档') : ''}
                           </p>
-                          <strong>{money(p.amount, p.currency)}</strong>
+                          <strong
+                            className={
+                              p.side === 'liability' || p.amount.startsWith('-')
+                                ? 'danger-text'
+                                : undefined
+                            }
+                          >
+                            {money(positionAmount(p), p.currency)}
+                          </strong>
                           <small>
                             {tr('折合')}{' '}
                             {p.converted === null
                               ? tr('缺少汇率')
-                              : money(p.converted || '0', user.baseCurrency)}
+                              : money(positionAmount(p, p.converted || '0'), user.baseCurrency)}
                           </small>
                         </button>
                       ))}
@@ -1250,92 +1333,97 @@ export default function App() {
               </section>
             ))}
           {page === 'history' && (
-            <section className="panel">
-              <div className="actions">
-                <label>
-                  {tr('开始')}
-                  <input
-                    type="date"
-                    value={rangeFrom}
-                    max={rangeTo}
-                    onChange={(e) => setRangeFrom(e.target.value)}
-                  />
-                </label>
-                <label>
-                  {tr('结束')}
-                  <input
-                    type="date"
-                    value={rangeTo}
-                    min={rangeFrom}
-                    max={today()}
-                    onChange={(e) => setRangeTo(e.target.value)}
-                  />
-                </label>
-              </div>
-              <h2>{tr('资金往来')}</h2>
-              {transfers.length ? (
-                <div className="transfer-list">
-                  {transfers.map((t) => (
-                    <article key={t.id}>
-                      <div>
-                        <strong>
-                          {operationLabel(t.operation || 'transfer')} ·
-                          <button
-                            className="text"
-                            onClick={() => {
-                              setSelected(t.sourceId);
-                              setPage(t.source.kind);
-                            }}
-                          >
-                            {t.source.name}
-                          </button>
-                          {' ↔ '}
-                          <button
-                            className="text"
-                            onClick={() => {
-                              setSelected(t.targetId);
-                              setPage(t.target.kind);
-                            }}
-                          >
-                            {t.target.name}
-                          </button>
-                        </strong>
-                        <small>{displayTime(t.date)}</small>
-                      </div>
-                      <p>
-                        {money(t.amount, t.sourceCurrency)} → {money(t.received, t.targetCurrency)}{' '}
-                        {tr('· 手续费')}
-                        {money(t.fee, t.sourceCurrency)}
-                      </p>
-                      {t.notes && <p className="muted notes-display">{t.notes}</p>}
-                    </article>
-                  ))}
+            <>
+              <section className="panel">
+                <div className="actions">
+                  <label>
+                    {tr('开始')}
+                    <input
+                      type="date"
+                      value={rangeFrom}
+                      max={rangeTo}
+                      onChange={(e) => setRangeFrom(e.target.value)}
+                    />
+                  </label>
+                  <label>
+                    {tr('结束')}
+                    <input
+                      type="date"
+                      value={rangeTo}
+                      min={rangeFrom}
+                      max={today()}
+                      onChange={(e) => setRangeTo(e.target.value)}
+                    />
+                  </label>
                 </div>
-              ) : (
-                <p className="muted">{tr('暂无账户间转账记录。')}</p>
-              )}
-              {transferCursor && (
-                <button disabled={loading} onClick={() => void more('transfers')}>
-                  {tr('加载更早转账')}
-                </button>
-              )}
-              <h2>{tr('全部金额变化')}</h2>
-              <p className="muted">
-                {tr('原币绝对余额记录；负债减少即还款。选择项目可查看详情并更正。')}
-              </p>
-              <HistoryTable
-                rows={historyRows}
-                open={(id) => {
-                  setSelected(id);
-                  setPage(historyRows.find((h) => h.positionId === id)?.kind || 'account');
-                }}
-              />
-              {historyCursor && (
-                <button disabled={loading} onClick={() => void more('history')}>
-                  {tr('加载更早记录')}
-                </button>
-              )}
-            </section>
+                <h2>{tr('资金往来')}</h2>
+                {transfers.length ? (
+                  <div className="transfer-list">
+                    {transfers.map((t) => (
+                      <article key={t.id}>
+                        <div>
+                          <strong>
+                            {operationLabel(t.operation || 'transfer')} ·
+                            <button
+                              className="text"
+                              onClick={() => {
+                                setSelected(t.sourceId);
+                                setPage(t.source.kind);
+                              }}
+                            >
+                              {t.source.name}
+                            </button>
+                            {' ↔ '}
+                            <button
+                              className="text"
+                              onClick={() => {
+                                setSelected(t.targetId);
+                                setPage(t.target.kind);
+                              }}
+                            >
+                              {t.target.name}
+                            </button>
+                          </strong>
+                          <small>{displayTime(t.date)}</small>
+                        </div>
+                        <p>
+                          {money(t.amount, t.sourceCurrency)} →{' '}
+                          {money(t.received, t.targetCurrency)} {tr('· 手续费')}
+                          {money(t.fee, t.sourceCurrency)}
+                        </p>
+                        {t.notes && <p className="muted notes-display">{t.notes}</p>}
+                      </article>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="muted">{tr('暂无账户间转账记录。')}</p>
+                )}
+                {transferCursor && (
+                  <button disabled={loading} onClick={() => void more('transfers')}>
+                    {tr('加载更早转账')}
+                  </button>
+                )}
+                <h2>{tr('全部金额变化')}</h2>
+                <p className="muted">
+                  {tr('原币绝对余额记录；负债减少即还款。选择项目可查看详情并更正。')}
+                </p>
+                <HistoryTable
+                  rows={historyRows}
+                  open={(id) => {
+                    setSelected(id);
+                    setPage(historyRows.find((h) => h.positionId === id)?.kind || 'account');
+                  }}
+                />
+                {historyCursor && (
+                  <button disabled={loading} onClick={() => void more('history')}>
+                    {tr('加载更早记录')}
+                  </button>
+                )}
+              </section>
+            </>
+          )}
+          {page === 'calendar' && (
+            <Calendar revealed={!!user.revealed} refreshVersion={calendarRefresh} />
           )}
           {page === 'settings' && (
             <>
@@ -1781,7 +1869,9 @@ export default function App() {
         <Modal
           title={
             modal.kind === 'debt-payment'
-              ? tr('债务收款 / 还款')
+              ? modal.p?.kind === 'debt'
+                ? operationLabel(modal.p.side === 'asset' ? 'collect' : 'repay')
+                : tr('收款 / 还款')
               : modal.kind === 'transfer'
                 ? tr('账户间转账')
                 : modal.kind === 'reveal'
@@ -1923,7 +2013,25 @@ export default function App() {
                     {tr('隐藏此项目（密码验证后可查看和编辑）')}
                   </label>
                   {(modal.kind === 'account' || modal.p?.kind === 'account') && (
-                    <IconPicker key={modal.p?.id || 'new-account'} initialId={modal.p?.iconId} />
+                    <>
+                      <IconPicker key={modal.p?.id || 'new-account'} initialId={modal.p?.iconId} />
+                      <Field label={tr('账户分组')}>
+                        <input
+                          name="groupName"
+                          maxLength={60}
+                          defaultValue={modal.p?.groupName || ''}
+                          list="account-groups"
+                          placeholder={tr('例如：日常、消费、理财')}
+                        />
+                        <datalist id="account-groups">
+                          {[...new Set(positions.map((p) => p.groupName).filter(Boolean))].map(
+                            (g) => (
+                              <option key={g} value={g} />
+                            ),
+                          )}
+                        </datalist>
+                      </Field>
+                    </>
                   )}
                   <Field label={tr('名称')}>
                     <input
@@ -1957,8 +2065,8 @@ export default function App() {
                 <>
                   <Field label={tr('债务方向')}>
                     <select name="side" defaultValue="liability">
-                      <option value="liability">{tr('借入（应付）')}</option>
-                      <option value="asset">{tr('借出（应收）')}</option>
+                      <option value="liability">{tr('欠款（待还）')}</option>
+                      <option value="asset">{tr('借款（待收）')}</option>
                     </select>
                   </Field>
                   <p className="muted">
@@ -1979,13 +2087,26 @@ export default function App() {
               )}
               {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
                 <Field
-                  label={tr('变更后的绝对金额') + (modal.p ? '（' + modal.p.currency + '）' : '')}
+                  label={
+                    tr(
+                      modal.p?.kind === 'debt'
+                        ? '剩余本金'
+                        : modal.p?.kind === 'asset'
+                          ? '当前估值'
+                          : '当前余额',
+                    ) + (modal.p ? '（' + modal.p.currency + '）' : '')
+                  }
                 >
                   <input
                     name="amount"
                     inputMode="decimal"
                     required
-                    pattern="(0|[1-9][0-9]{0,15})(\.[0-9]{1,8})?"
+                    pattern={
+                      (modal.p?.side === 'asset' && modal.p?.kind === 'account') ||
+                      modal.kind === 'account'
+                        ? '-?(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
+                        : '(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
+                    }
                     defaultValue={
                       modal.h?.after || modal.p?.amount || (modal.kind === 'debt' ? '0' : '')
                     }
@@ -1994,7 +2115,7 @@ export default function App() {
                 </Field>
               )}
               {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
-                <Field label={tr('业务时间（北京时间，精确到分钟）')}>
+                <Field label={tr('记录时间（UTC+8）')}>
                   <input
                     type={'datetime-local'}
                     name="date"
@@ -2129,6 +2250,7 @@ function HistoryTable({
                     (
                       {
                         initial: tr('初始记录'),
+                        scheduled_expense: tr('计划支出'),
                         balance: tr('余额更新'),
                         valuation: tr('估值更新'),
                         repayment: tr('还款'),
@@ -2144,9 +2266,44 @@ function HistoryTable({
                   }
                 </small>
               </td>
-              <td>{money(h.before, h.currency)}</td>
-              <td>{money(h.after, h.currency)}</td>
-              <td>{money(h.delta, h.currency)}</td>
+              <td
+                className={h.kind === 'debt' && h.side === 'liability' ? 'danger-text' : undefined}
+              >
+                {money(
+                  h.kind === 'debt' && h.side === 'liability' && Number(h.before) !== 0
+                    ? '-' + h.before
+                    : h.before,
+                  h.currency,
+                )}
+              </td>
+              <td
+                className={h.kind === 'debt' && h.side === 'liability' ? 'danger-text' : undefined}
+              >
+                {money(
+                  h.kind === 'debt' && h.side === 'liability' && Number(h.after) !== 0
+                    ? '-' + h.after
+                    : h.after,
+                  h.currency,
+                )}
+              </td>
+              <td
+                className={
+                  (h.kind === 'debt' && h.side === 'liability') || h.delta.startsWith('-')
+                    ? 'danger-text'
+                    : undefined
+                }
+              >
+                {money(
+                  h.kind === 'debt' && h.side === 'liability'
+                    ? h.delta.startsWith('-')
+                      ? h.delta.slice(1)
+                      : Number(h.delta) !== 0
+                        ? '-' + h.delta
+                        : h.delta
+                    : h.delta,
+                  h.currency,
+                )}
+              </td>
               <td className="notes-cell">{h.notes || '—'}</td>
               {correct && (
                 <td>

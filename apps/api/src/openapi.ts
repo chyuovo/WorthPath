@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { scheduleInput } from './schedules';
 import { z } from 'zod';
 import {
   credentials,
@@ -35,6 +36,8 @@ export function setupOpenApi(app: INestApplication) {
       .object({ targetIds: z.array(z.string().uuid()).max(20) })
       .strict(),
     'POST /api/transfers': transferInput,
+    'POST /api/schedules': scheduleInput,
+    'PATCH /api/schedules/{id}': z.object({ enabled: z.boolean() }).strict(),
     'PATCH /api/settings': z
       .object({
         baseCurrency: currency.optional(),

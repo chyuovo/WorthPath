@@ -118,5 +118,71 @@
     "source": "https://jr.jd.com/logo.png",
     "file": "20.png",
     "sha256": "8dc9703f571e605df552dc7eb14ae074d9ddab6b27a9140b610e87b1c2a5f693"
+  },
+  {
+    "name": "汇丰香港",
+    "source": "https://www.hsbc.com.hk/etc.clientlibs/dpws/clientlibs-public/clientlib-site/resources/favicons/apple-touch-icon.png",
+    "file": "21.png",
+    "sha256": "d258f7e2ad662d73ec5c4a2c9e0b7d514b353df351bb8880b9b4731682788766"
+  },
+  {
+    "name": "恒生银行",
+    "source": "https://www.hangseng.com/etc.clientlibs/hase/clientlibs/clientlib-header/resources/favicon.ico",
+    "file": "22.png",
+    "sha256": "9d40bc7de25856427ba5ca9bcb6951652765cb0344ed14974d4ddc4ea17f9e65"
+  },
+  {
+    "name": "渣打香港",
+    "source": "https://av.sc.com/hk/content/images/content/images/cropped-512x512-1-150x150.png",
+    "file": "23.png",
+    "sha256": "1fdfd03637318e0ae31931a09a29bc5725342daab40e03ee715d635c0740c1a7"
+  },
+  {
+    "name": "东亚银行",
+    "source": "https://www.hkbea.com/images/favicon.ico",
+    "file": "24.png",
+    "sha256": "b99768b3931c08f69af569a9a662f490b5665d7203fbf1eeb49baa44ed511c1c"
+  },
+  {
+    "name": "星展香港",
+    "source": "https://www.dbs.com.hk/_next/public/favicon.ico?q=fa411ced-9fa6-4c3e-b208-d878769c84c9",
+    "file": "25.png",
+    "sha256": "3bcee651ede82d04774636cad1e14bbe448155ea17ac5f9a019bb7301b8811b2"
+  },
+  {
+    "name": "花旗香港",
+    "source": "https://www.citibank.com.hk/views/images/favicon.ico",
+    "file": "26.png",
+    "sha256": "a208032884b564421a9c5355c3806d4d33ef6616045444d58ec4595cb73abfa0"
+  },
+  {
+    "name": "Gate",
+    "source": "https://www.gate.com/favicon.ico",
+    "file": "27.png",
+    "sha256": "d8900cbf6d55a20ae77d5e83f224a10e051c06dc43a804960a86073c5c89d2a9"
+  },
+  {
+    "name": "Bybit",
+    "source": "https://www.bybit.com/favicon.ico",
+    "file": "28.png",
+    "sha256": "e6ca34b0ddfddd7fb2e32f4e137704f7e392463f817ac35fca47b30cd0885cc0"
+  },
+  {
+    "name": "Bitget",
+    "source": "https://www.bitget.com/baseasset/favicon4.png",
+    "file": "29.png",
+    "sha256": "96566dc4bc8606740f518de4126b24537e7d287ed7e8181eb9e641cfb80847a7"
+  },
+  {
+    "name": "中银香港",
+    "source": "https://www.bochk.com/etc/designs/bochk_web/images/icon/boc-icon-32.ico",
+    "file": "30.png",
+    "sha256": "8dd2451e41db10e438ae7708bae0b0090fa350da66e7a46571293427311268ef"
+  },
+  {
+    "name": "币安 Binance",
+    "source": "https://bin.bnbstatic.com/static/images/common/favicon.ico",
+    "file": "31.png",
+    "sha256": "8318ebbcb1cb4729eb0f78bb058dc618c3b63f9f9f0070a1a7a3265fdc79b833"
   }
 ]

@@ -51,14 +51,18 @@ export const rateValue = z
   .regex(/^(0|[1-9]\d{0,11})(\.\d{1,12})?$/)
   .refine((s) => /[1-9]/.test(s), '汇率必须大于零');
 export const notes = z.string().max(2000).default('');
+export const signedAmount = z
+  .string()
+  .regex(/^-?(0|[1-9]\d{0,15})(\.\d{1,8})?$/, '金额最多 16 位整数和 8 位小数');
 export const revisionInput = z
   .object({
-    amount,
+    amount: signedAmount,
     date: businessDate,
     notes,
     reason: z
       .enum([
         'initial',
+        'scheduled_expense',
         'balance',
         'valuation',
         'repayment',
@@ -75,6 +79,7 @@ export const revisionInput = z
   .strict();
 export const positionMeta = z
   .object({
+    groupName: z.string().trim().max(60).optional(),
     iconId: z.string().uuid().nullable().optional(),
     name: z.string().trim().min(1).max(100),
     category: z.string().trim().min(1).max(40),
@@ -88,11 +93,13 @@ export const positionInput = positionMeta
     kind: z.enum(['account', 'asset', 'debt']),
     side: z.enum(['asset', 'liability']),
     currency,
-    amount,
+    amount: signedAmount,
     date: businessDate,
   })
   .strict()
   .superRefine((p, c) => {
+    if (p.amount.startsWith('-') && (p.kind !== 'account' || p.side !== 'asset'))
+      c.addIssue({ code: 'custom', message: '仅资产账户支持负余额' });
     if (
       (p.kind === 'asset' && p.side !== 'asset') ||
       (p.kind === 'account' &&
@@ -121,10 +128,10 @@ export const credentials = z
   })
   .strict();
 
-export const menuKey = z.enum(['overview', 'account', 'asset', 'debt', 'history']);
+export const menuKey = z.enum(['overview', 'account', 'asset', 'debt', 'history', 'calendar']);
 export const hiddenMenus = z
   .array(menuKey)
-  .max(5)
+  .max(6)
   .refine((v) => new Set(v).size === v.length, '菜单不可重复');
 export const transferInput = z
   .object({

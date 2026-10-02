@@ -30,6 +30,7 @@ model User {
   sessions Session[]
   icons Icon[]
   transfers Transfer[]
+  schedules Schedule[]
 }
 /// 登录会话与隐藏项目查看授权
 model Session {
@@ -67,6 +68,8 @@ model Position {
   name String @db.VarChar(100)
   /// 项目分类代码
   category String @db.VarChar(40)
+  /// 自定义账户分组；空字符串表示未分组
+  groupName String @default("") @db.VarChar(60)
   /// 原始币种代码
   currency String @db.Char(3)
   /// 用户备注，原文保留
@@ -209,4 +212,25 @@ model Transfer {
   createdAt DateTime @default(now())
   @@unique([userId,importedFromId])
   @@index([userId,effectiveDate,id])
+}
+
+/// 按需执行的定时支出或转账计划
+model Schedule {
+  id String @id @default(uuid()) @db.Char(36)
+  userId String @db.Char(36)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  importedFromId String? @db.Char(36)
+  name String @db.VarChar(100)
+  operation String @db.VarChar(16)
+  sourceId String @db.Char(36)
+  targetId String? @db.Char(36)
+  amount Decimal @db.Decimal(24,8)
+  received Decimal @db.Decimal(24,8)
+  nextAt DateTime @db.DateTime(3)
+  intervalDays Int
+  enabled Boolean @default(true)
+  completed Boolean @default(false)
+  notes String @db.Text
+  @@index([userId,enabled,nextAt])
+  @@unique([userId,importedFromId])
 }

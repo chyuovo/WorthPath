@@ -1,3 +1,4 @@
+import { AccountPicker } from './AccountPicker';
 import { t as tr } from './i18n';
 import { useState, type FormEvent } from 'react';
 import { nowMinute, money, requestUuid, type Position } from './api';
@@ -31,29 +32,29 @@ export function TransferForm({
     <form onSubmit={save} className="transfer-form">
       <input type="hidden" name="requestId" value={requestId} />
       <p className="muted">
-        {tr(
-          '双方余额同时更新。正数手续费额外扣除，负数表示优惠抵扣（不超过转出金额）；转账时间不能早于双方最新余额记录。',
-        )}
+        {tr('转账会同时更新双方余额。余额不足时允许透支；手续费为负数时抵扣转出金额。')}
       </p>
       <label>
         {tr('转出账户')}
-        <select name="sourceId" value={sourceId} onChange={(e) => setSource(e.target.value)}>
-          {accounts.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {money(p.amount, p.currency)}
-            </option>
-          ))}
-        </select>
+        <AccountPicker
+          name="sourceId"
+          accounts={accounts}
+          value={sourceId}
+          onChange={(id) => {
+            setSource(id);
+            if (targetId === id) setTarget(accounts.find((p) => p.id !== id)?.id || '');
+          }}
+        />
       </label>
       <label>
         {tr('转入账户')}
-        <select name="targetId" value={targetId} onChange={(e) => setTarget(e.target.value)}>
-          {accounts.map((p) => (
-            <option key={p.id} value={p.id} disabled={p.id === sourceId}>
-              {p.name} · {p.currency}
-            </option>
-          ))}
-        </select>
+        <AccountPicker
+          name="targetId"
+          accounts={accounts}
+          value={targetId}
+          onChange={setTarget}
+          excludeId={sourceId}
+        />
       </label>
       <div className="form-columns">
         <label>

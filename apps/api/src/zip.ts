@@ -17,6 +17,7 @@ const files = [
   'rates.json',
   'icons.json',
   'transfers.json',
+  'schedules.json',
 ] as const;
 const sha = (s: Buffer | string) => createHash('sha256').update(s).digest('hex');
 export function packBackup(b: Backup) {
@@ -34,6 +35,7 @@ export function packBackup(b: Backup) {
     'rates.json': b.rates,
     'icons.json': b.icons || [],
     'transfers.json': b.transfers || [],
+    'schedules.json': b.schedules || [],
   };
   const contents = Object.fromEntries(
     files.map((name) => [name, JSON.stringify(data[name], null, 2)]),
@@ -41,7 +43,7 @@ export function packBackup(b: Backup) {
   contents['manifest.json'] = JSON.stringify(
     {
       format: 'worthpath',
-      version: 6,
+      version: 7,
       exportedAt: b.exportedAt,
       files: files.map((name) => ({ name, sha256: sha(contents[name]) })),
     },
@@ -116,13 +118,13 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const manifest = z
       .object({
         format: z.literal('worthpath'),
-        version: z.union([z.literal(3), z.literal(4), z.literal(5), z.literal(6)]),
+        version: z.union([z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]),
         exportedAt: z.iso.datetime(),
         files: z
           .array(
             z.object({ name: z.enum(files), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
           )
-          .min(files.length - 2)
+          .min(files.length - 3)
           .max(files.length),
       })
       .strict()
@@ -130,7 +132,8 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const expected = files.filter(
       (f) =>
         (manifest.version >= 4 || f !== 'icons.json') &&
-        (manifest.version >= 5 || f !== 'transfers.json'),
+        (manifest.version >= 5 || f !== 'transfers.json') &&
+        (manifest.version >= 7 || f !== 'schedules.json'),
     );
     if (
       contents.size !== expected.length + 1 ||
@@ -181,6 +184,7 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
       links: parse('links.json'),
       rates: parse('rates.json'),
       ...(manifest.version >= 5 ? { transfers: parse('transfers.json') } : {}),
+      ...(manifest.version >= 7 ? { schedules: parse('schedules.json') } : {}),
       ...(manifest.version >= 4 ? { icons: parse('icons.json') } : {}),
     };
   } catch {

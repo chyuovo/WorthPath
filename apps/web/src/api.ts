@@ -35,6 +35,7 @@ export type History = {
   positionId: string;
   name: string;
   kind: string;
+  side: string;
   before: string;
   after: string;
   delta: string;
@@ -44,6 +45,7 @@ export type History = {
   reason: string;
 };
 export type Position = {
+  groupName?: string;
   iconId?: string | null;
   id: string;
   kind: string;
@@ -104,7 +106,11 @@ export const nowMinute = () => new Date(Date.now() + 8 * 3600000).toISOString().
 export const displayTime = (s: string) => s.replace('T', ' ');
 export function money(v: string, currency: string) {
   const [whole, frac] = v.split('.');
-  return `${currency} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac !== undefined ? '.' + frac : ''}`;
+  const symbol =
+    (
+      { CNY: '¥', USD: 'US$', HKD: 'HK$', EUR: '€', GBP: '£', JPY: 'JP¥' } as Record<string, string>
+    )[currency] || currency;
+  return `${symbol} ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, ',')}${frac !== undefined ? '.' + frac : ''}`;
 }
 
 export type Transfer = {
@@ -133,3 +139,9 @@ export function requestUuid() {
 }
 
 export type PageResult<T> = { items: T[]; nextCursor: string | null; revealed: boolean };
+
+export function positionAmount(p: Position, value = p.amount) {
+  return p.kind === 'debt' && p.side === 'liability' && !/^[-]?0(?:\.0+)?$/.test(value)
+    ? '-' + value.replace(/^-/, '')
+    : value;
+}

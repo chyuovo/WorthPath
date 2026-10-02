@@ -7,6 +7,8 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { json } from 'express';
 import { AuthController, AuthGuard, AuthService } from './auth';
+import { CalendarController } from './calendar';
+import { SchedulesController } from './schedules';
 import { TransfersController } from './transfers';
 import { PortfolioController } from './portfolio';
 import { BackupController } from './backup';
@@ -53,6 +55,8 @@ class SafeErrors implements ExceptionFilter {
   ],
   controllers: [
     TransfersController,
+    SchedulesController,
+    CalendarController,
     IconsController,
     AuthController,
     PortfolioController,

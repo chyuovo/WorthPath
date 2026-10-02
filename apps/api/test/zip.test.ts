@@ -14,6 +14,7 @@ const empty = () =>
     currencies: ['CNY'],
     icons: [],
     transfers: [],
+    schedules: [],
     positions: [],
     rates: [],
     links: [],
@@ -43,6 +44,7 @@ test('ZIP contains separate JSON files and restores settings without authenticat
     'links.json',
     'manifest.json',
     'rates.json',
+    'schedules.json',
     'settings.json',
     'transfers.json',
   ]);
@@ -102,10 +104,11 @@ test('legacy v3 ZIP remains readable without icons', async () => {
   const contents = packBackup(empty());
   delete contents['icons.json'];
   delete contents['transfers.json'];
+  delete contents['schedules.json'];
   const manifest = JSON.parse(contents['manifest.json']);
   manifest.version = 3;
   manifest.files = manifest.files.filter(
-    (f: { name: string }) => !['icons.json', 'transfers.json'].includes(f.name),
+    (f: { name: string }) => !['icons.json', 'transfers.json', 'schedules.json'].includes(f.name),
   );
   contents['manifest.json'] = JSON.stringify(manifest);
   const restored = validateBackup(await readBackupZip(await archive(contents)));
@@ -116,13 +119,74 @@ test('legacy v3 ZIP remains readable without icons', async () => {
 test('legacy v4 ZIP remains readable without transfers', async () => {
   const contents = packBackup(empty());
   delete contents['transfers.json'];
+  delete contents['schedules.json'];
   const manifest = JSON.parse(contents['manifest.json']);
   manifest.version = 4;
-  manifest.files = manifest.files.filter((f: { name: string }) => f.name !== 'transfers.json');
+  manifest.files = manifest.files.filter(
+    (f: { name: string }) => !['transfers.json', 'schedules.json'].includes(f.name),
+  );
   contents['manifest.json'] = JSON.stringify(manifest);
   const restored = validateBackup(await readBackupZip(await archive(contents)));
   assert.deepEqual(restored.icons, []);
   assert.equal(restored.transfers, undefined);
   assert.equal(restored.preferences?.showNotes, false);
   assert.deepEqual(restored.preferences?.hiddenMenus, ['asset']);
+});
+
+test('ZIP v7 restores groups and schedules while v6 remains readable', async () => {
+  const id = randomUUID(),
+    stamp = new Date().toISOString();
+  const b = validateBackup({
+    ...empty(),
+    positions: [
+      {
+        id,
+        name: '账户',
+        groupName: '日常',
+        kind: 'account',
+        side: 'asset',
+        category: 'bank',
+        currency: 'CNY',
+        notes: '',
+        archived: false,
+        hidden: false,
+        createdAt: stamp,
+        updatedAt: stamp,
+        revisions: [
+          {
+            id: randomUUID(),
+            amount: '-10',
+            date: '2026-09-01T10:00',
+            notes: '',
+            reason: 'balance',
+            createdAt: stamp,
+            updatedAt: stamp,
+          },
+        ],
+      },
+    ],
+    schedules: [
+      {
+        id: randomUUID(),
+        name: '租金',
+        operation: 'expense',
+        sourceId: id,
+        targetId: null,
+        amount: '100',
+        received: '0',
+        nextAt: '2026-11-01T10:00',
+        intervalDays: 30,
+        enabled: true,
+        notes: '',
+      },
+    ],
+  });
+  const contents = packBackup(b);
+  assert.deepEqual(validateBackup(await readBackupZip(await archive(contents))), b);
+  delete contents['schedules.json'];
+  const manifest = JSON.parse(contents['manifest.json']);
+  manifest.version = 6;
+  manifest.files = manifest.files.filter((f: { name: string }) => f.name !== 'schedules.json');
+  contents['manifest.json'] = JSON.stringify(manifest);
+  assert.equal(validateBackup(await readBackupZip(await archive(contents))).schedules, undefined);
 });

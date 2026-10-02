@@ -85,8 +85,13 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
       400,
     );
     assert.equal(
-      (await call('/transfers', a.cookie, 'POST', { ...request, amount: '100', received: '100' }))
-        .status,
+      (
+        await call('/transfers', a.cookie, 'POST', {
+          ...request,
+          amount: '10000000000000000',
+          received: '10000000000000000',
+        })
+      ).status,
       400,
     );
     assert.equal(await db.transfer.count({ where: { userId: a.id } }), 0);
@@ -190,10 +195,14 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     );
     assert.equal(
       race.filter((r) => r.status === 201).length,
-      1,
+      2,
       JSON.stringify(race.map((r) => ({ status: r.status, data: r.data }))),
     );
-    assert.equal(race.filter((r) => [400, 409].includes(r.status)).length, 1);
+    assert.equal(race.filter((r) => [400, 409].includes(r.status)).length, 0);
+    assert.equal(
+      (await call('/positions', a.cookie)).data.find((p: any) => p.id === usd).amount,
+      '-11.00000001',
+    );
     assert.equal(
       (
         await call('/settings', a.cookie, 'PATCH', {
@@ -212,7 +221,7 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     );
     assert.equal((await call('/settings', a.cookie, 'PATCH', { showSidebar: false })).status, 400);
     const backup = (await call('/backup', a.cookie)).data;
-    assert.equal(backup.transfers.length, 3);
+    assert.equal(backup.transfers.length, 4);
     assert.equal(backup.preferences.showNotes, false);
     assert.deepEqual(backup.preferences.hiddenMenus, ['asset', 'debt']);
     const broken = structuredClone(backup);
@@ -227,7 +236,7 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
       201,
     );
     const restored = (await call('/backup', b.cookie)).data;
-    assert.equal(restored.transfers.length, 3);
+    assert.equal(restored.transfers.length, 4);
     // Appending into an existing space preserves its display preferences.
     assert.equal((await call('/settings', b.cookie)).data.showNotes, true);
     const c = await account();
@@ -254,7 +263,7 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
       hidden: true,
     });
     const visibleTransfers = (await call('/transfers', a.cookie)).data.items;
-    assert.equal(visibleTransfers.length, 2);
+    assert.equal(visibleTransfers.length, 3);
     assert.ok(
       visibleTransfers.every((t: any) => t.sourceId !== sourceId && t.targetId !== sourceId),
     );

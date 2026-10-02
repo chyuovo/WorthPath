@@ -1,5 +1,6 @@
+import { AccountPicker } from './AccountPicker';
 import { useState, type FormEvent } from 'react';
-import { type Position, nowMinute, money, requestUuid } from './api';
+import { type Position, nowMinute, money, requestUuid, positionAmount } from './api';
 import { t as tr } from './i18n';
 export type DebtOperation = 'borrow' | 'lend' | 'collect' | 'repay';
 export const operationLabel = (operation: string) =>
@@ -8,8 +9,8 @@ export const operationLabel = (operation: string) =>
       {
         borrow: '借入到账',
         lend: '借出付款',
-        collect: '收回借款',
-        repay: '偿还债务',
+        collect: '收款',
+        repay: '还款',
         transfer: '账户转账',
       } as Record<string, string>
     )[operation] || operation,
@@ -63,8 +64,8 @@ export function DebtPaymentForm({
         >
           {debts.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.name} · {tr(p.side === 'asset' ? '借出（应收）' : '借入（应付）')} ·{' '}
-              {money(p.amount, p.currency)}
+              {p.name} · {tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')} ·{' '}
+              {money(positionAmount(p), p.currency)}
             </option>
           ))}
         </select>
@@ -85,17 +86,12 @@ export function DebtPaymentForm({
       </label>
       <label>
         {tr(operation === 'borrow' || operation === 'collect' ? '收款账户' : '付款账户')}
-        <select
+        <AccountPicker
           name="sourceId"
+          accounts={accounts}
           value={accountId}
-          onChange={(event) => setAccount(event.target.value)}
-        >
-          {accounts.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name} · {money(p.amount, p.currency)}
-            </option>
-          ))}
-        </select>
+          onChange={setAccount}
+        />
       </label>
       <p className="muted">
         {tr('账户与债务同时记账并自动建立关联；这里填写本次金额，不是操作后的余额。')}
@@ -139,7 +135,7 @@ export function DebtPaymentForm({
         {tr('手续费只影响账户余额：付款时额外扣除，收款时从到账金额扣除；负数表示优惠。')}
       </p>
       <label>
-        {tr('业务时间（北京时间，精确到分钟）')}
+        {tr('记录时间（UTC+8）')}
         <input
           name="date"
           type="datetime-local"

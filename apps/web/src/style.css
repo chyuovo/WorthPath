@@ -1203,3 +1203,135 @@ footer {
     gap: 0.5rem;
   }
 }
+
+.account-tools {
+  margin-bottom: 16px;
+}
+.picker-trigger {
+  width: 100%;
+  text-align: left;
+}
+.picker-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-height: 80vh;
+  overflow-y: auto;
+  border: 1px solid #dce1e5;
+  border-radius: 18px;
+  padding: 24px;
+  color: #1d2939;
+  background: #fff;
+}
+.picker-dialog::backdrop {
+  background: #10203080;
+}
+.picker-dialog input {
+  width: 100%;
+}
+.picker-dialog .actions {
+  margin: 12px 0;
+}
+.picker-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  text-align: left;
+  margin: 8px 0;
+}
+.picker-option img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.picker-option small {
+  display: block;
+  opacity: 0.65;
+}
+.schedule-panel {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid #dce1e5;
+  border-radius: 12px;
+}
+.schedule-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 0;
+  border-top: 1px solid #edf0f2;
+}
+.schedule-row > span {
+  flex: 1;
+  min-width: 180px;
+}
+.schedule-row small {
+  display: block;
+}
+.schedule-panel form {
+  margin: 16px 0;
+}
+
+.danger-text {
+  color: #c73542 !important;
+}
+.income-text {
+  color: #1b7855;
+}
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+}
+.weekday {
+  text-align: center;
+  padding: 8px;
+  color: #67727e;
+}
+.calendar-day {
+  min-height: 88px;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px;
+  overflow: hidden;
+}
+.calendar-day.selected {
+  outline: 2px solid #255b4e;
+  background: #edf7f1;
+}
+.calendar-day small {
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+.calendar-detail {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e0e5e9;
+}
+@media (max-width: 600px) {
+  .calendar-grid {
+    gap: 3px;
+  }
+  .calendar-day {
+    padding: 5px;
+    min-height: 80px;
+  }
+  .calendar-day small {
+    font-size: 10px;
+  }
+}
+
+.calendar-panel > .panel-title {
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.calendar-panel input[type='month'] {
+  width: auto;
+  max-width: 100%;
+  flex: 0 1 210px;
+}
+.calendar-panel h2 {
+  white-space: nowrap;
+}

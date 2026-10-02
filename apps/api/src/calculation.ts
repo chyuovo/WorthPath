@@ -40,6 +40,7 @@ export function history(p: Holding) {
       positionId: p.id,
       name: p.name,
       kind: p.kind,
+      side: p.side,
       currency: p.currency,
       date: businessDay(r.effectiveDate),
       time: businessTime(r.effectiveDate),
@@ -153,6 +154,11 @@ export function trend(
   to: string,
   grain: 'day' | 'week' | 'month' = 'day',
 ) {
+  const dates = positions
+    .flatMap((p) => p.revisions.map((r) => businessDay(r.effectiveDate)))
+    .sort();
+  if (!dates.length || dates[0] > to) return [];
+  from = from < dates[0] ? dates[0] : from;
   const streams = positions.map((p) => ({
     p,
     rows: [...p.revisions].sort(compareRevisions),

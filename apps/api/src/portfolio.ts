@@ -156,6 +156,8 @@ export class PortfolioController {
       });
       if (!p) throw new NotFoundException('项目不存在');
       if (p.archived) throw new ConflictException('请先恢复归档项目');
+      if (v.amount.startsWith('-') && (p.kind !== 'account' || p.side !== 'asset'))
+        throw new BadRequestException('仅资产账户支持负余额');
       const lastTransfer = await tx.revision.findFirst({
         where: { positionId: p.id, reason: { in: pairedReasons } },
         orderBy: [{ effectiveDate: 'desc' }, { sequence: 'desc' }],
@@ -198,6 +200,8 @@ export class PortfolioController {
       });
       if (!p) throw new NotFoundException('项目不存在');
       if (p.archived) throw new ConflictException('请先恢复归档项目');
+      if (v.amount.startsWith('-') && (p.kind !== 'account' || p.side !== 'asset'))
+        throw new BadRequestException('仅资产账户支持负余额');
       const original = await tx.revision.findFirst({ where: { id: revisionId, positionId: p.id } });
       if (!original) throw new NotFoundException('历史记录不存在');
       const transfer = await tx.revision.findFirst({
