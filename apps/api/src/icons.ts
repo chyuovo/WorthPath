@@ -24,7 +24,7 @@ import { UserRequest } from './auth';
 
 export const iconName = z.string().trim().min(1).max(100);
 export const iconHash = (data: Buffer) => createHash('sha256').update(data).digest('hex');
-export async function normalizeIcon(data: Buffer) {
+export async function normalizeIcon(data: Buffer, preserveWhite = false) {
   if (!data.length || data.length > 2 * 1024 * 1024)
     throw new BadRequestException('图标不能超过 2 MB');
   try {
@@ -43,7 +43,7 @@ export async function normalizeIcon(data: Buffer) {
     for (let i = 0; i < pixels.length; i += 4) {
       const low = Math.min(pixels[i], pixels[i + 1], pixels[i + 2]);
       const high = Math.max(pixels[i], pixels[i + 1], pixels[i + 2]);
-      if (low >= 245 && high - low <= 8) pixels[i + 3] = 0;
+      if (!preserveWhite && low >= 245 && high - low <= 8) pixels[i + 3] = 0;
     }
     return await sharp(pixels, { raw: { width: info.width, height: info.height, channels: 4 } })
       .png()
@@ -106,7 +106,9 @@ export class IconsController {
     if (!icon) throw new NotFoundException('图标不存在');
     res.setHeader('Content-Type', 'image/png');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.send(await normalizeIcon(Buffer.from(icon.data)));
+    // Uploads, built-in seeding and imports already validate stored PNG data.
+    // Preserve essential white artwork rather than applying the cutout twice.
+    res.send(Buffer.from(icon.data));
   }
   @Post('upload')
   @UseInterceptors(

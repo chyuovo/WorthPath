@@ -24,6 +24,10 @@ export type User = {
   showNotes: boolean;
   idleMinutes: number;
   accountGroupOrder?: string[];
+  sessionHours?: number;
+  requireHiddenPassword?: boolean;
+  overviewCards?: string[];
+  sessionExpiresAt?: string;
   revealed?: boolean;
   revealUntil?: string | null;
   lastActivity?: string;

@@ -49,3 +49,5 @@ User.hiddenMenus 保存受枚举校验的菜单键，settings 不可隐藏；Use
 2026-10-03 负债账户溢缴更新：负债账户存储正数欠款、负数溢缴；前端显示和输入取相反符号。统计将负债账户的负余额按汇率转换为正资产，正欠款计入负债，两类分别汇总。独立资产和借入借出债务仍要求非负本金，旧数据和 API 金额含义保留。详见 [溢缴更新说明](update-credit-balance-2026-10-03.md)。
 
 2026-10-03 分组排序：User.accountGroupOrder 保存每个用户的账户分组顺序，空值沿用当前默认顺序。前端共享排序上下文，账户卡片、筛选及所有 AccountPicker 使用同一顺序；只显示当前可见分组，保存保留未出现在当前视图的既有偏好。settings 与备份使用相同分组名称和唯一性验证。新增可选 JSON 字段通过带中文注释的增量迁移应用；JSON/ZIP 空空间恢复偏好，已有空间保留当前设置。见 [更新说明](update-group-order-2026-10-03.md)。
+
+2026-10-03 设置与交互：User.sessionHours 控制 1 至 720 小时的绝对会话有效期，requireHiddenPassword 控制隐藏项目再次验证，overviewCards 保存总览卡片键。设置、JSON/ZIP 备份和带注释的迁移同步；PUT schedules/:id 在计划锁内验证权限并更新未来安排。前端将设置分类、计划原生弹窗、可访问的右上角提示及账户卡片点选快捷转账集中提供。详见 [更新说明](update-settings-interaction-2026-10-03.md)。

@@ -11,7 +11,10 @@ async function main() {
   const sources = JSON.parse(await readFile(join(dir, 'sources.json'), 'utf8'));
   // Update only deterministic built-in image IDs; preserve user uploads and financial data.
   for (const item of sources) {
-    const data = await normalizeIcon(await readFile(join(dir, item.file)));
+    const data = await normalizeIcon(
+      await readFile(join(dir, item.file)),
+      item.preserveWhite === true,
+    );
     const hex = createHash('sha256')
       .update('worthpath-builtin:' + item.name)
       .digest('hex');

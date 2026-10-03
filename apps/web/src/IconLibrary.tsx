@@ -1,6 +1,7 @@
 import { t as tr } from './i18n';
 import { useEffect, useState, useRef } from 'react';
 import { api } from './api';
+import { useToast } from './Toast';
 type Icon = { id: string; name: string; shared: boolean; source: string | null };
 export const iconUrl = (id: string) => '/api/icons/' + encodeURIComponent(id) + '/image';
 export function IconLibrary({
@@ -26,6 +27,8 @@ export function IconLibrary({
     [notice, setNotice] = useState(''),
     [refresh, setRefresh] = useState(0);
   const file = useRef<HTMLInputElement>(null);
+  useToast(error, 'error');
+  useToast(notice, 'success');
   useEffect(() => {
     let active = true;
     setLoading(true);
@@ -236,12 +239,6 @@ export function IconLibrary({
           {busy ? tr('正在上传…') : shared ? tr('导入共享图标') : tr('上传私有图标')}
         </button>
       </details>
-      {error && (
-        <p role="alert" className="icon-error">
-          {tr(error)}
-        </p>
-      )}
-      {notice && <p role="status">{tr(notice)}</p>}
     </section>
   );
 }

@@ -187,3 +187,31 @@ export const accountGroupOrder = z
   .array(z.string().trim().max(60))
   .max(1000)
   .refine((v) => new Set(v).size === v.length, '分组不可重复');
+
+export const defaultOverviewCards = [
+  'assets',
+  'liabilities',
+  'net',
+  'trend',
+  'composition',
+  'recent',
+  'attribution',
+] as const;
+export const overviewCards = z
+  .array(z.enum(defaultOverviewCards))
+  .max(7)
+  .refine((v) => new Set(v).size === v.length, '卡片不可重复');
+export const sessionHours = z.number().int().min(1).max(720);
+export const settingsInput = z
+  .object({
+    baseCurrency: currency.optional(),
+    hiddenMenus: hiddenMenus.optional(),
+    accountGroupOrder: accountGroupOrder.optional(),
+    showNotes: z.boolean().optional(),
+    idleMinutes: z.number().int().min(0).max(1440).optional(),
+    sessionHours: sessionHours.optional(),
+    requireHiddenPassword: z.boolean().optional(),
+    overviewCards: overviewCards.optional(),
+  })
+  .strict()
+  .refine((v) => Object.keys(v).length > 0);

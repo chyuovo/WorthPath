@@ -20,7 +20,7 @@ import { Request, Response } from 'express';
 import { randomBytes, createHash } from 'node:crypto';
 import { hash, compare } from 'bcryptjs';
 import { Database } from './database';
-import { credentials, credentialChange } from './validation';
+import { credentials, credentialChange, defaultOverviewCards } from './validation';
 import { Prisma } from '@prisma/client';
 export type UserRequest = Request & { userId: string; sessionId: string; revealed: boolean };
 const Public = () => SetMetadata('public', true);
@@ -58,8 +58,9 @@ export class AuthService {
     }
   }
   async issue(userId: string, res: Response) {
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: userId } });
     const token = randomBytes(32).toString('hex'),
-      expiresAt = new Date(Date.now() + 7 * 86400000);
+      expiresAt = new Date(Date.now() + user.sessionHours * 3600000);
     await this.db.session.create({ data: { id: digest(token), userId, expiresAt } });
     this.cookie(token, expiresAt, res);
   }
@@ -171,12 +172,17 @@ export class AuthController {
         showNotes: true,
         idleMinutes: true,
         accountGroupOrder: true,
+        sessionHours: true,
+        requireHiddenPassword: true,
+        overviewCards: true,
       },
     });
     const session = await this.db.session.findUniqueOrThrow({ where: { id: req.sessionId } });
     return {
       ...user,
       accountGroupOrder: user.accountGroupOrder || [],
+      overviewCards: user.overviewCards ?? [...defaultOverviewCards],
+      sessionExpiresAt: session.expiresAt,
       hiddenMenus: user.hiddenMenus.split(',').filter(Boolean),
       revealed: req.revealed,
       revealUntil: session.revealUntil,
@@ -197,7 +203,7 @@ export class AuthController {
       throw new BadRequestException('请填写新的账号或密码');
     const passwordHash = v.newPassword ? await hash(v.newPassword, 12) : user.passwordHash;
     const token = randomBytes(32).toString('hex'),
-      expiresAt = new Date(Date.now() + 7 * 86400000);
+      expiresAt = new Date(Date.now() + user.sessionHours * 3600000);
     await this.db.serial(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id = ${r.userId} FOR UPDATE`);
       const current = await tx.user.findUniqueOrThrow({ where: { id: r.userId } });
@@ -222,11 +228,17 @@ export class AuthController {
   }
   @Post('auth/reveal') async reveal(@Req() r: UserRequest, @Body() b: unknown) {
     this.auth.limit(r);
-    const { password } = credentials.pick({ password: true }).parse(b);
-    const u = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
-    if (!(await compare(password, u.passwordHash))) throw new ForbiddenException('密码错误');
-    const revealUntil = new Date(Date.now() + 5 * 60000);
-    await this.db.session.update({ where: { id: r.sessionId }, data: { revealUntil } });
+    const revealUntil = await this.db.serial(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id = ${r.userId} FOR UPDATE`);
+      const u = await tx.user.findUniqueOrThrow({ where: { id: r.userId } });
+      if (u.requireHiddenPassword) {
+        const { password } = credentials.pick({ password: true }).parse(b);
+        if (!(await compare(password, u.passwordHash))) throw new ForbiddenException('密码错误');
+      }
+      const until = new Date(Date.now() + 5 * 60000);
+      await tx.session.update({ where: { id: r.sessionId }, data: { revealUntil: until } });
+      return until;
+    });
     return { revealUntil };
   }
   @Post('auth/lock') async lock(@Req() r: UserRequest) {

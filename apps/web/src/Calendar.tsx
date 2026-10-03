@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, money, today } from './api';
+import { useToast } from './Toast';
 import { t as tr } from './i18n';
 type Day = { date: string; income: string; expense: string; complete: boolean };
 type Entry = {
@@ -25,6 +26,7 @@ export function Calendar({
     [base, setBase] = useState('CNY'),
     [error, setError] = useState(''),
     [loading, setLoading] = useState(false);
+  useToast(error, 'error');
   useEffect(() => {
     let active = true;
     setDays([]);
@@ -158,11 +160,6 @@ export function Calendar({
           <p>{tr('当天没有收支记录')}</p>
         )}
       </div>
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
-      )}
     </section>
   );
 }

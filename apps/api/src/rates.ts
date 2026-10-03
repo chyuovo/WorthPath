@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Patch,
+  Res,
   Post,
   Req,
   Body,
@@ -12,8 +13,16 @@ import {
   BadGatewayException,
 } from '@nestjs/common';
 import { Database } from './database';
-import { UserRequest } from './auth';
-import { currency, date, rateValue, today, hiddenMenus, accountGroupOrder } from './validation';
+import { AuthService, UserRequest } from './auth';
+import { Response } from 'express';
+import {
+  currency,
+  date,
+  rateValue,
+  today,
+  settingsInput,
+  defaultOverviewCards,
+} from './validation';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 // Fixed public request; no user currency choices, identifiers or amounts leave the server.
@@ -165,6 +174,7 @@ export class SettingsController {
   constructor(
     private db: Database,
     private fx: RatesService,
+    private auth: AuthService,
   ) {}
   @Get('settings') async settings(@Req() r: UserRequest, @Query('rates') includeRates?: string) {
     const showRates = z.enum(['true', 'false']).optional().parse(includeRates) === 'true';
@@ -177,11 +187,17 @@ export class SettingsController {
         showNotes: true,
         idleMinutes: true,
         accountGroupOrder: true,
+        sessionHours: true,
+        requireHiddenPassword: true,
+        overviewCards: true,
       },
     });
     return {
       ...u,
       accountGroupOrder: u.accountGroupOrder || [],
+      overviewCards: u.overviewCards ?? [...defaultOverviewCards],
+      sessionExpiresAt: (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } }))
+        .expiresAt,
       hiddenMenus: u.hiddenMenus.split(',').filter(Boolean),
       lastActivity: (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } }))
         .lastActivity,
@@ -200,22 +216,26 @@ export class SettingsController {
         : [],
     };
   }
-  @Patch('settings') async update(@Req() r: UserRequest, @Body() b: unknown) {
-    const data = z
-      .object({
-        baseCurrency: currency.optional(),
-        hiddenMenus: hiddenMenus.optional(),
-        accountGroupOrder: accountGroupOrder.optional(),
-        showNotes: z.boolean().optional(),
-        idleMinutes: z.number().int().min(0).max(1440).optional(),
-      })
-      .strict()
-      .refine((v) => Object.keys(v).length > 0)
-      .parse(b);
-    await this.db.user.update({
-      where: { id: r.userId },
-      data: { ...data, hiddenMenus: data.hiddenMenus?.join(',') },
+  @Patch('settings') async update(
+    @Req() r: UserRequest,
+    @Body() b: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const data = settingsInput.parse(b);
+    const expiresAt =
+      data.sessionHours === undefined
+        ? undefined
+        : new Date(Date.now() + data.sessionHours * 3600000);
+    await this.db.serial(async (tx) => {
+      await tx.user.update({
+        where: { id: r.userId },
+        data: { ...data, hiddenMenus: data.hiddenMenus?.join(',') },
+      });
+      if (data.requireHiddenPassword !== undefined)
+        await tx.session.updateMany({ where: { userId: r.userId }, data: { revealUntil: null } });
+      if (expiresAt) await tx.session.update({ where: { id: r.sessionId }, data: { expiresAt } });
     });
+    if (expiresAt) this.auth.cookie(r.cookies.wp_session, expiresAt, res);
     this.fx.invalidate(r.userId);
     return { ok: true };
   }

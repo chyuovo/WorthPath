@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Patch,
+  Put,
   Delete,
   Body,
   Param,
@@ -86,33 +87,65 @@ export class SchedulesController {
   @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
     const v = scheduleInput.parse(body);
     return this.db.serial(async (tx) => {
-      const ids = [v.sourceId, ...(v.targetId ? [v.targetId] : [])].sort();
-      await tx.$queryRaw(
-        Prisma.sql`SELECT id FROM Position WHERE userId = ${r.userId} AND id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`,
-      );
-      const accounts = await tx.position.findMany({
-        where: {
-          userId: r.userId,
-          id: { in: ids },
-          kind: 'account',
-          side: 'asset',
-          archived: false,
-          ...(r.revealed ? {} : { hidden: false }),
-        },
-      });
-      if (accounts.length !== ids.length) throw new BadRequestException('请选择启用的资产账户');
-      if (v.operation === 'expense' && v.targetId)
-        throw new BadRequestException('支出计划无需转入账户');
-      if (
-        v.operation === 'transfer' &&
-        accounts[0].currency === accounts[1].currency &&
-        !new Decimal(v.amount).eq(v.received)
-      )
-        throw new BadRequestException('同币种转出与到账金额必须一致');
+      await this.validateAccounts(tx, r, v);
       return tx.schedule.create({
         data: { ...v, userId: r.userId, nextAt: new Date(v.nextAt + ':00+08:00') },
         select: { id: true },
       });
+    });
+  }
+  private async validateAccounts(
+    tx: Prisma.TransactionClient,
+    r: UserRequest,
+    v: z.infer<typeof scheduleInput>,
+  ) {
+    const ids = [v.sourceId, ...(v.targetId ? [v.targetId] : [])].sort();
+    await tx.$queryRaw(
+      Prisma.sql`SELECT id FROM Position WHERE userId = ${r.userId} AND id IN (${Prisma.join(ids)}) ORDER BY id FOR UPDATE`,
+    );
+    const accounts = await tx.position.findMany({
+      where: {
+        userId: r.userId,
+        id: { in: ids },
+        kind: 'account',
+        side: 'asset',
+        archived: false,
+        ...(r.revealed ? {} : { hidden: false }),
+      },
+    });
+    if (accounts.length !== ids.length) throw new BadRequestException('请选择启用的资产账户');
+    if (v.operation === 'expense' && v.targetId)
+      throw new BadRequestException('支出计划无需转入账户');
+    if (
+      v.operation === 'transfer' &&
+      accounts[0].currency === accounts[1].currency &&
+      !new Decimal(v.amount).eq(v.received)
+    )
+      throw new BadRequestException('同币种转出与到账金额必须一致');
+  }
+  @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
+    const v = scheduleInput.parse(body);
+    return this.db.serial(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM Schedule WHERE id = ${id} AND userId = ${r.userId} FOR UPDATE`,
+      );
+      const ids = await this.visible(r, tx);
+      const row = await tx.schedule.findFirst({
+        where: {
+          id,
+          userId: r.userId,
+          sourceId: { in: ids },
+          OR: [{ targetId: null }, { targetId: { in: ids } }],
+        },
+      });
+      if (!row) throw new NotFoundException('计划不存在');
+      if (row.completed) throw new BadRequestException('一次性计划已完成，请新建计划');
+      await this.validateAccounts(tx, r, v);
+      await tx.schedule.update({
+        where: { id },
+        data: { ...v, nextAt: new Date(v.nextAt + ':00+08:00') },
+      });
+      return { ok: true };
     });
   }
   @Patch(':id') async toggle(

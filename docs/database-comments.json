@@ -1,6 +1,6 @@
 {
   "tableCount": 9,
-  "columnCount": 89,
+  "columnCount": 92,
   "tables": [
     {
       "TABLE_NAME": "exchangerate",
@@ -484,6 +484,21 @@
       "TABLE_NAME": "user",
       "COLUMN_NAME": "accountGroupOrder",
       "COLUMN_COMMENT": "账户分组显示顺序；空值表示沿用默认顺序"
+    },
+    {
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "sessionHours",
+      "COLUMN_COMMENT": "登录有效时长（小时），范围 1 至 720"
+    },
+    {
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "requireHiddenPassword",
+      "COLUMN_COMMENT": "查看隐藏项目是否需要再次验证密码"
+    },
+    {
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "overviewCards",
+      "COLUMN_COMMENT": "总览显示的卡片键列表，NULL 表示默认全部显示"
     }
   ]
 }

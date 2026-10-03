@@ -115,9 +115,10 @@
   },
   {
     "name": "京东金融",
-    "source": "https://jr.jd.com/logo.png",
+    "source": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7d/74/af/7d74af96-af89-ae14-cbf5-5bbd89859ab7/AppIcon-0-1x_U007epad-0-1-0-85-220-0.png/512x512bb.jpg",
     "file": "20.png",
-    "sha256": "8dc9703f571e605df552dc7eb14ae074d9ddab6b27a9140b610e87b1c2a5f693"
+    "sha256": "9274fde6f793cf49f239fe3995cc959f33d71a02f93866e416ae5f5a533b05de",
+    "preserveWhite": true
   },
   {
     "name": "汇丰香港",

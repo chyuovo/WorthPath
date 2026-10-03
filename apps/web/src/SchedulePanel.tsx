@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import { api, money, nowMinute, type Position } from './api';
 import { AccountPicker } from './AccountPicker';
+import { useToast } from './Toast';
 import { t as tr } from './i18n';
 type Plan = {
   id: string;
@@ -12,6 +13,9 @@ type Plan = {
   enabled: boolean;
   completed: boolean;
   sourceId: string;
+  targetId: string | null;
+  received: string;
+  notes: string;
 };
 export function SchedulePanel({
   accounts,
@@ -21,10 +25,24 @@ export function SchedulePanel({
   refresh: () => Promise<void>;
 }) {
   const [rows, setRows] = useState<Plan[]>([]),
-    [open, setOpen] = useState(false),
+    [editor, setEditor] = useState<Plan | null | undefined>(undefined),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
     [status, setStatus] = useState('');
+  const dialog = useRef<HTMLDialogElement>(null);
+  useToast(error, 'error');
+  useToast(status, 'success');
+  useEffect(() => {
+    if (editor !== undefined) dialog.current?.showModal();
+  }, [editor]);
+  function openEditor(plan: Plan | null) {
+    setError('');
+    setOperation(plan?.operation ?? 'expense');
+    setSource(plan?.sourceId ?? accounts[0]?.id ?? '');
+    setTarget(plan?.targetId ?? '');
+    setAmount(plan?.amount ?? '');
+    setEditor(plan);
+  }
   const [operation, setOperation] = useState('expense'),
     [source, setSource] = useState(''),
     [target, setTarget] = useState(''),
@@ -35,6 +53,7 @@ export function SchedulePanel({
   const same = sourceAccount?.currency === targetAccount?.currency;
   useEffect(() => {
     let active = true;
+    setRows([]);
     void api<Plan[]>('/schedules')
       .then((v) => {
         if (active) setRows(v);
@@ -69,8 +88,8 @@ export function SchedulePanel({
         {tr('打开账户页或点击执行时处理到期计划。每次最多执行20项，离线期间的计划会逐次补记。')}
       </p>
       <div className="actions">
-        <button type="button" disabled={busy || !accounts.length} onClick={() => setOpen(!open)}>
-          {tr(open ? '取消' : '添加计划')}
+        <button type="button" disabled={busy || !accounts.length} onClick={() => openEditor(null)}>
+          {tr('添加计划')}
         </button>
         <button
           disabled={busy}
@@ -93,104 +112,149 @@ export function SchedulePanel({
           {tr('执行到期计划')}
         </button>
       </div>
-      {open && (
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const data = Object.fromEntries(new FormData(e.currentTarget));
-            void act(async () => {
-              await api('/schedules', 'POST', {
-                ...data,
-                operation,
-                sourceId,
-                targetId: operation === 'transfer' ? target : null,
-                received: operation === 'transfer' ? (same ? amount : data.received) : '0',
-                intervalDays: Number(data.intervalDays),
-              });
-              setOpen(false);
-            });
+      {editor !== undefined && (
+        <dialog
+          ref={dialog}
+          className="picker-dialog schedule-dialog"
+          aria-label={tr(editor ? '修改计划' : '添加计划')}
+          onCancel={(e) => {
+            if (busy) e.preventDefault();
+            else setEditor(undefined);
           }}
+          onClose={() => setEditor(undefined)}
         >
-          <label>
-            {tr('计划名称')}
-            <input name="name" required maxLength={100} />
-          </label>
-          <label>
-            {tr('操作')}
-            <select value={operation} onChange={(e) => setOperation(e.target.value)}>
-              <option value="expense">{tr('支出')}</option>
-              <option value="transfer">{tr('转账')}</option>
-            </select>
-          </label>
-          <label>
-            {tr('付款账户')}
-            <AccountPicker
-              name="sourceId"
-              accounts={accounts}
-              value={sourceId}
-              onChange={(id) => {
-                setSource(id);
-                if (target === id) setTarget('');
-              }}
-            />
-          </label>
-          {operation === 'transfer' && (
+          <div className="panel-title">
+            <h2>{tr(editor ? '修改计划' : '添加计划')}</h2>
+            <button
+              type="button"
+              className="icon"
+              aria-label={tr('关闭')}
+              disabled={busy}
+              onClick={() => setEditor(undefined)}
+            >
+              ×
+            </button>
+          </div>
+          <form
+            key={editor?.id ?? 'new'}
+            onSubmit={(e) => {
+              e.preventDefault();
+              const data = Object.fromEntries(new FormData(e.currentTarget));
+              void act(async () => {
+                await api(
+                  editor ? '/schedules/' + editor.id : '/schedules',
+                  editor ? 'PUT' : 'POST',
+                  {
+                    ...data,
+                    operation,
+                    sourceId,
+                    targetId: operation === 'transfer' ? target : null,
+                    received: operation === 'transfer' ? (same ? amount : data.received) : '0',
+                    intervalDays: Number(data.intervalDays),
+                  },
+                );
+                setEditor(undefined);
+                setStatus(tr('计划已保存'));
+              });
+            }}
+          >
             <label>
-              {tr('转入账户')}
+              {tr('计划名称')}
+              <input name="name" required maxLength={100} defaultValue={editor?.name} />
+            </label>
+            <label>
+              {tr('操作')}
+              <select value={operation} onChange={(e) => setOperation(e.target.value)}>
+                <option value="expense">{tr('支出')}</option>
+                <option value="transfer">{tr('转账')}</option>
+              </select>
+            </label>
+            <label>
+              {tr('付款账户')}
               <AccountPicker
-                name="targetId"
+                name="sourceId"
                 accounts={accounts}
-                value={target}
-                onChange={setTarget}
-                excludeId={sourceId}
+                value={sourceId}
+                onChange={(id) => {
+                  setSource(id);
+                  if (target === id) setTarget('');
+                }}
               />
             </label>
-          )}
-          <label>
-            {tr('金额')} ({sourceAccount?.currency})
-            <input
-              name="amount"
-              required
-              inputMode="decimal"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              pattern="(0|[1-9][0-9]{0,15})([.][0-9]{1,8})?"
-            />
-          </label>
-          {operation === 'transfer' && !same && (
+            {operation === 'transfer' && (
+              <label>
+                {tr('转入账户')}
+                <AccountPicker
+                  name="targetId"
+                  accounts={accounts}
+                  value={target}
+                  onChange={setTarget}
+                  excludeId={sourceId}
+                />
+              </label>
+            )}
             <label>
-              {tr('实际到账')} ({targetAccount?.currency})
+              {tr('金额')} ({sourceAccount?.currency})
               <input
-                name="received"
+                name="amount"
                 required
                 inputMode="decimal"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
                 pattern="(0|[1-9][0-9]{0,15})([.][0-9]{1,8})?"
               />
             </label>
-          )}
-          <label>
-            {tr('首次执行时间')}
-            <input name="nextAt" type="datetime-local" required defaultValue={nowMinute()} />
-          </label>
-          <label>
-            {tr('重复间隔（天，0为仅一次）')}
-            <input
-              name="intervalDays"
-              type="number"
-              min="0"
-              max="3650"
-              required
-              defaultValue="30"
-            />
-          </label>
-          <label>
-            {tr('备注')}
-            <textarea name="notes" maxLength={1800} />
-          </label>
-          <button className="primary" disabled={busy || (operation === 'transfer' && !target)}>
-            {tr('保存计划')}
-          </button>
-        </form>
+            {operation === 'transfer' && !same && (
+              <label>
+                {tr('实际到账')} ({targetAccount?.currency})
+                <input
+                  name="received"
+                  defaultValue={editor?.received}
+                  required
+                  inputMode="decimal"
+                  pattern="(0|[1-9][0-9]{0,15})([.][0-9]{1,8})?"
+                />
+              </label>
+            )}
+            <label>
+              {tr(editor ? '下次执行时间' : '首次执行时间')}
+              <input
+                name="nextAt"
+                type="datetime-local"
+                required
+                defaultValue={editor?.nextAt ?? nowMinute()}
+              />
+            </label>
+            <label>
+              {tr('重复间隔（天，0为仅一次）')}
+              <input
+                name="intervalDays"
+                type="number"
+                min="0"
+                max="3650"
+                required
+                defaultValue={editor?.intervalDays ?? 30}
+              />
+            </label>
+            <label>
+              {tr('备注')}
+              <textarea
+                className="note-input"
+                name="notes"
+                maxLength={2000}
+                defaultValue={editor?.notes}
+              />
+            </label>
+            <div className="actions">
+              <button type="button" disabled={busy} onClick={() => setEditor(undefined)}>
+                {tr('取消')}
+              </button>
+              <button className="primary" disabled={busy || (operation === 'transfer' && !target)}>
+                {tr('保存计划')}
+              </button>
+            </div>
+          </form>
+        </dialog>
       )}
       {rows.map((p) => (
         <div className="schedule-row" key={p.id}>
@@ -205,6 +269,17 @@ export function SchedulePanel({
               {tr(p.completed ? '已完成' : p.enabled ? '启用' : '已暂停')}
             </small>
           </span>
+          <button
+            disabled={
+              busy ||
+              p.completed ||
+              !accounts.some((a) => a.id === p.sourceId) ||
+              (!!p.targetId && !accounts.some((a) => a.id === p.targetId))
+            }
+            onClick={() => openEditor(p)}
+          >
+            {tr('修改计划')}
+          </button>
           <button
             disabled={busy || p.completed}
             onClick={() =>
@@ -221,12 +296,6 @@ export function SchedulePanel({
           </button>
         </div>
       ))}
-      {error && (
-        <p role="alert" className="notice error">
-          {error}
-        </p>
-      )}
-      {status && <p role="status">{status}</p>}
     </section>
   );
 }

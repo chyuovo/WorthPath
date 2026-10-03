@@ -36,6 +36,9 @@ import {
   rateInput,
   hiddenMenus,
   accountGroupOrder,
+  sessionHours,
+  overviewCards,
+  defaultOverviewCards,
   transferInput,
 } from './validation';
 import { createHash } from 'node:crypto';
@@ -79,6 +82,9 @@ const backupSchema = z
         showSidebar: z.boolean().optional(),
         hiddenMenus: hiddenMenus.optional(),
         accountGroupOrder: accountGroupOrder.optional(),
+        sessionHours: sessionHours.optional(),
+        requireHiddenPassword: z.boolean().optional(),
+        overviewCards: overviewCards.optional(),
         showNotes: z.boolean().optional(),
         idleMinutes: z.number().int().min(0).max(1440),
       })
@@ -309,6 +315,9 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
           showNotes: true,
           idleMinutes: true,
           accountGroupOrder: true,
+          sessionHours: true,
+          requireHiddenPassword: true,
+          overviewCards: true,
         },
       }),
       client.position.findMany({
@@ -369,6 +378,9 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         showNotes: user.showNotes,
         idleMinutes: user.idleMinutes,
         accountGroupOrder: accountGroupOrder.parse(user.accountGroupOrder || []),
+        sessionHours: user.sessionHours,
+        requireHiddenPassword: user.requireHiddenPassword,
+        overviewCards: overviewCards.parse(user.overviewCards ?? [...defaultOverviewCards]),
       },
       currencies: [
         ...new Set([
@@ -717,8 +729,13 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               hiddenMenus: b.preferences?.hiddenMenus?.join(','),
               showNotes: b.preferences?.showNotes,
               accountGroupOrder: b.preferences?.accountGroupOrder,
+              sessionHours: b.preferences?.sessionHours,
+              requireHiddenPassword: b.preferences?.requireHiddenPassword,
+              overviewCards: b.preferences?.overviewCards,
             },
           });
+        if (!ps.length && !rs.length && b.preferences?.requireHiddenPassword !== undefined)
+          await tx.session.updateMany({ where: { userId: r.userId }, data: { revealUntil: null } });
         return { ok: true, positions: b.positions.length };
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 300000 },

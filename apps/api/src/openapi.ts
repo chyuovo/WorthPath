@@ -12,6 +12,7 @@ import {
   currency,
   hiddenMenus,
   accountGroupOrder,
+  settingsInput,
 } from './validation';
 export function setupOpenApi(app: INestApplication) {
   const document = SwaggerModule.createDocument(
@@ -30,7 +31,7 @@ export function setupOpenApi(app: INestApplication) {
     'POST /api/auth/register': credentials,
     'POST /api/auth/login': credentials,
     'PATCH /api/auth/credentials': credentialChange,
-    'POST /api/auth/reveal': credentials.pick({ password: true }),
+    'POST /api/auth/reveal': z.object({ password: credentials.shape.password.optional() }).strict(),
     'POST /api/positions': positionInput,
     'PATCH /api/positions/{id}': positionMeta,
     'POST /api/positions/{id}/revisions': revisionInput,
@@ -41,16 +42,9 @@ export function setupOpenApi(app: INestApplication) {
     'POST /api/transfers': transferInput,
     'PUT /api/transfers/{id}': transferInput,
     'POST /api/schedules': scheduleInput,
+    'PUT /api/schedules/{id}': scheduleInput,
     'PATCH /api/schedules/{id}': z.object({ enabled: z.boolean() }).strict(),
-    'PATCH /api/settings': z
-      .object({
-        baseCurrency: currency.optional(),
-        hiddenMenus: hiddenMenus.optional(),
-        accountGroupOrder: accountGroupOrder.optional(),
-        showNotes: z.boolean().optional(),
-        idleMinutes: z.number().int().min(0).max(1440).optional(),
-      })
-      .strict(),
+    'PATCH /api/settings': settingsInput,
     'POST /api/backup/clear': z.object({ confirmation: z.literal('确定清空') }),
     'POST /api/backup/import-file': z.object({
       token: z.string().uuid(),

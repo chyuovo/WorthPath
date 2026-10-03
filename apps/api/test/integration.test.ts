@@ -277,7 +277,10 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
     const backup = (await call('/backup', 'GET', undefined, a.cookie)).data;
     assert.equal(backup.positions.length, 4);
     assert.equal(backup.links.length, 2);
-    assert.doesNotMatch(JSON.stringify(backup), /password|token|userId|session/i);
+    assert.doesNotMatch(
+      JSON.stringify(backup),
+      /"(?:password|passwordHash|token|userId|session|sessionId|sessions|cookie)"\s*:/i,
+    );
     assert.equal((await call('/backup/preview', 'POST', backup, a.cookie)).status, 409);
     assert.equal((await call('/backup/preview', 'POST', backup, b.cookie)).status, 201);
     assert.equal(

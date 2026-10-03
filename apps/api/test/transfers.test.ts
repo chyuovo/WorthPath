@@ -285,6 +285,11 @@ test('icon processing creates transparent white cutouts and preserves brand colo
     .ensureAlpha()
     .raw()
     .toBuffer();
+  const preserved = await sharp(await normalizeIcon(input, true))
+    .ensureAlpha()
+    .raw()
+    .toBuffer();
+  assert.deepEqual([...preserved], [...pixels]);
   assert.equal(output[3], 0);
   assert.deepEqual([...output.subarray(4)], [10, 120, 60, 255]);
 });

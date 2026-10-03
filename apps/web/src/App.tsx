@@ -46,12 +46,15 @@ import {
   type PageResult,
 } from './api';
 import './style.css';
+import { allOverviewCards, overviewCardLabels } from './overview-cards';
+import { useToast } from './Toast';
 import { GroupOrderContext } from './GroupOrderContext';
 import { GroupOrderList } from './GroupOrderList';
 import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
 import { IconPicker } from './IconPicker';
+import { QuickTransfer } from './QuickTransfer';
 import { TransferForm } from './TransferForm';
 import { DebtPaymentForm, operationLabel, type DebtOperation } from './DebtPaymentForm';
 import type { Transfer } from './api';
@@ -243,8 +246,42 @@ export default function App() {
     [error, setError] = useState(''),
     [success, setSuccess] = useState('');
   const [calendarRefresh, setCalendarRefresh] = useState(0);
+  const [quickTransfer, setQuickTransfer] = useState<{
+    sourceId?: string;
+    targetId?: string;
+  } | null>(null);
   const [quickMode, setQuickMode] = useState(false),
     [accountGroup, setAccountGroup] = useState<string | null>(null);
+  useEffect(() => {
+    setQuickTransfer(null);
+  }, [page, quickMode, selected, user?.revealed]);
+  useEffect(() => {
+    setQuickTransfer((current) =>
+      current &&
+      [current.sourceId, current.targetId].some(
+        (id) =>
+          id &&
+          !positions.some(
+            (p) => p.id === id && p.kind === 'account' && p.side === 'asset' && !p.archived,
+          ),
+      )
+        ? null
+        : current,
+    );
+  }, [positions]);
+  function chooseQuickAccount(p: Position) {
+    if (busy || loading) return;
+    if (p.kind !== 'account' || p.side !== 'asset' || p.archived) {
+      setError(tr('请选择启用的资产账户'));
+      return;
+    }
+    setQuickTransfer((current) => {
+      if (!current) return current;
+      if (!current.sourceId) return { sourceId: p.id };
+      if (!current.targetId && p.id !== current.sourceId) return { ...current, targetId: p.id };
+      return current;
+    });
+  }
   const [fxStatus, setFxStatus] = useState<{
     state: string;
     message: string;
@@ -261,6 +298,8 @@ export default function App() {
     } | null>(null);
   const [clearStep, setClearStep] = useState(0),
     [clearConfirmation, setClearConfirmation] = useState(0);
+  useToast(error, 'error');
+  useToast(success, 'success');
   const [settingsSection, setSettingsSection] = useState('general'),
     [transfers, setTransfers] = useState<Transfer[]>([]);
   const [historyRows, setHistoryRows] = useState<History[]>([]),
@@ -305,6 +344,7 @@ export default function App() {
     setRegister(false);
     setLoading(false);
     setSuccess('');
+    setQuickTransfer(null);
   }
   const report = (e: unknown) => {
     setError(e instanceof Error ? e.message : tr('操作失败'));
@@ -714,11 +754,7 @@ export default function App() {
             <p className="muted">
               {register ? tr('建立属于你的私人资产空间') : tr('登录以查看你的资产与负债')}
             </p>
-            {error && (
-              <div role="alert" className="notice error">
-                {tr(error)}
-              </div>
-            )}
+
             <form onSubmit={auth}>
               <Field label={tr('账号')}>
                 <input
@@ -912,7 +948,7 @@ export default function App() {
           <div className="privacy-toolbar">
             <span>
               {user.revealed
-                ? tr('当前包含隐藏项目 · 验证 5 分钟后自动锁定')
+                ? tr('当前包含隐藏资产 · 5 分钟后自动锁定')
                 : tr('当前不包含隐藏账户、资产和债务，净资产按此范围计算')}
             </span>
             <button
@@ -920,11 +956,17 @@ export default function App() {
               disabled={busy}
               onClick={() =>
                 user.revealed
-                  ? void act(() => api('/auth/lock', 'POST'), tr('隐藏项目已锁定'))
-                  : setModal({ kind: 'reveal' })
+                  ? void act(() => api('/auth/lock', 'POST'), tr('隐藏资产已锁定'))
+                  : user.requireHiddenPassword === false
+                    ? void act(() => api('/auth/reveal', 'POST', {}), tr('隐藏资产已显示'))
+                    : setModal({ kind: 'reveal' })
               }
             >
-              {user.revealed ? tr('锁定隐藏项目') : tr('显示隐藏资产（验证密码）')}
+              {user.revealed
+                ? tr('锁定隐藏资产')
+                : user.requireHiddenPassword === false
+                  ? tr('显示隐藏资产')
+                  : tr('显示隐藏资产（验证密码）')}
             </button>
           </div>
           <div className="page-heading">
@@ -947,28 +989,13 @@ export default function App() {
             <div className="actions">
               {page === 'account' && !p && (
                 <button className="secondary" onClick={() => setModal({ kind: 'transfer' })}>
-                  {tr('账户间转账')}
+                  {tr('转账')}
                 </button>
               )}
               {['overview', 'account', 'asset', 'debt'].includes(page) && !p && newAction}
             </div>
           </div>
-          {error && (
-            <div className="notice error" role="alert">
-              {error}
-              <button className="text" onClick={() => setError('')}>
-                {tr('关闭')}
-              </button>
-            </div>
-          )}
-          {success && (
-            <div className="notice success" role="status">
-              {tr(success)}
-              <button className="text" onClick={() => setSuccess('')}>
-                {tr('关闭')}
-              </button>
-            </div>
-          )}
+
           {loading && (
             <p role="status" className="muted">
               {tr('正在刷新数据…')}
@@ -976,6 +1003,20 @@ export default function App() {
           )}
           {page === 'overview' && overview && (
             <>
+              {user.overviewCards?.length === 0 && (
+                <section className="panel">
+                  <p>{tr('尚未选择总览卡片')}</p>
+                  <button
+                    className="text"
+                    onClick={() => {
+                      setPage('settings');
+                      setSettingsSection('display');
+                    }}
+                  >
+                    {tr('设置显示卡片')}
+                  </button>
+                </section>
+              )}
               {!overview.complete && (
                 <div className="notice warning">
                   {tr('缺少')}
@@ -986,39 +1027,69 @@ export default function App() {
                   </button>
                 </div>
               )}
-              <div className="metrics">
+              <div
+                className="metrics"
+                hidden={
+                  !['assets', 'liabilities', 'net'].some((key) =>
+                    (user.overviewCards ?? allOverviewCards).includes(key),
+                  )
+                }
+              >
                 {[
                   [tr('总资产'), overview.assets, 'asset'],
                   [tr('总负债'), overview.liabilities, 'debt'],
                   [tr('净资产'), overview.net, 'net'],
-                ].map(([title, value, cls]) => (
-                  <section className={'metric ' + cls} key={title}>
-                    <div>
-                      <span>
-                        {title}
-                        {!overview.complete ? tr('（部分）') : ''}
-                      </span>
-                      <ArrowUpRight size={18} />
-                    </div>
-                    <strong
-                      className={
-                        cls === 'debt' || value.startsWith('-') ? 'danger-text' : undefined
-                      }
-                    >
-                      {money(value, user.baseCurrency)}
-                    </strong>
-                    <small>
-                      {title === tr('净资产')
-                        ? tr('总资产 − 总负债')
-                        : title === tr('总资产')
-                          ? tr('账户资产 + 独立资产')
-                          : tr('负债账户 + 独立债务')}
-                    </small>
-                  </section>
-                ))}
+                ]
+                  .filter(([, , cls]) =>
+                    (user.overviewCards ?? allOverviewCards).includes(
+                      cls === 'asset' ? 'assets' : cls === 'debt' ? 'liabilities' : cls,
+                    ),
+                  )
+                  .map(([title, value, cls]) => (
+                    <section className={'metric ' + cls} key={title}>
+                      <div>
+                        <span>
+                          {title}
+                          {!overview.complete ? tr('（部分）') : ''}
+                        </span>
+                        <ArrowUpRight size={18} />
+                      </div>
+                      <strong
+                        className={
+                          cls === 'debt' || value.startsWith('-') ? 'danger-text' : undefined
+                        }
+                      >
+                        {money(value, user.baseCurrency)}
+                      </strong>
+                      <small>
+                        {title === tr('净资产')
+                          ? tr('总资产 − 总负债')
+                          : title === tr('总资产')
+                            ? tr('账户资产 + 独立资产')
+                            : tr('负债账户 + 独立债务')}
+                      </small>
+                    </section>
+                  ))}
               </div>
-              <div className="dashboard-grid">
-                <section className="panel">
+              <div
+                className={
+                  'dashboard-grid' +
+                  (!['trend', 'composition'].every((key) =>
+                    (user.overviewCards ?? allOverviewCards).includes(key),
+                  )
+                    ? ' single-card'
+                    : '')
+                }
+                hidden={
+                  !['trend', 'composition'].some((key) =>
+                    (user.overviewCards ?? allOverviewCards).includes(key),
+                  )
+                }
+              >
+                <section
+                  className="panel"
+                  hidden={!(user.overviewCards ?? allOverviewCards).includes('trend')}
+                >
                   <div className="panel-title">
                     <h2>{tr('净资产轨迹')}</h2>
                     <span className="badge">{tr('按业务日期')}</span>
@@ -1063,7 +1134,10 @@ export default function App() {
                     {tr('按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。')}
                   </p>
                 </section>
-                <section className="panel">
+                <section
+                  className="panel"
+                  hidden={!(user.overviewCards ?? allOverviewCards).includes('composition')}
+                >
                   <h2>{tr('资产与负债组成')}</h2>
                   {overview.items.length ? (
                     ['account', 'asset', 'debt'].map((k) => (
@@ -1097,7 +1171,10 @@ export default function App() {
                   </p>
                 </section>
               </div>
-              <section className="panel">
+              <section
+                className="panel"
+                hidden={!(user.overviewCards ?? allOverviewCards).includes('recent')}
+              >
                 <div className="panel-title">
                   <h2>{tr('最近变化')}</h2>
                   <button className="text" onClick={() => setPage('history')}>
@@ -1124,43 +1201,44 @@ export default function App() {
                 ].join(' / ') || tr('尚无外币汇率')}{' '}
                 {tr('· 每日尝试更新，失败保留已有数据；旧日期汇率可能产生换算偏差。')}
               </div>
-              {overview.trend.length > 1 && (
-                <details className="panel attribution">
-                  <summary>{tr('变化归因')}</summary>
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>{tr('日期')}</th>
-                          <th>{tr('余额 / 估值变化')}</th>
-                          <th>{tr('汇率变化')}</th>
-                          <th>{tr('净资产')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overview.trend.slice(-10).map((r) => (
-                          <tr key={r.date}>
-                            <td>{r.date}</td>
-                            <td>
-                              {r.balanceChange === null || r.balanceChange === undefined
-                                ? '—'
-                                : money(r.balanceChange, user.baseCurrency)}
-                            </td>
-                            <td>
-                              {r.fxChange === null || r.fxChange === undefined
-                                ? '—'
-                                : money(r.fxChange, user.baseCurrency)}
-                            </td>
-                            <td>
-                              {r.complete ? money(r.net, user.baseCurrency) : tr('汇率不完整')}
-                            </td>
+              {(user.overviewCards ?? allOverviewCards).includes('attribution') &&
+                overview.trend.length > 1 && (
+                  <details className="panel attribution">
+                    <summary>{tr('变化归因')}</summary>
+                    <div className="table-wrap">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>{tr('日期')}</th>
+                            <th>{tr('余额 / 估值变化')}</th>
+                            <th>{tr('汇率变化')}</th>
+                            <th>{tr('净资产')}</th>
                           </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </details>
-              )}
+                        </thead>
+                        <tbody>
+                          {overview.trend.slice(-10).map((r) => (
+                            <tr key={r.date}>
+                              <td>{r.date}</td>
+                              <td>
+                                {r.balanceChange === null || r.balanceChange === undefined
+                                  ? '—'
+                                  : money(r.balanceChange, user.baseCurrency)}
+                              </td>
+                              <td>
+                                {r.fxChange === null || r.fxChange === undefined
+                                  ? '—'
+                                  : money(r.fxChange, user.baseCurrency)}
+                              </td>
+                              <td>
+                                {r.complete ? money(r.net, user.baseCurrency) : tr('汇率不完整')}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </details>
+                )}
             </>
           )}
           {['account', 'asset', 'debt'].includes(page) &&
@@ -1188,8 +1266,8 @@ export default function App() {
                     <h2 className={positionAmount(p).startsWith('-') ? 'danger-text' : undefined}>
                       {money(positionAmount(p), p.currency)}
                     </h2>
-                    {p.hidden && <span className="badge">{tr('隐藏项目')}</span>}
-                    <p className="muted">
+                    {p.hidden && <span className="badge">{tr('隐藏资产')}</span>}
+                    <p className="muted" hidden={p.currency === user.baseCurrency}>
                       {tr('本位币：')}
                       {p.converted !== null
                         ? money(positionAmount(p, p.converted || '0'), user.baseCurrency)
@@ -1205,7 +1283,7 @@ export default function App() {
                           className="primary"
                           onClick={() => setModal({ kind: 'transfer', p })}
                         >
-                          {tr('账户间转账')}
+                          {tr('转账')}
                         </button>
                         <button
                           className="secondary"
@@ -1347,11 +1425,24 @@ export default function App() {
                         {tr('分组排序')}
                       </button>
                     </div>
-                    {quickMode && <p className="muted">{tr('点击账户卡片，直接填写当前余额。')}</p>}
+                    {quickMode && (
+                      <p className="muted">
+                        {tr(
+                          quickTransfer !== null
+                            ? '快速转账中：依次点击转出和转入账户卡片。'
+                            : '点击账户卡片，直接填写当前余额。',
+                        )}
+                      </p>
+                    )}
                   </>
                 )}
                 {positions.some((p) => p.kind === page) ? (
-                  <div className="position-grid">
+                  <div
+                    className={
+                      'position-grid' +
+                      (quickTransfer !== null && page === 'account' ? ' quick-transfer-select' : '')
+                    }
+                  >
                     {positions
                       .filter(
                         (p) =>
@@ -1375,12 +1466,29 @@ export default function App() {
                               <h3 className="account-group-title">{p.groupName || tr('未分组')}</h3>
                             )}
                           <button
-                            className="position-card"
+                            className={
+                              'position-card' +
+                              (quickTransfer?.sourceId === p.id
+                                ? ' quick-source'
+                                : quickTransfer?.targetId === p.id
+                                  ? ' quick-target'
+                                  : '')
+                            }
+                            aria-pressed={
+                              quickTransfer
+                                ? quickTransfer.sourceId === p.id || quickTransfer.targetId === p.id
+                                : undefined
+                            }
+                            disabled={
+                              busy || (!!quickTransfer && (p.side !== 'asset' || p.archived))
+                            }
                             key={p.id}
                             onClick={() =>
-                              page === 'account' && quickMode && !p.archived
-                                ? setModal({ kind: 'revision', p })
-                                : setSelected(p.id)
+                              quickTransfer !== null && page === 'account' && quickMode
+                                ? chooseQuickAccount(p)
+                                : page === 'account' && quickMode && !p.archived
+                                  ? setModal({ kind: 'revision', p })
+                                  : setSelected(p.id)
                             }
                           >
                             <div>
@@ -1419,7 +1527,7 @@ export default function App() {
                             >
                               {money(positionAmount(p), p.currency)}
                             </strong>
-                            <small>
+                            <small hidden={p.currency === user.baseCurrency}>
                               {tr('折合')}{' '}
                               {p.converted === null
                                 ? tr('缺少汇率')
@@ -1438,6 +1546,74 @@ export default function App() {
                 )}
               </section>
             ))}
+          {page === 'account' && quickMode && !selected && (
+            <aside className="quick-transfer-widget" aria-label={tr('快速转账')}>
+              {quickTransfer === null ? (
+                <button
+                  type="button"
+                  className="primary quick-transfer-toggle"
+                  disabled={
+                    busy ||
+                    loading ||
+                    positions.filter(
+                      (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
+                    ).length < 2
+                  }
+                  onClick={() => setQuickTransfer({})}
+                >
+                  {tr('转账')}
+                </button>
+              ) : (
+                <section className="quick-transfer-card">
+                  <div className="panel-title">
+                    <h2>{tr('快速转账')}</h2>
+                    <button
+                      type="button"
+                      className="icon"
+                      aria-label={tr('关闭快速转账')}
+                      disabled={busy}
+                      onClick={() => setQuickTransfer(null)}
+                    >
+                      ×
+                    </button>
+                  </div>
+                  {!quickTransfer.sourceId ? (
+                    <p>{tr('点击账户卡片选择转出账户')}</p>
+                  ) : !quickTransfer.targetId ? (
+                    <>
+                      <p>
+                        {tr('转出账户：')}
+                        {positions.find((p) => p.id === quickTransfer.sourceId)?.name}
+                      </p>
+                      <p>{tr('点击另一张账户卡片选择转入账户')}</p>
+                      <button type="button" className="text" onClick={() => setQuickTransfer({})}>
+                        {tr('重新选择')}
+                      </button>
+                    </>
+                  ) : (
+                    positions.some((p) => p.id === quickTransfer.sourceId) &&
+                    positions.some((p) => p.id === quickTransfer.targetId) && (
+                      <QuickTransfer
+                        key={quickTransfer.sourceId + quickTransfer.targetId}
+                        source={positions.find((p) => p.id === quickTransfer.sourceId)!}
+                        target={positions.find((p) => p.id === quickTransfer.targetId)!}
+                        busy={busy}
+                        changeSource={() => setQuickTransfer({})}
+                        changeTarget={() => setQuickTransfer({ sourceId: quickTransfer.sourceId })}
+                        submit={(data) =>
+                          void act(async () => {
+                            const result = await api('/transfers', 'POST', data);
+                            setQuickTransfer(null);
+                            return result;
+                          }, tr('转账已完成'))
+                        }
+                      />
+                    )
+                  )}
+                </section>
+              )}
+            </aside>
+          )}
           {page === 'history' && (
             <>
               <section className="panel">
@@ -1521,7 +1697,7 @@ export default function App() {
                     ))}
                   </div>
                 ) : (
-                  <p className="muted">{tr('暂无账户间转账记录。')}</p>
+                  <p className="muted">{tr('暂无转账记录。')}</p>
                 )}
                 {transferCursor && (
                   <button disabled={loading} onClick={() => void more('transfers')}>
@@ -1565,24 +1741,28 @@ export default function App() {
           )}
           {page === 'settings' && (
             <>
-              <section className="settings-switch panel">
-                <label>
-                  {tr('设置分类')}
-                  <select
-                    value={settingsSection}
-                    onChange={(e) => setSettingsSection(e.target.value)}
+              <nav className="settings-tabs" aria-label={tr('设置分类')}>
+                {Object.entries({
+                  general: '常规设置',
+                  display: '显示与菜单',
+                  privacy: '登录与隐私',
+                  security: '账号与密码',
+                  icons: '图标库',
+                  rates: '每日汇率',
+                  backup: '备份与恢复',
+                  clear: '清空本账号数据',
+                }).map(([key, label]) => (
+                  <button
+                    key={key}
+                    type="button"
+                    aria-current={settingsSection === key ? 'page' : undefined}
+                    className={key === 'clear' ? 'danger-text' : undefined}
+                    onClick={() => setSettingsSection(key)}
                   >
-                    <option value="general">{tr('个人与菜单设置')}</option>
-                    <option value="security">{tr('账号与密码')}</option>
-                    <option value="icons">{tr('图标库')}</option>
-                    <option value="rates">{tr('每日汇率')}</option>
-                    <option value="backup">{tr('备份与恢复')}</option>
-                    <option className="danger-text" value="clear">
-                      {tr('清空本账号数据')}
-                    </option>
-                  </select>
-                </label>
-              </section>
+                    {tr(label)}
+                  </button>
+                ))}
+              </nav>
               {settingsSection === 'icons' && (
                 <section className="panel">
                   <IconLibrary />
@@ -1662,7 +1842,7 @@ export default function App() {
               <div className="settings-grid">
                 <section className="panel" hidden={settingsSection !== 'general'}>
                   <div className="panel-title">
-                    <h2>{tr('个人与菜单设置')}</h2>
+                    <h2>{tr('常规设置')}</h2>
                     <button className="text" disabled={busy} onClick={() => void logout()}>
                       <LogOut size={16} />
                       {tr('退出登录')}
@@ -1678,9 +1858,36 @@ export default function App() {
                       e.preventDefault();
                       const f = new FormData(e.currentTarget);
                       void act(
+                        () => api('/settings', 'PATCH', { baseCurrency: f.get('baseCurrency') }),
+                        tr('设置已保存'),
+                      );
+                    }}
+                  >
+                    <Field label={tr('本位币')}>
+                      <select
+                        name="baseCurrency"
+                        defaultValue={user.baseCurrency}
+                        key={user.baseCurrency}
+                      >
+                        {currencies.map((c) => (
+                          <option key={c}>{c}</option>
+                        ))}
+                      </select>
+                    </Field>
+                    <button className="primary" disabled={busy}>
+                      {tr('保存设置')}
+                    </button>
+                  </form>
+                </section>
+                <section className="panel" hidden={settingsSection !== 'display'}>
+                  <h2>{tr('显示与菜单')}</h2>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const f = new FormData(e.currentTarget);
+                      void act(
                         () =>
                           api('/settings', 'PATCH', {
-                            baseCurrency: f.get('baseCurrency'),
                             hiddenMenus: [
                               'overview',
                               'account',
@@ -1690,13 +1897,14 @@ export default function App() {
                               'calendar',
                               'schedules',
                             ].filter((key) => !f.has('menu_' + key)),
-                            idleMinutes: Number(f.get('idleMinutes')),
                             showNotes: f.has('showNotes'),
+                            overviewCards: allOverviewCards.filter((key) => f.has('card_' + key)),
                           }),
-                        tr('个人设置已保存'),
+                        tr('设置已保存'),
                       );
                     }}
                   >
+                    <h3>{tr('导航菜单')}</h3>
                     <p className="muted">
                       {tr('选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。')}
                     </p>
@@ -1743,6 +1951,76 @@ export default function App() {
                     <p className="muted">
                       {tr('关闭后隐藏列表、详情及编辑表单中的备注，已有备注仍会保留在备份中。')}
                     </p>
+
+                    <h3>{tr('总览显示卡片')}</h3>
+                    <p className="muted">
+                      {tr('选择资产总览需要显示的卡片，数据和记录仍会保留。')}
+                    </p>
+                    <div className="menu-preferences">
+                      {allOverviewCards.map((key) => (
+                        <label className="switch-row" key={key}>
+                          <span>{tr(overviewCardLabels[key])}</span>
+                          <input
+                            name={'card_' + key}
+                            type="checkbox"
+                            role="switch"
+                            aria-label={tr(overviewCardLabels[key]) + tr('显示')}
+                            key={key + String(user.overviewCards)}
+                            defaultChecked={(user.overviewCards ?? allOverviewCards).includes(key)}
+                          />
+                          <span className="switch-state" aria-hidden="true">
+                            {tr('显示')}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                    <button className="primary" disabled={busy}>
+                      {tr('保存设置')}
+                    </button>
+                  </form>
+                </section>
+                <section className="panel" hidden={settingsSection !== 'privacy'}>
+                  <h2>{tr('登录与隐私')}</h2>
+                  <form
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const f = new FormData(e.currentTarget);
+                      void act(
+                        () =>
+                          api('/settings', 'PATCH', {
+                            sessionHours: Number(f.get('sessionHours')),
+                            idleMinutes: Number(f.get('idleMinutes')),
+                            requireHiddenPassword: f.has('requireHiddenPassword'),
+                          }),
+                        tr('设置已保存'),
+                      );
+                    }}
+                  >
+                    <Field label={tr('登录有效期（小时）')}>
+                      <input
+                        name="sessionHours"
+                        type="number"
+                        min="1"
+                        max="720"
+                        step="1"
+                        required
+                        defaultValue={user.sessionHours ?? 168}
+                        key={user.sessionHours}
+                      />
+                    </Field>
+                    <p className="muted">
+                      {tr(
+                        '范围 1 小时至 30 天（720 小时）。保存后当前登录重新计时，其他会话沿用原到期时间；后续登录使用新设置。',
+                      )}
+                    </p>
+                    {user.sessionExpiresAt && (
+                      <p className="muted">
+                        {tr('当前会话到期：')}
+                        {new Date(user.sessionExpiresAt).toLocaleString(locale, {
+                          timeZone: 'Asia/Hong_Kong',
+                        })}
+                      </p>
+                    )}
                     <Field label={tr('无操作自动退出（分钟）')}>
                       <select
                         name="idleMinutes"
@@ -1763,17 +2041,23 @@ export default function App() {
                         '0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。',
                       )}
                     </p>
-                    <Field label={tr('本位币')}>
-                      <select
-                        name="baseCurrency"
-                        defaultValue={user.baseCurrency}
-                        key={user.baseCurrency}
-                      >
-                        {currencies.map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </Field>
+
+                    <label className="switch-row">
+                      <span>{tr('查看隐藏资产需要密码')}</span>
+                      <input
+                        name="requireHiddenPassword"
+                        type="checkbox"
+                        role="switch"
+                        aria-label={tr('查看隐藏资产需要密码')}
+                        key={String(user.requireHiddenPassword)}
+                        defaultChecked={user.requireHiddenPassword !== false}
+                      />
+                    </label>
+                    <p className="muted">
+                      {tr(
+                        '关闭后，已登录账号可直接显示隐藏资产。每次显示持续 5 分钟，也可手动锁定；保存此设置会锁定所有会话的隐藏资产。',
+                      )}
+                    </p>
                     <button className="primary" disabled={busy}>
                       {tr('保存设置')}
                     </button>
@@ -1856,7 +2140,7 @@ export default function App() {
                 <h2 className="danger-text">{tr('清空本账号数据')}</h2>
                 <p className="muted">
                   {tr(
-                    '清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏项目）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。',
+                    '清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏资产）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。',
                   )}
                 </p>
                 {clearStep === 0 ? (
@@ -2080,11 +2364,6 @@ export default function App() {
               </>
             )}
           </div>
-          {error && (
-            <p role="alert" className="notice error">
-              {error}
-            </p>
-          )}
         </Modal>
       )}
       {modal?.kind === 'group-order' && modal.groups && (
@@ -2146,11 +2425,7 @@ export default function App() {
             )}
           </p>
           <p className="danger-text">{tr('删除后无法撤销，请确认已保存所需备份。')}</p>
-          {error && (
-            <p role="alert" className="notice error">
-              {tr(error)}
-            </p>
-          )}
+
           <div className="modal-actions clear-confirm-actions">
             <button autoFocus disabled={busy} onClick={() => setModal(null)}>
               {tr('取消')}
@@ -2234,11 +2509,7 @@ export default function App() {
             <Field label={tr('备注')}>
               <textarea name="notes" maxLength={2000} defaultValue={modal.transfer.notes} />
             </Field>
-            {error && (
-              <p role="alert" className="notice error">
-                {error}
-              </p>
-            )}
+
             <button className="primary" disabled={busy}>
               {tr(busy ? '正在保存…' : '保存')}
             </button>
@@ -2253,7 +2524,7 @@ export default function App() {
                 ? operationLabel(modal.p.side === 'asset' ? 'collect' : 'repay')
                 : tr('收款 / 还款')
               : modal.kind === 'transfer'
-                ? tr('账户间转账')
+                ? tr('转账')
                 : modal.kind === 'reveal'
                   ? tr('验证密码以显示隐藏资产')
                   : modal.kind === 'edit'
@@ -2322,7 +2593,7 @@ export default function App() {
                 if (kind === 'reveal') {
                   void act(
                     () => api('/auth/reveal', 'POST', { password: f.get('password') }),
-                    tr('隐藏项目已解锁 5 分钟'),
+                    tr('隐藏资产已解锁 5 分钟'),
                   );
                 } else if (kind === 'links') {
                   void act(
@@ -2571,11 +2842,7 @@ export default function App() {
                   </Field>
                 )
               )}
-              {error && (
-                <div role="alert" className="notice error">
-                  {error}
-                </div>
-              )}
+
               <div className="modal-actions">
                 <button
                   className="secondary"

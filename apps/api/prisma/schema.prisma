@@ -17,6 +17,12 @@ model User {
   baseCurrency String @default("CNY") @db.Char(3)
   /// 隐藏菜单标识列表
   hiddenMenus String @default("") @db.VarChar(128)
+  /// 登录有效时长，单位小时，范围 1 至 720
+  sessionHours Int @default(168)
+  /// 查看隐藏项目是否需要再次验证密码
+  requireHiddenPassword Boolean @default(true)
+  /// 总览显示的卡片键列表，空值表示默认全部显示
+  overviewCards Json?
   /// 账户分组显示顺序；空值表示沿用默认顺序
   accountGroupOrder Json?
   /// 是否显示备注
