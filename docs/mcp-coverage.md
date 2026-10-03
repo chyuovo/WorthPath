@@ -4,6 +4,8 @@
 
 验证记号：**M** `test/mcp.test.ts` 第一组真实官方 SDK/MySQL；**C** 第二组并发/图标/密码修改；**O** 第三组 OAuth；**R** 18 组真实 REST/MySQL 回归；**U** 原单元计算/行情/ZIP 测试。均有实际业务断言。M 中公共刷新验证无需要更新资产时的真实调用；外部行情响应和失败回退由 U 验证，未声称行情供应商稳定可用。
 
+**B**：2026-10-03 22:55（UTC+8）真实浏览器验证黄金/白银创建、可选买入价与盈亏、清空成本、估值历史及报价完成后自动同步，临时用户已清理。
+
 普通写入需要 draft 或 write，且受用户 readonly/draft/direct 策略约束；敏感操作额外要求 sensitive 并强制网页确认。所有写入工具要求幂等键和 expectedState。每项都先检查可信用户归属；annotations 不替代权限。
 
 | 现有页面/API 与功能                                                                   | MCP 操作路径                                                                        | 权限                          | 确认方式                                     | 验证                                                      |
@@ -11,7 +13,7 @@
 | 账户/独立资产/债务列表 GET positions                                                  | positions_list：kind、名称、归档、方向、币种、分组、排序、offset/limit              | read                          | 无                                           | M：查询、重名、分页和外用户隔离                           |
 | 项目详情 GET positions/:id                                                            | position_get                                                                        | read                          | 隐藏项目须连接独立网页解锁                   | M：当前余额、隐藏/外用户拒绝                              |
 | 创建项目 POST positions                                                               | position_create，保留账户/资产/债务初始绝对余额语义                                 | draft/write                   | 策略决定草稿或直接                           | M/C：3 类对象、重复调用、无效金额、并发                   |
-| 按克数创建贵金属 POST metals/holdings                                                 | metal_holding_create                                                                | draft/write                   | 策略                                         | M/R/U：无报价待估值、现有报价估值、可选成本盈亏、旧备份   |
+| 按克数创建贵金属 POST metals/holdings                                                 | metal_holding_create                                                                | draft/write                   | 策略                                         | M/R/U/B：待估值、报价、成本盈亏、旧备份   |
 | 元数据、分类、分组、图标、归档/恢复、隐藏、计入开关 PATCH positions/:id               | position_update，完整 metadata；币种与方向固定                                      | draft/write                   | 策略                                         | M：分组、归档禁止金额更新与恢复；R：隐藏和开关            |
 | 分组拖拽排序 PATCH settings                                                           | settings_update.accountGroupOrder                                                   | draft/write                   | 策略                                         | M/R：持久化、排序、备份                                   |
 | 类别选项、名称与分组配置                                                              | position_create/update；positions_list 读取现有值，Schema/描述提供规则              | read + draft/write            | 策略                                         | M/R；当前没有独立分类/分组实体 CRUD                       |

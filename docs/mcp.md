@@ -136,6 +136,6 @@ location /api/ {
 
 主要修改：原 8 个业务模块及 auth 抽取 BusinessService；database 增加事务上下文；新增 `src/mcp/{oauth,catalogue,operations,files,management,transport}.ts`；设置页新增 AgentConnections；SDK 精确版本和 pnpm lock；新增真实 MCP 测试及只读 probe。
 
-实际通过：前后端 typecheck/build、36 项单元检查、18 组真实 REST/MySQL 回归、3 组真实官方 MCP SDK 端到端检查，工具发现验证 49 个工具（原 mcp:probe 的 48 个工具上增加 metal_holding_create）。新迁移 deploy 成功，实际 MySQL 17 张表（含 Prisma 迁移表）、159 个字段注释完整。测试真实连接 MySQL，使用随机临时用户并清理，未替代现有 REST 回归。端到端文件传输、事务回滚、归属、金额精度、幂等、并发、失效/撤销和 OAuth 均在测试中检查；外部行情源的正常和失败路径由原业务单元测试验证，不保证外部报价服务实时可用。
+实际通过：前后端 typecheck/build、36 项单元检查、18 组真实 REST/MySQL 回归、3 组真实官方 MCP SDK 端到端检查，工具发现验证 49 个工具（原 mcp:probe 的 48 个工具上增加 metal_holding_create）。新迁移 deploy 成功，实际 MySQL 17 张表（含 Prisma 迁移表）、159 个字段注释完整。测试真实连接 MySQL，使用随机临时用户并清理，未替代现有 REST 回归。贵金属创建、待估值、买入成本、盈亏及报价完成后的页面自动同步已通过真实浏览器验证，测试用户已清理。端到端文件传输、事务回滚、归属、金额精度、幂等、并发、失效/撤销和 OAuth 均在测试中检查；外部行情源的正常和失败路径由原业务单元测试验证，不保证外部报价服务实时可用。
 
 部署未执行；未推送代码；其他客户端及实际 HTTPS/代理兼容性尚未验证。

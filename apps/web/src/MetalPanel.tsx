@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { api, money, type Position, currencies } from './api';
 import { t as tr } from './i18n';
 import { useToast } from './Toast';
@@ -11,6 +11,8 @@ export function MetalPanel({
   position?: Position;
   refresh: () => Promise<void>;
 }) {
+  const refreshRef = useRef(refresh);
+  refreshRef.current = refresh;
   const [data, setData] = useState<Data>(),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(''),
@@ -39,7 +41,15 @@ export function MetalPanel({
     const timer = setInterval(() => {
       void api<Data>('/metals')
         .then((v) => {
-          if (active) setData(v);
+          if (active) {
+            setData(v);
+            if (v.status.state !== 'updating') {
+              clearInterval(timer);
+              void refreshRef.current().catch((e) => {
+                if (active) setError(e.message);
+              });
+            }
+          }
         })
         .catch((e) => {
           if (active) {
