@@ -551,5 +551,12 @@
   "正在更新贵金属参考价": "Updating reference prices",
   "贵金属价格更新失败，已有价格与估值已保留，可手动录价": "Price update failed. Previous prices and values are preserved; you can enter prices manually.",
   "请先创建至少两个启用中的账户。隐藏账户需验证密码后才能选择。": "Create at least two active accounts. Unlock hidden accounts before selecting them.",
-  "请选择启用的账户": "Choose an active account"
+  "请选择启用的账户": "Choose an active account",
+  "买入价（每克，选填）": "Purchase price per gram (optional)",
+  "买入成本按实物总克数计算；参考估值按克数和纯度计算。清空买入价后不显示盈亏。": "Cost uses total physical grams; valuation uses grams and purity. Clear purchase price to hide profit/loss.",
+  "买入成本": "Purchase cost",
+  "估值盈亏": "Valuation profit/loss",
+  "待估值": "Awaiting valuation",
+  "按克数添加，参考价自动估值；缺少报价时显示待估值，不计为已知零价值。": "Add by grams with automatic market valuation. Missing quotes mean awaiting valuation, not a known zero value.",
+  "缺少报价，当前总额不完整。": "Quotes are missing; current totals are incomplete."
 }

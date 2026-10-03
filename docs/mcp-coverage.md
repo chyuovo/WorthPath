@@ -2,7 +2,7 @@
 
 盘点来源：App.tsx、Calendar、SchedulePanel、MetalPanel、IconLibrary、TransferForm、DebtPaymentForm、GroupOrderList 及所有 API Controller 路由。架构沿用 NestJS/Express/Prisma/MySQL/Zod，不新增消费账本或 AI 框架。
 
-验证记号：**M** `test/mcp.test.ts` 第一组真实官方 SDK/MySQL；**C** 第二组并发/图标/密码修改；**O** 第三组 OAuth；**R** 原 17 组真实 REST/MySQL 回归；**U** 原单元计算/行情/ZIP 测试。均有实际业务断言。M 中公共刷新验证无需要更新资产时的真实调用；外部行情响应和失败回退由 U 验证，未声称行情供应商稳定可用。
+验证记号：**M** `test/mcp.test.ts` 第一组真实官方 SDK/MySQL；**C** 第二组并发/图标/密码修改；**O** 第三组 OAuth；**R** 18 组真实 REST/MySQL 回归；**U** 原单元计算/行情/ZIP 测试。均有实际业务断言。M 中公共刷新验证无需要更新资产时的真实调用；外部行情响应和失败回退由 U 验证，未声称行情供应商稳定可用。
 
 普通写入需要 draft 或 write，且受用户 readonly/draft/direct 策略约束；敏感操作额外要求 sensitive 并强制网页确认。所有写入工具要求幂等键和 expectedState。每项都先检查可信用户归属；annotations 不替代权限。
 
@@ -11,6 +11,7 @@
 | 账户/独立资产/债务列表 GET positions                                                  | positions_list：kind、名称、归档、方向、币种、分组、排序、offset/limit              | read                          | 无                                           | M：查询、重名、分页和外用户隔离                           |
 | 项目详情 GET positions/:id                                                            | position_get                                                                        | read                          | 隐藏项目须连接独立网页解锁                   | M：当前余额、隐藏/外用户拒绝                              |
 | 创建项目 POST positions                                                               | position_create，保留账户/资产/债务初始绝对余额语义                                 | draft/write                   | 策略决定草稿或直接                           | M/C：3 类对象、重复调用、无效金额、并发                   |
+| 按克数创建贵金属 POST metals/holdings                                                 | metal_holding_create                                                                | draft/write                   | 策略                                         | M/R/U：无报价待估值、现有报价估值、可选成本盈亏、旧备份   |
 | 元数据、分类、分组、图标、归档/恢复、隐藏、计入开关 PATCH positions/:id               | position_update，完整 metadata；币种与方向固定                                      | draft/write                   | 策略                                         | M：分组、归档禁止金额更新与恢复；R：隐藏和开关            |
 | 分组拖拽排序 PATCH settings                                                           | settings_update.accountGroupOrder                                                   | draft/write                   | 策略                                         | M/R：持久化、排序、备份                                   |
 | 类别选项、名称与分组配置                                                              | position_create/update；positions_list 读取现有值，Schema/描述提供规则              | read + draft/write            | 策略                                         | M/R；当前没有独立分类/分组实体 CRUD                       |
@@ -33,7 +34,7 @@
 | 金银报价与状态 GET metals                                                             | metals_prices，最近 100 条                                                          | read                          | 无；查询 MCP 不触发隐式自动更新              | M/U/R                                                     |
 | 金银报价刷新 POST metals/refresh                                                      | metals_refresh                                                                      | draft/write                   | 策略，沿用自动估值                           | M：无配置资产调用；U：外部响应和失败回退                  |
 | 每克报价手动回退 POST metals/prices                                                   | metal_price_set，Decimal 价格                                                       | draft/write                   | 策略                                         | M/R/U：手动优先、精确估值                                 |
-| 克数、品种、纯度、自动估价 PUT metals/:id                                             | metal_configure                                                                     | draft/write                   | 策略                                         | M/R/U：估值历史和去重                                     |
+| 克数、品种、纯度、买入成本、自动估价 PUT metals/:id                                   | metal_configure                                                                     | draft/write                   | 策略                                         | M/R/U：估值历史和去重                                     |
 | 应用估价 POST metals/:id/value                                                        | metal_value                                                                         | draft/write                   | 策略                                         | M/R/U                                                     |
 | 收支月日历 GET calendar                                                               | calendar_month，YYYY-MM                                                             | read                          | 无                                           | M/R/U                                                     |
 | 单日日历明细 GET calendar/day                                                         | calendar_day，业务日和分页                                                          | read                          | 无                                           | M/R/U：历史修改、转账排除、Decimal                        |

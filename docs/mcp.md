@@ -13,6 +13,12 @@
 
 密码只在网站填写。账号或密码修改后其他连接撤销，当前发起连接只保留 5 分钟 read 权限以读取完成结果，不可刷新；需要重新授权才能继续写入。隐藏资产解锁仅持续 5 分钟并限定当前连接，网站的解锁不自动授予 Agent。
 
+## 贵金属按克数接入
+
+新增 `metal_holding_create`：name、currency、metalType(gold/silver)、metalGrams、metalPurity、autoValuation、date，买入价 metalCostPerGram 可省略或 null；无需填写金额或市场价格。写入仍需 expectedState 和 idempotencyKey，并遵循写入策略。有对应业务日或更早报价时复用估值逻辑创建历史，没有报价时返回 valuationAvailable=false，查询总额 complete=false 与 missingValuations。position_get/list 返回可选 metalCost 和 metalProfit，均为原币十进制字符串。成本按实物重量计算，市场价值按重量×纯度×每克纯金属报价计算。
+
+metal_configure 省略 metalCostPerGram 保留旧成本，传 null 清除。克数或成本修改与其他写入一样参与并发状态校验；盈亏由共享业务服务计算，不存储额外浮点累计值。[更新与验证](update-metal-grams-2026-10-03.md)。
+
 ## 开发启动与环境
 
 ```powershell
@@ -130,6 +136,6 @@ location /api/ {
 
 主要修改：原 8 个业务模块及 auth 抽取 BusinessService；database 增加事务上下文；新增 `src/mcp/{oauth,catalogue,operations,files,management,transport}.ts`；设置页新增 AgentConnections；SDK 精确版本和 pnpm lock；新增真实 MCP 测试及只读 probe。
 
-实际通过：前后端 typecheck/build、35 项原单元检查、17 组真实 REST/MySQL 回归、3 组真实官方 MCP SDK 端到端检查，以及 mcp:probe（发现 48 个工具）。新迁移 deploy 成功，实际 MySQL 16 张应用表、150 个字段注释完整。测试真实连接 MySQL，使用随机临时用户并清理，未替代现有 REST 回归。端到端文件传输、事务回滚、归属、金额精度、幂等、并发、失效/撤销和 OAuth 均在测试中检查；外部行情源的正常和失败路径由原业务单元测试验证，不保证外部报价服务实时可用。
+实际通过：前后端 typecheck/build、36 项单元检查、18 组真实 REST/MySQL 回归、3 组真实官方 MCP SDK 端到端检查，工具发现验证 49 个工具（原 mcp:probe 的 48 个工具上增加 metal_holding_create）。新迁移 deploy 成功，实际 MySQL 17 张表（含 Prisma 迁移表）、159 个字段注释完整。测试真实连接 MySQL，使用随机临时用户并清理，未替代现有 REST 回归。端到端文件传输、事务回滚、归属、金额精度、幂等、并发、失效/撤销和 OAuth 均在测试中检查；外部行情源的正常和失败路径由原业务单元测试验证，不保证外部报价服务实时可用。
 
 部署未执行；未推送代码；其他客户端及实际 HTTPS/代理兼容性尚未验证。

@@ -81,3 +81,30 @@ test('public metal update preserves decimal values and manual quotes, skips clea
     globalThis.fetch = original;
   }
 });
+test('unpriced gram holdings make included totals incomplete and cost uses physical grams', async () => {
+  const p: Holding = {
+    id: 'pending',
+    name: 'pending',
+    kind: 'asset',
+    side: 'asset',
+    currency: 'CNY',
+    metalType: 'gold',
+    createdAt: new Date('2026-10-01'),
+    revisions: [],
+  };
+  const v = totals([p], [], 'CNY', '2026-10-03');
+  assert.equal(v.complete, false);
+  assert.equal(v.items[0].converted, null);
+  assert.equal(v.missingValuations[0].id, p.id);
+  assert.equal(totals([{ ...p, included: false }], [], 'CNY', '2026-10-03').complete, true);
+  assert.equal(totals([p], [], 'CNY', '2026-09-30').complete, true);
+  const { metalPerformance } = await import('../src/metals');
+  assert.deepEqual(
+    metalPerformance(
+      { metalType: 'gold', metalGrams: '2.5', metalCostPerGram: '12.8' },
+      '40',
+      true,
+    ),
+    { valuationAvailable: true, metalCost: '32.00000000', metalProfit: '8.00000000' },
+  );
+});

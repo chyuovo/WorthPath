@@ -87,7 +87,8 @@ export function MetalPanel({
             String(position.metalGrams) +
             String(position.autoValuation) +
             String(position.metalPurity) +
-            String(position.metalType)
+            String(position.metalType) +
+            String(position.metalCostPerGram)
           }
           onSubmit={(e) => {
             e.preventDefault();
@@ -97,6 +98,7 @@ export function MetalPanel({
                 api('/metals/' + position.id, 'PUT', {
                   metalType: f.get('metalType'),
                   metalGrams: f.get('metalGrams'),
+                  metalCostPerGram: f.get('metalCostPerGram') || null,
                   metalPurity: f.get('metalPurity'),
                   autoValuation: f.has('autoValuation'),
                 }),
@@ -133,6 +135,25 @@ export function MetalPanel({
               defaultValue={position.metalPurity || '1'}
             />
           </label>
+          <label>
+            {tr('买入价（每克，选填）')}（{position.currency}）
+            <input
+              name="metalCostPerGram"
+              inputMode="decimal"
+              defaultValue={position.metalCostPerGram || ''}
+              pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,12})?"
+            />
+          </label>
+          <p className="muted">
+            {tr('买入成本按实物总克数计算；参考估值按克数和纯度计算。清空买入价后不显示盈亏。')}
+          </p>
+          {position.metalCost != null && (
+            <p>
+              {tr('买入成本')}：{position.metalCost} {position.currency} · {tr('估值盈亏')}：
+              {position.metalProfit ?? tr('待估值')}{' '}
+              {position.metalProfit != null ? position.currency : ''}
+            </p>
+          )}
           <label className="check-line">
             <input type="checkbox" name="autoValuation" defaultChecked={position.autoValuation} />
             {tr('随参考价自动记录估值')}

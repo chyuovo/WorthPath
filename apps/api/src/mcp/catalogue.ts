@@ -6,7 +6,7 @@ import { TransfersBusinessService } from '../transfers';
 import { SchedulesBusinessService, scheduleInput } from '../schedules';
 import { CalendarBusinessService } from '../calendar';
 import { SettingsBusinessService } from '../rates';
-import { MetalsBusinessService, metalConfig, metalPriceInput } from '../metals';
+import { MetalsBusinessService, metalConfig, metalHoldingInput, metalPriceInput } from '../metals';
 import { IconsBusinessService } from '../icons';
 import { BackupBusinessService } from '../backup';
 import {
@@ -288,6 +288,12 @@ export class AgentCatalogue {
       ),
       write('rates_refresh', '重试公共日汇率更新，失败保留原币和历史汇率。', empty, (r) =>
         settings.refresh(r),
+      ),
+      write(
+        'metal_holding_create',
+        '按克数创建金银资产，无需市场价格；买入每克成本可选，缺少报价时待估值。日期为 UTC+8 业务时间。',
+        metalHoldingInput,
+        (r, p) => metals.create(r, p),
       ),
       read('metals_prices', '最近 100 条金银每克报价和更新状态。', empty, (r) => metals.list(r)),
       write('metals_refresh', '刷新贵金属报价并沿用现有自动估值规则。', empty, (r) =>

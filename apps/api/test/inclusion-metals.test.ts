@@ -294,3 +294,101 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
     await db.$disconnect();
   }
 });
+test('gram-only creation, optional exact purchase cost, pending totals and backward-compatible backups', async () => {
+  const a = await fixture(),
+    b = await fixture();
+  try {
+    const input = {
+      name: 'gram asset',
+      currency: 'CNY',
+      metalType: 'gold',
+      metalGrams: '2.5',
+      metalPurity: '0.8',
+      autoValuation: true,
+      date: '2026-10-01T12:00',
+      metalCostPerGram: '12.8',
+    };
+    const created = await call('/metals/holdings', a.cookie, 'POST', input);
+    assert.equal(created.status, 201, JSON.stringify(created.data));
+    assert.equal(created.data.valuationAvailable, false);
+    const id = created.data.id;
+    let p = (await call('/positions/' + id, a.cookie)).data;
+    assert.equal(p.metalCost, '32.00000000');
+    assert.equal(p.metalProfit, null);
+    assert.equal(p.valuationAvailable, false);
+    assert.equal(await db.revision.count({ where: { positionId: id } }), 0);
+    const ov = (await call('/overview', a.cookie)).data;
+    assert.equal(ov.complete, false);
+    assert.deepEqual(ov.missingValuations, [{ id, name: input.name }]);
+    assert.equal((await call('/metals/' + id, b.cookie, 'PUT', input)).status, 400); // strict creation fields rejected
+    assert.equal(
+      (
+        await call('/metals/' + id, b.cookie, 'PUT', {
+          metalType: 'gold',
+          metalGrams: '2.5',
+          metalPurity: '0.8',
+          autoValuation: true,
+        })
+      ).status,
+      404,
+    );
+    const price = await call('/metals/prices', a.cookie, 'POST', {
+      metalType: 'gold',
+      currency: 'CNY',
+      price: '20',
+      date: '2026-10-01',
+    });
+    assert.equal(price.status, 201, JSON.stringify(price.data));
+    p = (await call('/positions/' + id, a.cookie)).data;
+    assert.equal(p.amount, '40');
+    assert.equal(p.metalProfit, '8.00000000');
+    assert.equal(p.valuationAvailable, true);
+    const cfg = { metalType: 'gold', metalGrams: '2.5', metalPurity: '0.8', autoValuation: true };
+    assert.equal((await call('/metals/' + id, a.cookie, 'PUT', cfg)).status, 200);
+    assert.equal((await call('/positions/' + id, a.cookie)).data.metalCostPerGram, '12.8');
+    const controller = new (await import('../src/backup')).BackupBusinessService(db as any);
+    const backup = await (controller as any).data(a.id);
+    assert.equal(backup.positions[0].metalCostPerGram, '12.8');
+    assert.equal(
+      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      201,
+    );
+    const restored = (await call('/positions?kind=asset', b.cookie)).data[0];
+    assert.equal(restored.metalCostPerGram, '12.8');
+    assert.equal(restored.metalProfit, '8.00000000');
+    const invalidCost = structuredClone(backup);
+    Object.assign(invalidCost.positions[0], {
+      metalType: null,
+      metalGrams: null,
+      autoValuation: false,
+    });
+    assert.throws(() =>
+      (require('../src/backup') as typeof import('../src/backup')).validateBackup(invalidCost),
+    );
+    const old = structuredClone(backup);
+    delete old.positions[0].metalCostPerGram;
+    assert.doesNotThrow(() =>
+      (require('../src/backup') as typeof import('../src/backup')).validateBackup(old),
+    );
+    assert.equal(
+      (await call('/metals/' + id, a.cookie, 'PUT', { ...cfg, metalCostPerGram: null })).status,
+      200,
+    );
+    assert.equal((await call('/positions/' + id, a.cookie)).data.metalProfit, null);
+    const next = await call('/metals/holdings', a.cookie, 'POST', {
+      ...input,
+      name: 'quoted',
+      metalCostPerGram: null,
+    });
+    assert.equal(next.status, 201);
+    assert.equal(next.data.valuationAvailable, true);
+    assert.equal((await call('/positions/' + next.data.id, a.cookie)).data.amount, '40');
+    assert.equal(
+      (await call('/metals/holdings', a.cookie, 'POST', { ...input, metalGrams: '0' })).status,
+      400,
+    );
+  } finally {
+    await db.user.deleteMany({ where: { id: { in: [a.id, b.id] } } });
+    await db.$disconnect();
+  }
+});

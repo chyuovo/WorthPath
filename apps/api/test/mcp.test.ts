@@ -117,7 +117,7 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
     await write(a, 'metals_refresh');
     await call(a, 'connection_info');
     const discovered = await a.client.listTools();
-    assert.ok(discovered.tools.length >= 40);
+    assert.equal(discovered.tools.length, 49);
     assert.equal(
       discovered.tools.find((t) => t.name === 'positions_list')!.annotations!.readOnlyHint,
       true,
@@ -322,6 +322,21 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
     });
     assert.equal((await call(a, 'position_get', { id: metal })).amount, '21.75308642');
     await write(a, 'metal_value', { id: metal });
+    const gram = (
+      await write(a, 'metal_holding_create', {
+        name: 'grams',
+        currency: 'CNY',
+        metalType: 'gold',
+        metalGrams: '2',
+        metalPurity: '1',
+        autoValuation: true,
+        metalCostPerGram: '9',
+        date: day,
+      })
+    ).result.id;
+    const gramDetail = await call(a, 'position_get', { id: gram });
+    assert.equal(gramDetail.metalCost, '18.00000000');
+    assert.equal(gramDetail.metalProfit, '3.75308642');
     await call(a, 'metals_prices');
     await call(a, 'settings_get');
     await call(a, 'overview_get', { limit: 1 });

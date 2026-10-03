@@ -7,6 +7,8 @@ export type Holding = {
   side: string;
   currency: string;
   included?: boolean;
+  metalType?: string | null;
+  createdAt?: Date;
   revisions: {
     id: string;
     sequence?: number;
@@ -66,6 +68,7 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
   let assets = new Decimal(0),
     liabilities = new Decimal(0);
   const missing = new Set<string>();
+  const missingValuations: { id: string; name: string }[] = [];
   const items = positions.map((p) => {
     const rev = p.revisions
         .filter((r) => businessDay(r.effectiveDate) <= date)
@@ -73,7 +76,9 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
       amount = new Decimal(rev?.amount.toString() || '0'),
       fx = rateAt(rates, p.currency, base, date);
     if (p.included !== false && !fx && !amount.isZero()) missing.add(p.currency);
-    const converted = fx ? amount.mul(fx.value) : null;
+    const pending = !!p.metalType && !rev && (!p.createdAt || businessDay(p.createdAt) <= date);
+    if (pending && p.included !== false) missingValuations.push({ id: p.id, name: p.name });
+    const converted = fx && !pending ? amount.mul(fx.value) : null;
     if (converted && p.included !== false) {
       if (p.side === 'asset') assets = assets.plus(converted);
       else if (p.kind === 'account' && converted.isNegative()) assets = assets.minus(converted);
@@ -86,6 +91,7 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
       kind: p.kind,
       side: p.side,
       currency: p.currency,
+      valuationAvailable: !pending,
       amount: amount.toFixed(),
       converted: converted?.toFixed(2) ?? null,
       rateDate: fx?.date ?? null,
@@ -97,7 +103,8 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
     assets: assets.toFixed(2),
     liabilities: liabilities.toFixed(2),
     net: assets.minus(liabilities).toFixed(2),
-    complete: missing.size === 0,
+    complete: missing.size === 0 && missingValuations.length === 0,
+    missingValuations,
     missing: [...missing],
     items,
   };

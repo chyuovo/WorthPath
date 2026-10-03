@@ -253,6 +253,10 @@ export default function App() {
     [error, setError] = useState(''),
     [success, setSuccess] = useState('');
   const [calendarRefresh, setCalendarRefresh] = useState(0);
+  const [newAssetCategory, setNewAssetCategory] = useState(categories.asset[0][0]);
+  useEffect(() => {
+    setNewAssetCategory(categories.asset[0][0]);
+  }, [modal?.kind]);
   const [quickTransfer, setQuickTransfer] = useState<{
     sourceId?: string;
     targetId?: string;
@@ -1029,7 +1033,7 @@ export default function App() {
                   </button>
                 </section>
               )}
-              {!overview.complete && (
+              {!!overview.missing.length && (
                 <div className="notice warning">
                   {tr('缺少')}
                   {overview.missing.join('、')} {tr('到')}
@@ -1037,6 +1041,12 @@ export default function App() {
                   <button className="text" onClick={() => setPage('settings')}>
                     {tr('设置汇率')}
                   </button>
+                </div>
+              )}
+              {!!overview.missingValuations?.length && (
+                <div className="notice warning">
+                  {tr('待估值')}：{overview.missingValuations.map((p) => p.name).join('、')} ·{' '}
+                  {tr('缺少报价，当前总额不完整。')}
                 </div>
               )}
               <div
@@ -1277,14 +1287,17 @@ export default function App() {
                       {p.archived ? tr(' · 已归档') : ''}
                     </span>
                     <h2 className={positionAmount(p).startsWith('-') ? 'danger-text' : undefined}>
-                      {money(positionAmount(p), p.currency)}
+                      {p.valuationAvailable === false
+                        ? tr('待估值')
+                        : money(positionAmount(p), p.currency)}
+                      {p.metalGrams && <small> · {p.metalGrams} g</small>}
                     </h2>
                     {p.hidden && <span className="badge">{tr('隐藏资产')}</span>}
                     <p className="muted" hidden={p.currency === user.baseCurrency}>
                       {tr('本位币：')}
                       {p.converted !== null
                         ? money(positionAmount(p, p.converted || '0'), user.baseCurrency)
-                        : tr('缺少汇率')}
+                        : tr(p.valuationAvailable === false ? '待估值' : '缺少汇率')}
                     </p>
                     <p className="notes-display">{p.notes || tr('暂无备注')}</p>
                     {(p.included === false ||
@@ -1548,12 +1561,15 @@ export default function App() {
                                 positionAmount(p).startsWith('-') ? 'danger-text' : undefined
                               }
                             >
-                              {money(positionAmount(p), p.currency)}
+                              {p.valuationAvailable === false
+                                ? tr('待估值')
+                                : money(positionAmount(p), p.currency)}
+                              {p.metalGrams && <small> · {p.metalGrams} g</small>}
                             </strong>
                             <small hidden={p.currency === user.baseCurrency}>
                               {tr('折合')}{' '}
                               {p.converted === null
-                                ? tr('缺少汇率')
+                                ? tr(p.valuationAvailable === false ? '待估值' : '缺少汇率')
                                 : money(positionAmount(p, p.converted || '0'), user.baseCurrency)}
                             </small>
                           </button>
@@ -2659,6 +2675,24 @@ export default function App() {
                       }),
                     tr('项目资料已保存'),
                   );
+                } else if (kind === 'asset' && v.category === 'gold') {
+                  void act(
+                    () =>
+                      api('/metals/holdings', 'POST', {
+                        name: v.name,
+                        currency: v.currency,
+                        notes: v.notes,
+                        date: v.date,
+                        metalType: v.metalType,
+                        metalGrams: v.metalGrams,
+                        metalPurity: v.metalPurity,
+                        metalCostPerGram: v.metalCostPerGram || null,
+                        autoValuation: true,
+                        hidden: f.has('hidden'),
+                        included: f.has('included'),
+                      }),
+                    tr('项目已添加'),
+                  );
                 } else {
                   const category = String(v.category),
                     side =
@@ -2742,6 +2776,7 @@ export default function App() {
                   <Field label={tr('类别')}>
                     <select
                       name="category"
+                      onChange={(e) => setNewAssetCategory(e.target.value)}
                       defaultValue={modal.p?.category || categories[modal.kind]?.[0][0]}
                     >
                       {categories[modal.p?.kind || modal.kind].map(([v, label]) => (
@@ -2782,37 +2817,69 @@ export default function App() {
                   </select>
                 </Field>
               )}
-              {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
-                <Field
-                  label={
-                    tr(
-                      modal.p?.kind === 'debt'
-                        ? '剩余本金'
-                        : modal.p?.kind === 'asset'
-                          ? '当前估值'
-                          : '当前余额',
-                    ) + (modal.p ? '（' + modal.p.currency + '）' : '')
-                  }
-                >
-                  <input
-                    name="amount"
-                    inputMode="decimal"
-                    required
-                    pattern={
-                      modal.p?.kind === 'account' || modal.kind === 'account'
-                        ? '-?(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
-                        : '(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
+              {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) &&
+                !(modal.kind === 'asset' && newAssetCategory === 'gold') && (
+                  <Field
+                    label={
+                      tr(
+                        modal.p?.kind === 'debt'
+                          ? '剩余本金'
+                          : modal.p?.kind === 'asset'
+                            ? '当前估值'
+                            : '当前余额',
+                      ) + (modal.p ? '（' + modal.p.currency + '）' : '')
                     }
-                    defaultValue={
-                      modal.p
-                        ? accountInputAmount(modal.p, modal.h?.after || modal.p.amount)
-                        : modal.kind === 'debt'
-                          ? '0'
-                          : ''
-                    }
-                    placeholder="0.00"
-                  />
-                </Field>
+                  >
+                    <input
+                      name="amount"
+                      inputMode="decimal"
+                      required
+                      pattern={
+                        modal.p?.kind === 'account' || modal.kind === 'account'
+                          ? '-?(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
+                          : '(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
+                      }
+                      defaultValue={
+                        modal.p
+                          ? accountInputAmount(modal.p, modal.h?.after || modal.p.amount)
+                          : modal.kind === 'debt'
+                            ? '0'
+                            : ''
+                      }
+                      placeholder="0.00"
+                    />
+                  </Field>
+                )}
+              {modal.kind === 'asset' && newAssetCategory === 'gold' && (
+                <>
+                  <Field label={tr('贵金属品种')}>
+                    <select name="metalType">
+                      <option value="gold">{tr('黄金')}</option>
+                      <option value="silver">{tr('白银')}</option>
+                    </select>
+                  </Field>
+                  <Field label={tr('重量（克）')}>
+                    <input
+                      name="metalGrams"
+                      required
+                      inputMode="decimal"
+                      pattern="(0|[1-9][0-9]{0,15})([.][0-9]{1,8})?"
+                    />
+                  </Field>
+                  <Field label={tr('纯度（0–1，例如 0.999）')}>
+                    <input name="metalPurity" required defaultValue="1" inputMode="decimal" />
+                  </Field>
+                  <Field label={tr('买入价（每克，选填）')}>
+                    <input
+                      name="metalCostPerGram"
+                      inputMode="decimal"
+                      pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,12})?"
+                    />
+                  </Field>
+                  <p className="muted">
+                    {tr('按克数添加，参考价自动估值；缺少报价时显示待估值，不计为已知零价值。')}
+                  </p>
+                </>
               )}
               {['account', 'asset', 'debt', 'revision', 'correction'].includes(modal.kind) && (
                 <Field label={tr('记录时间（UTC+8）')}>

@@ -29,7 +29,7 @@ import { currentPositions, currentRates, historyPage, trendData, trendInput } fr
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { IconsService } from './icons';
-import { MetalsService } from './metals';
+import { MetalsService, metalPerformance } from './metals';
 import { RatesService } from './rates';
 import { captureReplay } from './replay';
 import { changeMovement } from './transfers';
@@ -67,6 +67,7 @@ export class PortfolioBusinessService {
       );
       return rows.map(({ revisions, userId, ...p }) => ({
         ...p,
+        ...metalPerformance(p, revisions[0]?.amount.toString() || '0', !!revisions.length),
         amount: revisions[0]?.amount.toString() || '0',
         converted: amounts.get(p.id)!.converted,
         rateDate: amounts.get(p.id)!.rateDate,
@@ -75,7 +76,11 @@ export class PortfolioBusinessService {
   }
   async detail(r: UserRequest, id: string) {
     const { revisions, userId, ...p } = await this.own(r.userId, id, r.revealed);
-    return { ...p, amount: revisions[0]?.amount.toString() || '0' };
+    return {
+      ...p,
+      ...metalPerformance(p, revisions[0]?.amount.toString() || '0', !!revisions.length),
+      amount: revisions[0]?.amount.toString() || '0',
+    };
   }
   async history(r: UserRequest, query: unknown) {
     return this.db.$transaction((tx) => historyPage(tx, r.userId, r.revealed, query));
@@ -141,7 +146,13 @@ export class PortfolioBusinessService {
       data: {
         ...v,
         ...(p.kind === 'asset' && v.category !== 'gold'
-          ? { metalType: null, metalGrams: null, metalPurity: '1', autoValuation: false }
+          ? {
+              metalType: null,
+              metalGrams: null,
+              metalCostPerGram: null,
+              metalPurity: '1',
+              autoValuation: false,
+            }
           : {}),
       },
     });

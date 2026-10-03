@@ -18,7 +18,16 @@ import Decimal from 'decimal.js';
 import { z } from 'zod';
 import { Database } from './database';
 import { UserRequest } from './auth';
-import { amount, currency, date, rateValue, today, toBusinessDate } from './validation';
+import {
+  amount,
+  currency,
+  date,
+  rateValue,
+  today,
+  toBusinessDate,
+  businessDate,
+  notes,
+} from './validation';
 import { businessTime, businessDay } from './calculation';
 export const metalType = z.enum(['gold', 'silver']);
 export const metalConfig = z
@@ -29,9 +38,43 @@ export const metalConfig = z
       .string()
       .regex(/^(0|1)(\.\d{1,8})?$/)
       .refine((v) => new Decimal(v).gt(0) && new Decimal(v).lte(1), '纯度应大于 0 且不超过 1'),
+    metalCostPerGram: rateValue
+      .nullable()
+      .optional()
+      .describe('每克实物买入成本，原币十进制字符串；null 清除成本，省略保留'),
     autoValuation: z.boolean(),
   })
   .strict();
+export const metalHoldingInput = metalConfig
+  .extend({
+    name: z.string().trim().min(1).max(100),
+    currency,
+    notes,
+    hidden: z.boolean().default(false),
+    included: z.boolean().default(true),
+    date: businessDate,
+  })
+  .strict();
+export function metalPerformance(
+  p: {
+    metalType?: string | null;
+    metalGrams?: { toString(): string } | null;
+    metalCostPerGram?: { toString(): string } | null;
+  },
+  balance: string,
+  hasRevision: boolean,
+) {
+  const valuationAvailable = !p.metalType || hasRevision;
+  const cost =
+    p.metalGrams && p.metalCostPerGram
+      ? new Decimal(p.metalGrams.toString()).mul(p.metalCostPerGram.toString()).toFixed(8)
+      : null;
+  return {
+    valuationAvailable,
+    metalCost: cost,
+    metalProfit: cost && valuationAvailable ? new Decimal(balance).minus(cost).toFixed(8) : null,
+  };
+}
 export const metalPriceInput = z.object({ metalType, currency, price: rateValue, date }).strict();
 export function metalValue(grams: string, purity: string, price: string) {
   const value = new Decimal(grams).mul(purity).mul(price);
@@ -90,6 +133,7 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
     id: string,
     revealed: boolean,
     force = false,
+    when?: Date,
   ) {
     await tx.$queryRaw(
       Prisma.sql`SELECT id FROM Position WHERE id=${id} AND userId=${userId} FOR UPDATE`,
@@ -115,7 +159,7 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
         userId,
         metalType: p.metalType,
         currency: p.currency,
-        date: { lte: new Date(today()) },
+        date: { lte: new Date(when ? businessDay(when) : today()) },
       },
       orderBy: { date: 'desc' },
     });
@@ -131,7 +175,7 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
       return { amount: value, changed: false };
     if (!force && last && businessDay(last.effectiveDate) > businessDay(quote.date))
       return { amount: value, changed: false };
-    const now = toBusinessDate(businessTime(new Date()));
+    const now = when || toBusinessDate(businessTime(new Date()));
     if (last && last.effectiveDate > now) throw new BadRequestException('估价时间不能早于最新余额');
     await tx.revision.create({
       data: {
@@ -310,6 +354,36 @@ export class MetalsBusinessService {
       return { message: '贵金属价格已保存' };
     });
   }
+  async create(r: UserRequest, body: unknown) {
+    const v = metalHoldingInput.parse(body);
+    const when = toBusinessDate(v.date);
+    const result = await this.db.serial(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id=${r.userId} FOR UPDATE`);
+      const { date: _, ...data } = v;
+      const p = await tx.position.create({
+        data: {
+          ...data,
+          userId: r.userId,
+          kind: 'asset',
+          side: 'asset',
+          category: 'gold',
+          createdAt: when,
+        },
+      });
+      const quote = await tx.metalPrice.findFirst({
+        where: {
+          userId: r.userId,
+          metalType: v.metalType,
+          currency: v.currency,
+          date: { lte: new Date(businessDay(when)) },
+        },
+      });
+      if (quote) await this.metals.apply(tx, r.userId, p.id, true, true, when);
+      return { id: p.id, valuationAvailable: !!quote };
+    });
+    this.metals.invalidate(r.userId);
+    return result;
+  }
   async configure(r: UserRequest, id: string, body: unknown) {
     const v = metalConfig.parse(body);
     const result = await this.db.serial(async (tx) => {
@@ -355,6 +429,9 @@ export class MetalsController {
   constructor(private service: MetalsBusinessService) {}
   @Get() async list(@Req() r: UserRequest) {
     return this.service.list(r);
+  }
+  @Post('holdings') create(@Req() r: UserRequest, @Body() body: unknown) {
+    return this.service.create(r, body);
   }
   @Post('refresh') refresh(@Req() r: UserRequest) {
     return this.service.refresh(r);

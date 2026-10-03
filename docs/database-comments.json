@@ -1,7 +1,11 @@
 {
-  "tableCount": 16,
-  "columnCount": 150,
+  "tableCount": 17,
+  "columnCount": 159,
   "tables": [
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "TABLE_COMMENT": "Prisma 数据库迁移执行记录，由迁移引擎管理"
+    },
     {
       "TABLE_NAME": "agentauthorization",
       "TABLE_COMMENT": "短期 OAuth 授权请求及一次性授权码摘要"
@@ -68,6 +72,46 @@
     }
   ],
   "columns": [
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "迁移执行唯一标识"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "checksum",
+      "COLUMN_COMMENT": "迁移文件 SHA-256 校验摘要"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "finished_at",
+      "COLUMN_COMMENT": "迁移成功完成时间"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "migration_name",
+      "COLUMN_COMMENT": "迁移目录名称"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "logs",
+      "COLUMN_COMMENT": "迁移引擎错误和诊断信息"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "rolled_back_at",
+      "COLUMN_COMMENT": "迁移标记回滚时间"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "started_at",
+      "COLUMN_COMMENT": "迁移开始时间"
+    },
+    {
+      "TABLE_NAME": "_prisma_migrations",
+      "COLUMN_NAME": "applied_steps_count",
+      "COLUMN_COMMENT": "已执行步骤数量"
+    },
     {
       "TABLE_NAME": "agentauthorization",
       "COLUMN_NAME": "id",
@@ -502,6 +546,11 @@
       "TABLE_NAME": "position",
       "COLUMN_NAME": "autoValuation",
       "COLUMN_COMMENT": "是否随每日价格更新自动记录估值"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "metalCostPerGram",
+      "COLUMN_COMMENT": "买入时每克实物成本，原币；空值表示不计算盈亏"
     },
     {
       "TABLE_NAME": "positionlink",

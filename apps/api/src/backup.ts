@@ -58,6 +58,7 @@ const record = positionMeta
   .extend({
     metalType: z.enum(['gold', 'silver']).nullable().optional(),
     metalGrams: amount.nullable().optional(),
+    metalCostPerGram: metalConfig.shape.metalCostPerGram,
     metalPurity: metalConfig.shape.metalPurity.optional(),
     autoValuation: z.boolean().optional(),
     kind: z.enum(['account', 'asset', 'debt']),
@@ -164,12 +165,13 @@ export function validateBackup(raw: unknown) {
     throw new BadRequestException('图标关联无效');
   const revisionIds = new Set<string>();
   for (const p of b.positions) {
-    if (p.metalType || p.metalGrams || p.autoValuation) {
+    if (p.metalType || p.metalGrams || p.autoValuation || p.metalCostPerGram != null) {
       if (p.kind !== 'asset' || p.category !== 'gold')
         throw new BadRequestException('贵金属估价关联无效');
       metalConfig.parse({
         metalType: p.metalType,
         metalGrams: p.metalGrams,
+        metalCostPerGram: p.metalCostPerGram,
         metalPurity: p.metalPurity || '1',
         autoValuation: p.autoValuation || false,
       });
@@ -396,6 +398,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
       included: p.included,
       metalType: p.metalType,
       metalGrams: p.metalGrams?.toString() ?? null,
+      metalCostPerGram: p.metalCostPerGram?.toString() ?? null,
       metalPurity: p.metalPurity.toString(),
       autoValuation: p.autoValuation,
       createdAt: p.createdAt.toISOString(),
@@ -702,6 +705,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
               included: p.included,
               metalType: p.metalType,
               metalGrams: p.metalGrams,
+              metalCostPerGram: p.metalCostPerGram,
               metalPurity: p.metalPurity,
               autoValuation: p.autoValuation,
               createdAt: new Date(p.createdAt),

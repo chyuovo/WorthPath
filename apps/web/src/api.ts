@@ -53,6 +53,10 @@ export type History = {
 export type Position = {
   included?: boolean;
   metalType?: string | null;
+  metalCostPerGram?: string | null;
+  metalCost?: string | null;
+  metalProfit?: string | null;
+  valuationAvailable?: boolean;
   metalGrams?: string | null;
   metalPurity?: string;
   autoValuation?: boolean;
@@ -79,6 +83,7 @@ export type Total = {
   net: string;
   complete: boolean;
   missing: string[];
+  missingValuations?: { id: string; name: string }[];
   balanceChange?: string | null;
   fxChange?: string | null;
 };

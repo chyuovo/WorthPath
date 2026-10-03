@@ -224,6 +224,8 @@ model Position {
   metalGrams Decimal? @db.Decimal(24,8)
   /// 贵金属纯度比例，0 至 1
   metalPurity Decimal @default(1) @db.Decimal(12,8)
+  /// 买入时每克实物成本，原币；空值表示不计算盈亏
+  metalCostPerGram Decimal? @db.Decimal(24,12)
   /// 是否随每日价格更新自动记录估值
   autoValuation Boolean @default(false)
   /// 记录创建时间，UTC
