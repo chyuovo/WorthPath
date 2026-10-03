@@ -76,10 +76,11 @@ export class IconsService {
       throw new BadRequestException('图标不存在或无权使用');
   }
 }
-@Controller('api/icons')
-export class IconsController {
+
+@Injectable()
+export class IconsBusinessService {
   constructor(private db: Database) {}
-  @Get() async list(@Req() r: UserRequest, @Query('q') q = '', @Query('page') page = '1') {
+  async list(r: UserRequest, q = '', page = '1') {
     const query = z.string().trim().max(100).parse(q);
     const index = z.coerce.number().int().min(1).max(100000).parse(page);
     const where = { OR: [{ shared: true }, { ownerId: r.userId }], name: { contains: query } };
@@ -95,11 +96,7 @@ export class IconsController {
     ]);
     return { items, total, page: index };
   }
-  @Get(':id/image') async image(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Res() res: Response,
-  ) {
+  async image(r: UserRequest, id: string, res: Response) {
     const icon = await this.db.icon.findFirst({
       where: { id, OR: [{ shared: true }, { ownerId: r.userId }] },
     });
@@ -110,18 +107,8 @@ export class IconsController {
     // Preserve essential white artwork rather than applying the cutout twice.
     res.send(Buffer.from(icon.data));
   }
-  @Post('upload')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: memoryStorage(),
-      limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 3 },
-    }),
-  )
-  async upload(
-    @Req() r: UserRequest,
-    @Body() raw: unknown,
-    @UploadedFile() file?: Express.Multer.File,
-  ) {
+
+  async upload(r: UserRequest, raw: unknown, file?: Express.Multer.File) {
     const v = z
       .object({
         name: iconName,
@@ -143,5 +130,34 @@ export class IconsController {
       select: { id: true, name: true, shared: true, source: true },
     });
     return icon;
+  }
+}
+
+@Controller('api/icons')
+export class IconsController {
+  constructor(private service: IconsBusinessService) {}
+  @Get() async list(@Req() r: UserRequest, @Query('q') q = '', @Query('page') page = '1') {
+    return this.service.list(r, q, page);
+  }
+  @Get(':id/image') async image(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    return this.service.image(r, id, res);
+  }
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 3 },
+    }),
+  )
+  async upload(
+    @Req() r: UserRequest,
+    @Body() raw: unknown,
+    @UploadedFile() file?: Express.Multer.File,
+  ) {
+    return this.service.upload(r, raw, file);
   }
 }

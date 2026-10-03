@@ -6,18 +6,24 @@ import { NestFactory, APP_GUARD } from '@nestjs/core';
 import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { json } from 'express';
-import { AuthController, AuthGuard, AuthService } from './auth';
-import { CalendarController } from './calendar';
-import { SchedulesController } from './schedules';
-import { TransfersController } from './transfers';
-import { PortfolioController } from './portfolio';
-import { BackupController } from './backup';
-import { IconsController, IconsService } from './icons';
-import { MetalsService, MetalsController } from './metals';
+import { AuthController, AuthBusinessService, AuthGuard, AuthService } from './auth';
+import { CalendarController, CalendarBusinessService } from './calendar';
+import { SchedulesController, SchedulesBusinessService } from './schedules';
+import { TransfersController, TransfersBusinessService } from './transfers';
+import { PortfolioController, PortfolioBusinessService } from './portfolio';
+import { BackupController, BackupBusinessService } from './backup';
+import { IconsController, IconsBusinessService, IconsService } from './icons';
+import { MetalsService, MetalsController, MetalsBusinessService } from './metals';
 import { Database } from './database';
-import { RatesService, SettingsController } from './rates';
+import { RatesService, SettingsController, SettingsBusinessService } from './rates';
 import { ZodError } from 'zod';
 import { Prisma } from '@prisma/client';
+import { AgentOAuth } from './mcp/oauth';
+import { AgentCatalogue } from './mcp/catalogue';
+import { AgentOperations } from './mcp/operations';
+import { AgentFiles } from './mcp/files';
+import { AgentTransport } from './mcp/transport';
+import { AgentManagementController } from './mcp/management';
 @Catch()
 class SafeErrors implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
@@ -53,6 +59,20 @@ class SafeErrors implements ExceptionFilter {
     RatesService,
     MetalsService,
     IconsService,
+    AuthBusinessService,
+    CalendarBusinessService,
+    SchedulesBusinessService,
+    TransfersBusinessService,
+    PortfolioBusinessService,
+    BackupBusinessService,
+    IconsBusinessService,
+    MetalsBusinessService,
+    SettingsBusinessService,
+    AgentOAuth,
+    AgentCatalogue,
+    AgentOperations,
+    AgentFiles,
+    AgentTransport,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
   controllers: [
@@ -65,6 +85,7 @@ class SafeErrors implements ExceptionFilter {
     MetalsController,
     SettingsController,
     BackupController,
+    AgentManagementController,
   ],
 })
 class AppModule {}
@@ -83,6 +104,7 @@ async function bootstrap() {
     res.setHeader('Cache-Control', 'no-store');
     next();
   });
+  app.get(AgentTransport).install(app.getHttpAdapter().getInstance());
   app.useGlobalFilters(new SafeErrors());
   setupOpenApi(app);
   app.enableShutdownHooks();

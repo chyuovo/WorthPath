@@ -2,10 +2,15 @@ import 'reflect-metadata';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { cashflowDelta, calendarMonth, CalendarController } from '../src/calendar';
+import { cashflowDelta, calendarMonth, CalendarBusinessService } from '../src/calendar';
 import { executeMovement } from '../src/transfers';
 import { transferInput, positionInput, revisionInput } from '../src/validation';
-import { scheduleInput, occurrenceId, nextOccurrence, SchedulesController } from '../src/schedules';
+import {
+  scheduleInput,
+  occurrenceId,
+  nextOccurrence,
+  SchedulesBusinessService,
+} from '../src/schedules';
 import { trend, totals, type Holding } from '../src/calculation';
 import { positionAmount, accountInputAmount, money, type Position } from '../../web/src/api';
 const now = new Date(Date.now() - 60000);
@@ -221,7 +226,7 @@ test('due expense runs once, updates balance exactly and advances a recurring pl
     },
   };
   const db: any = { ...tx, serial: async (work: any) => work(tx) };
-  const c = new SchedulesController(db),
+  const c = new SchedulesBusinessService(db),
     r: any = { userId: owner, revealed: false };
   assert.equal((await c.run(r)).executed, 1);
   assert.equal(balance, '-2.00000001');
@@ -335,7 +340,7 @@ test('calendar replays only the range, preserves fractional totals, and hides in
     $queryRaw: async () => [],
   };
   const db: any = { $transaction: async (work: any) => work(tx) };
-  const c = new CalendarController(db),
+  const c = new CalendarBusinessService(db),
     r: any = { userId: 'owner', revealed: false };
   const month = await c.month(r, '2026-09');
   assert.equal(month.items[1].income, '0.01');

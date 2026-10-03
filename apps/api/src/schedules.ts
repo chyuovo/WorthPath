@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import {
   Controller,
   Get,
@@ -56,8 +57,9 @@ export function occurrenceId(id: string, when: Date) {
 export function nextOccurrence(when: Date, intervalDays: number) {
   return new Date(+when + intervalDays * 86400000);
 }
-@Controller('api/schedules')
-export class SchedulesController {
+
+@Injectable()
+export class SchedulesBusinessService {
   constructor(private db: Database) {}
   private async visible(r: UserRequest, tx: Prisma.TransactionClient = this.db) {
     return (
@@ -71,7 +73,7 @@ export class SchedulesController {
       })
     ).map((p) => p.id);
   }
-  @Get() async list(@Req() r: UserRequest) {
+  async list(r: UserRequest) {
     const ids = await this.visible(r);
     const rows = await this.db.schedule.findMany({
       where: {
@@ -83,7 +85,7 @@ export class SchedulesController {
     });
     return rows.map(({ userId, ...v }) => ({ ...v, nextAt: businessTime(v.nextAt) }));
   }
-  @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
+  async create(r: UserRequest, body: unknown) {
     const v = scheduleInput.parse(body);
     return this.db.serial(async (tx) => {
       await this.validateAccounts(tx, r, v);
@@ -123,7 +125,7 @@ export class SchedulesController {
     )
       throw new BadRequestException('同币种转出与到账金额必须一致');
   }
-  @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
+  async edit(r: UserRequest, id: string, body: unknown) {
     const v = scheduleInput.parse(body);
     return this.db.serial(async (tx) => {
       await tx.$queryRaw(
@@ -148,11 +150,7 @@ export class SchedulesController {
       return { ok: true };
     });
   }
-  @Patch(':id') async toggle(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Body() body: unknown,
-  ) {
+  async toggle(r: UserRequest, id: string, body: unknown) {
     const v = z.object({ enabled: z.boolean() }).strict().parse(body);
     const ids = await this.visible(r);
     const row = await this.db.schedule.findFirst({
@@ -176,7 +174,7 @@ export class SchedulesController {
     if (!result.count) throw new NotFoundException('计划不存在');
     return { ok: true };
   }
-  @Delete(':id') async remove(@Req() r: UserRequest, @Param('id') id: string) {
+  async remove(r: UserRequest, id: string) {
     const ids = await this.visible(r);
     const result = await this.db.schedule.deleteMany({
       where: {
@@ -189,7 +187,7 @@ export class SchedulesController {
     if (!result.count) throw new NotFoundException('计划不存在');
     return { ok: true };
   }
-  @Post('run') async run(@Req() r: UserRequest) {
+  async run(r: UserRequest, atomicBatch = false) {
     const ids = await this.visible(r),
       now = new Date();
     const due = await this.db.schedule.findMany({
@@ -281,6 +279,9 @@ export class SchedulesController {
         });
         if (applied) executed++;
       } catch (e) {
+        // MCP wraps the complete call plus its idempotency result in one transaction.
+        // A failed nested plan must abort that batch rather than leave partial work.
+        if (atomicBatch) throw e;
         errors.push({
           id: candidate.id,
           message:
@@ -295,5 +296,32 @@ export class SchedulesController {
         due.length === 20 ||
         due.some((p) => p.intervalDays > 0 && +nextOccurrence(p.nextAt, p.intervalDays) <= +now),
     };
+  }
+}
+
+@Controller('api/schedules')
+export class SchedulesController {
+  constructor(private service: SchedulesBusinessService) {}
+  @Get() async list(@Req() r: UserRequest) {
+    return this.service.list(r);
+  }
+  @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
+    return this.service.create(r, body);
+  }
+  @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.service.edit(r, id, body);
+  }
+  @Patch(':id') async toggle(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.service.toggle(r, id, body);
+  }
+  @Delete(':id') async remove(@Req() r: UserRequest, @Param('id') id: string) {
+    return this.service.remove(r, id);
+  }
+  @Post('run') async run(@Req() r: UserRequest) {
+    return this.service.run(r);
   }
 }

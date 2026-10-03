@@ -53,6 +53,7 @@ import { GroupOrderList } from './GroupOrderList';
 import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
+import { AgentConnections } from './AgentConnections';
 import { IconPicker } from './IconPicker';
 import { MetalPanel } from './MetalPanel';
 import { QuickTransfer } from './QuickTransfer';
@@ -229,7 +230,12 @@ export default function App() {
   const [user, setUser] = useState<User | null>(null),
     [boot, setBoot] = useState(true),
     [register, setRegister] = useState(false),
-    [page, setPage] = useState('overview'),
+    [page, setPage] = useState(
+      new URLSearchParams(location.search).has('agent_authorization') ||
+        new URLSearchParams(location.search).has('agent_operation')
+        ? 'settings'
+        : 'overview',
+    ),
     [positions, setPositions] = useState<Position[]>([]),
     [overview, setOverview] = useState<Overview | null>(null),
     [rates, setRates] = useState<Rate[]>([]),
@@ -297,7 +303,12 @@ export default function App() {
     [clearConfirmation, setClearConfirmation] = useState(0);
   useToast(error, 'error');
   useToast(success, 'success');
-  const [settingsSection, setSettingsSection] = useState('general'),
+  const [settingsSection, setSettingsSection] = useState(
+      new URLSearchParams(location.search).has('agent_authorization') ||
+        new URLSearchParams(location.search).has('agent_operation')
+        ? 'agent'
+        : 'general',
+    ),
     [transfers, setTransfers] = useState<Transfer[]>([]);
   const [historyRows, setHistoryRows] = useState<History[]>([]),
     [historyCursor, setHistoryCursor] = useState<string | null>(null),
@@ -674,7 +685,11 @@ export default function App() {
         password: f.get('password'),
       });
       if (session !== sessionGeneration.current) return;
-      setPage('overview');
+      const agentReturn =
+        new URLSearchParams(location.search).has('agent_authorization') ||
+        new URLSearchParams(location.search).has('agent_operation');
+      setPage(agentReturn ? 'settings' : 'overview');
+      if (agentReturn) setSettingsSection('agent');
       setSelected(null);
       setModal(null);
       activityAt.current = Date.now();
@@ -1748,6 +1763,7 @@ export default function App() {
               <nav className="settings-tabs" aria-label={tr('设置分类')}>
                 {Object.entries({
                   general: '常规设置',
+                  agent: '连接 Agent',
                   display: '显示与菜单',
                   privacy: '登录与隐私',
                   security: '账号与密码',
@@ -1772,6 +1788,7 @@ export default function App() {
                   <IconLibrary />
                 </section>
               )}
+              {settingsSection === 'agent' && <AgentConnections />}
               {settingsSection === 'security' && (
                 <section className="panel">
                   <h2>{tr('账号与密码')}</h2>

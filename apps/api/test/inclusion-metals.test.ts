@@ -160,7 +160,7 @@ test('all account transfer directions, replay, scheduled transfers and backup ar
       ).status,
       400,
     );
-    const backupController = (await import('../src/backup')).BackupController;
+    const backupController = (await import('../src/backup')).BackupBusinessService;
     const controller = new backupController(db as any);
     const backup = await (controller as any).data(a.id);
     assert.equal((await import('../src/backup')).validateBackup(backup).transfers?.length, 2);
@@ -257,7 +257,7 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
       date: d,
     });
     assert.equal(await db.revision.count({ where: { positionId: metal } }), count);
-    const controller = new (await import('../src/backup')).BackupController(db as any);
+    const controller = new (await import('../src/backup')).BackupBusinessService(db as any);
     const backup = await (controller as any).data(a.id);
     const archive = (await import('../src/zip')).archiveBackup(backup);
     const chunks: Buffer[] = [];

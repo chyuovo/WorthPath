@@ -11,9 +11,12 @@
     "db:status": "node scripts/database.cjs status",
     "test:integration": "tsx --test --test-concurrency=1 test/integration.test.ts test/privacy.test.ts test/icons.test.ts test/transfers.test.ts test/queries.test.ts test/debts.test.ts test/update-integration.test.ts test/record-edit.test.ts test/security-backup.test.ts test/credit-balance.test.ts test/group-order.test.ts test/settings-plans.test.ts test/inclusion-metals.test.ts",
     "test:performance": "tsx scripts/performance.ts after",
+    "test:mcp": "tsx --test --test-concurrency=1 test/mcp.test.ts",
+    "mcp:probe": "tsx scripts/mcp-probe.ts",
     "icons:seed": "node scripts/seed-icons.cjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.31.0",
     "@nestjs/common": "^11.0.0",
     "@nestjs/core": "^11.0.0",
     "@nestjs/platform-express": "^11.0.0",

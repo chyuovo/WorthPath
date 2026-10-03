@@ -169,14 +169,15 @@ export class RatesService implements OnModuleInit, OnModuleDestroy {
     }
   }
 }
-@Controller('api')
-export class SettingsController {
+
+@Injectable()
+export class SettingsBusinessService {
   constructor(
     private db: Database,
     private fx: RatesService,
     private auth: AuthService,
   ) {}
-  @Get('settings') async settings(@Req() r: UserRequest, @Query('rates') includeRates?: string) {
+  async settings(r: UserRequest, includeRates?: string) {
     const showRates = z.enum(['true', 'false']).optional().parse(includeRates) === 'true';
     const u = await this.db.user.findUniqueOrThrow({
       where: { id: r.userId },
@@ -217,11 +218,7 @@ export class SettingsController {
         : [],
     };
   }
-  @Patch('settings') async update(
-    @Req() r: UserRequest,
-    @Body() b: unknown,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async update(r: UserRequest, b: unknown, res: Response) {
     const data = settingsInput.parse(b);
     const expiresAt =
       data.sessionHours === undefined
@@ -236,11 +233,29 @@ export class SettingsController {
         await tx.session.updateMany({ where: { userId: r.userId }, data: { revealUntil: null } });
       if (expiresAt) await tx.session.update({ where: { id: r.sessionId }, data: { expiresAt } });
     });
-    if (expiresAt) this.auth.cookie(r.cookies.wp_session, expiresAt, res);
+    if (expiresAt && !r.agent) this.auth.cookie(r.cookies.wp_session, expiresAt, res);
     this.fx.invalidate(r.userId);
     return { ok: true };
   }
-  @Post('rates/refresh') async refresh(@Req() r: UserRequest) {
+  async refresh(r: UserRequest) {
     return this.fx.refresh(r.userId);
+  }
+}
+
+@Controller('api')
+export class SettingsController {
+  constructor(private service: SettingsBusinessService) {}
+  @Get('settings') async settings(@Req() r: UserRequest, @Query('rates') includeRates?: string) {
+    return this.service.settings(r, includeRates);
+  }
+  @Patch('settings') async update(
+    @Req() r: UserRequest,
+    @Body() b: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.service.update(r, b, res);
+  }
+  @Post('rates/refresh') async refresh(@Req() r: UserRequest) {
+    return this.service.refresh(r);
   }
 }

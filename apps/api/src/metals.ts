@@ -258,14 +258,15 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
     }
   }
 }
-@Controller('api/metals')
-export class MetalsController {
+
+@Injectable()
+export class MetalsBusinessService {
   constructor(
     private db: Database,
     private metals: MetalsService,
   ) {}
-  @Get() async list(@Req() r: UserRequest) {
-    void this.metals.daily(r.userId);
+  async list(r: UserRequest) {
+    if (!r.agent) void this.metals.daily(r.userId);
     return {
       status: this.metals.status(r.userId),
       prices: await this.db.metalPrice.findMany({
@@ -275,10 +276,10 @@ export class MetalsController {
       }),
     };
   }
-  @Post('refresh') refresh(@Req() r: UserRequest) {
+  refresh(r: UserRequest) {
     return this.metals.refresh(r.userId);
   }
-  @Post('prices') async manual(@Req() r: UserRequest, @Body() body: unknown) {
+  async manual(r: UserRequest, body: unknown) {
     const v = metalPriceInput.parse(body);
     const key = {
       userId: r.userId,
@@ -309,11 +310,7 @@ export class MetalsController {
       return { message: '贵金属价格已保存' };
     });
   }
-  @Put(':id') async configure(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Body() body: unknown,
-  ) {
+  async configure(r: UserRequest, id: string, body: unknown) {
     const v = metalConfig.parse(body);
     const result = await this.db.serial(async (tx) => {
       await tx.$queryRaw(
@@ -348,7 +345,31 @@ export class MetalsController {
     this.metals.invalidate(r.userId);
     return result;
   }
-  @Post(':id/value') value(@Req() r: UserRequest, @Param('id') id: string) {
+  value(r: UserRequest, id: string) {
     return this.db.serial((tx) => this.metals.apply(tx, r.userId, id, r.revealed, true));
+  }
+}
+
+@Controller('api/metals')
+export class MetalsController {
+  constructor(private service: MetalsBusinessService) {}
+  @Get() async list(@Req() r: UserRequest) {
+    return this.service.list(r);
+  }
+  @Post('refresh') refresh(@Req() r: UserRequest) {
+    return this.service.refresh(r);
+  }
+  @Post('prices') async manual(@Req() r: UserRequest, @Body() body: unknown) {
+    return this.service.manual(r, body);
+  }
+  @Put(':id') async configure(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() body: unknown,
+  ) {
+    return this.service.configure(r, id, body);
+  }
+  @Post(':id/value') value(@Req() r: UserRequest, @Param('id') id: string) {
+    return this.service.value(r, id);
   }
 }

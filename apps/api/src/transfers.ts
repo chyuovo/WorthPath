@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import {
   Controller,
   Get,
@@ -21,10 +22,11 @@ import { businessTime } from './calculation';
 import { movementDeltas } from './movement';
 import { captureReplay } from './replay';
 import { pageInput, encodeCursor, latestRevisions, transferPageIds } from './queries';
-@Controller('api/transfers')
-export class TransfersController {
+
+@Injectable()
+export class TransfersBusinessService {
   constructor(private db: Database) {}
-  @Get() async list(@Req() r: UserRequest, @Query() query: unknown) {
+  async list(r: UserRequest, query: unknown) {
     const q = pageInput(query);
     const rows = await this.db.$transaction(async (tx) => {
       const ids = await transferPageIds(tx, r.userId, r.revealed, q);
@@ -48,10 +50,7 @@ export class TransfersController {
       revealed: r.revealed,
     };
   }
-  @Get('revision/:revisionId') async byRevision(
-    @Req() r: UserRequest,
-    @Param('revisionId') revisionId: string,
-  ) {
+  async byRevision(r: UserRequest, revisionId: string) {
     const row = await this.db.transfer.findFirst({
       where: {
         userId: r.userId,
@@ -67,11 +66,11 @@ export class TransfersController {
     const { userId, importedFromId, effectiveDate, ...v } = row;
     return { ...v, date: businessTime(effectiveDate) };
   }
-  @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
+  async edit(r: UserRequest, id: string, body: unknown) {
     const v = transferInput.parse(body);
     return this.change(r, id, v);
   }
-  @Delete(':id') async remove(@Req() r: UserRequest, @Param('id') id: string) {
+  async remove(r: UserRequest, id: string) {
     return this.change(r, id);
   }
   private async change(r: UserRequest, id: string, v?: ReturnType<typeof transferInput.parse>) {
@@ -79,7 +78,7 @@ export class TransfersController {
       return changeMovement(tx, r, id, v);
     });
   }
-  @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
+  async create(r: UserRequest, body: unknown) {
     const v = transferInput.parse(body);
     return this.db.serial((tx) => executeMovement(tx, r, v));
   }
@@ -243,4 +242,27 @@ export async function executeMovement(
       update: {},
     });
   return { id: row.id };
+}
+
+@Controller('api/transfers')
+export class TransfersController {
+  constructor(private service: TransfersBusinessService) {}
+  @Get() async list(@Req() r: UserRequest, @Query() query: unknown) {
+    return this.service.list(r, query);
+  }
+  @Get('revision/:revisionId') async byRevision(
+    @Req() r: UserRequest,
+    @Param('revisionId') revisionId: string,
+  ) {
+    return this.service.byRevision(r, revisionId);
+  }
+  @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
+    return this.service.edit(r, id, body);
+  }
+  @Delete(':id') async remove(@Req() r: UserRequest, @Param('id') id: string) {
+    return this.service.remove(r, id);
+  }
+  @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
+    return this.service.create(r, body);
+  }
 }

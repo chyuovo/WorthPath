@@ -22,7 +22,13 @@ import { hash, compare } from 'bcryptjs';
 import { Database } from './database';
 import { credentials, credentialChange, defaultOverviewCards } from './validation';
 import { Prisma } from '@prisma/client';
-export type UserRequest = Request & { userId: string; sessionId: string; revealed: boolean };
+export type UserRequest = Request & {
+  userId: string;
+  sessionId: string;
+  revealed: boolean;
+  agent?: boolean;
+  agentGrantId?: string;
+};
 const Public = () => SetMetadata('public', true);
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 export function allowedOrigin(
@@ -44,7 +50,9 @@ export class AuthService {
   private attempts = new Map<string, { count: number; until: number }>();
   constructor(private db: Database) {}
   limit(req: Request) {
-    const key = req.ip || 'local',
+    const key =
+        (req.ip || 'local') +
+        ('userId' in req && typeof req.userId === 'string' ? ':' + req.userId : ''),
       now = Date.now();
     let v = this.attempts.get(key);
     if (!v || v.until < now) {
@@ -124,20 +132,17 @@ export class AuthGuard implements CanActivate {
     return true;
   }
 }
-@Controller('api')
-export class AuthController {
+
+@Injectable()
+export class AuthBusinessService {
   constructor(
     private db: Database,
     private auth: AuthService,
   ) {}
-  @Public() @Get('health') health() {
+  health() {
     return { status: 'ok' };
   }
-  @Public() @Post('auth/register') async register(
-    @Body() body: unknown,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async register(body: unknown, req: Request, res: Response) {
     this.auth.limit(req);
     const v = credentials.parse(body),
       user = await this.db.user.create({
@@ -146,11 +151,7 @@ export class AuthController {
     await this.auth.issue(user.id, res);
     return { username: user.username, baseCurrency: user.baseCurrency };
   }
-  @Public() @Post('auth/login') async login(
-    @Body() body: unknown,
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async login(body: unknown, req: Request, res: Response) {
     this.auth.limit(req);
     const v = credentials.parse(body),
       user = await this.db.user.findUnique({ where: { username: v.username } });
@@ -162,7 +163,7 @@ export class AuthController {
     await this.auth.issue(user.id, res);
     return { username: user.username, baseCurrency: user.baseCurrency };
   }
-  @Get('auth/me') async me(@Req() req: UserRequest) {
+  async me(req: UserRequest) {
     const user = await this.db.user.findUniqueOrThrow({
       where: { id: req.userId },
       select: {
@@ -191,11 +192,7 @@ export class AuthController {
       lastActivity: session.lastActivity,
     };
   }
-  @Patch('auth/credentials') async changeCredentials(
-    @Req() r: UserRequest,
-    @Body() body: unknown,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async changeCredentials(r: UserRequest, body: unknown, res: Response) {
     this.auth.limit(r);
     const v = credentialChange.parse(body);
     const user = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
@@ -221,14 +218,14 @@ export class AuthController {
     this.auth.cookie(token, expiresAt, res);
     return { ok: true };
   }
-  @Post('auth/activity') async activity(@Req() r: UserRequest) {
+  async activity(r: UserRequest) {
     await this.db.session.update({
       where: { id: r.sessionId },
       data: { lastActivity: new Date() },
     });
     return { ok: true };
   }
-  @Post('auth/reveal') async reveal(@Req() r: UserRequest, @Body() b: unknown) {
+  async reveal(r: UserRequest, b: unknown) {
     this.auth.limit(r);
     const revealUntil = await this.db.serial(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id = ${r.userId} FOR UPDATE`);
@@ -243,15 +240,59 @@ export class AuthController {
     });
     return { revealUntil };
   }
-  @Post('auth/lock') async lock(@Req() r: UserRequest) {
+  async lock(r: UserRequest) {
     await this.db.session.update({ where: { id: r.sessionId }, data: { revealUntil: null } });
     return { ok: true };
+  }
+  async logout(req: Request, res: Response) {
+    await this.auth.logout(req, res);
+    return { ok: true };
+  }
+}
+
+@Controller('api')
+export class AuthController {
+  constructor(private service: AuthBusinessService) {}
+  @Public() @Get('health') health() {
+    return this.service.health();
+  }
+  @Public() @Post('auth/register') async register(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.service.register(body, req, res);
+  }
+  @Public() @Post('auth/login') async login(
+    @Body() body: unknown,
+    @Req() req: Request,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.service.login(body, req, res);
+  }
+  @Get('auth/me') async me(@Req() req: UserRequest) {
+    return this.service.me(req);
+  }
+  @Patch('auth/credentials') async changeCredentials(
+    @Req() r: UserRequest,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.service.changeCredentials(r, body, res);
+  }
+  @Post('auth/activity') async activity(@Req() r: UserRequest) {
+    return this.service.activity(r);
+  }
+  @Post('auth/reveal') async reveal(@Req() r: UserRequest, @Body() b: unknown) {
+    return this.service.reveal(r, b);
+  }
+  @Post('auth/lock') async lock(@Req() r: UserRequest) {
+    return this.service.lock(r);
   }
   @Post('auth/logout') async logout(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ) {
-    await this.auth.logout(req, res);
-    return { ok: true };
+    return this.service.logout(req, res);
   }
 }

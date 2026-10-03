@@ -1,7 +1,31 @@
 {
-  "tableCount": 10,
-  "columnCount": 106,
+  "tableCount": 16,
+  "columnCount": 150,
   "tables": [
+    {
+      "TABLE_NAME": "agentauthorization",
+      "TABLE_COMMENT": "短期 OAuth 授权请求及一次性授权码摘要"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "TABLE_COMMENT": "MCP 调用审计，不保存参数、密码、令牌或财务内容"
+    },
+    {
+      "TABLE_NAME": "agentclient",
+      "TABLE_COMMENT": "OAuth 动态注册客户端元数据"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "TABLE_COMMENT": "用户授权连接、令牌摘要及资源权限"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "TABLE_COMMENT": "Agent 写入草稿、幂等记录及提交结果"
+    },
+    {
+      "TABLE_NAME": "agentpolicy",
+      "TABLE_COMMENT": "用户的 Agent 写入策略"
+    },
     {
       "TABLE_NAME": "exchangerate",
       "TABLE_COMMENT": "用户原币兑本位币的历史汇率"
@@ -44,6 +68,226 @@
     }
   ],
   "columns": [
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "唯一标识"
+    },
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "clientId",
+      "COLUMN_COMMENT": "OAuth 客户端标识；个人令牌为空"
+    },
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "parameters",
+      "COLUMN_COMMENT": "具体操作参数；禁止保存密码及令牌"
+    },
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "codeDigest",
+      "COLUMN_COMMENT": "一次性授权码 SHA-256 摘要"
+    },
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "expiresAt",
+      "COLUMN_COMMENT": "到期时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentauthorization",
+      "COLUMN_NAME": "status",
+      "COLUMN_COMMENT": "当前处理状态"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "审计标识"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "COLUMN_NAME": "grantId",
+      "COLUMN_COMMENT": "调用所属连接标识"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "COLUMN_NAME": "tool",
+      "COLUMN_COMMENT": "调用的工具名称"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "COLUMN_NAME": "status",
+      "COLUMN_COMMENT": "结果状态：success 或 error"
+    },
+    {
+      "TABLE_NAME": "agentcall",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_COMMENT": "调用完成时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentclient",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "唯一标识"
+    },
+    {
+      "TABLE_NAME": "agentclient",
+      "COLUMN_NAME": "metadata",
+      "COLUMN_COMMENT": "公开客户端注册元数据，不保存用户凭据"
+    },
+    {
+      "TABLE_NAME": "agentclient",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_COMMENT": "创建时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "唯一标识"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "clientId",
+      "COLUMN_COMMENT": "OAuth 客户端标识；个人令牌为空"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "name",
+      "COLUMN_COMMENT": "用户可见连接名称"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "scopes",
+      "COLUMN_COMMENT": "权限列表：read、draft、write、sensitive"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "resource",
+      "COLUMN_COMMENT": "令牌适用的规范 MCP 资源地址"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "accessDigest",
+      "COLUMN_COMMENT": "访问令牌 SHA-256 摘要；完整值仅颁发时返回"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "refreshDigest",
+      "COLUMN_COMMENT": "刷新令牌 SHA-256 摘要，使用后轮换"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "expiresAt",
+      "COLUMN_COMMENT": "到期时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "refreshExpiresAt",
+      "COLUMN_COMMENT": "刷新授权到期时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "revokedAt",
+      "COLUMN_COMMENT": "撤销时间，UTC；空表示未撤销"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "sessionId",
+      "COLUMN_COMMENT": "本连接的独立业务授权会话标识，不作为 MCP 凭证"
+    },
+    {
+      "TABLE_NAME": "agentgrant",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_COMMENT": "创建时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "唯一标识"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "grantId",
+      "COLUMN_COMMENT": "发起操作的授权连接标识"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "key",
+      "COLUMN_COMMENT": "同用户唯一的客户端幂等键"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "hash",
+      "COLUMN_COMMENT": "工具和参数的规范摘要；拒绝同键不同参数"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "tool",
+      "COLUMN_COMMENT": "业务工具名称"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "parameters",
+      "COLUMN_COMMENT": "具体操作参数；禁止保存密码及令牌"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "snapshot",
+      "COLUMN_COMMENT": "确认前的账目版本摘要，防止覆盖并发修改"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "status",
+      "COLUMN_COMMENT": "当前处理状态"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "expiresAt",
+      "COLUMN_COMMENT": "到期时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "result",
+      "COLUMN_COMMENT": "结构化操作结果或最近提交失败原因"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "createdAt",
+      "COLUMN_COMMENT": "创建时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentoperation",
+      "COLUMN_NAME": "completedAt",
+      "COLUMN_COMMENT": "完成或取消时间，UTC"
+    },
+    {
+      "TABLE_NAME": "agentpolicy",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "agentpolicy",
+      "COLUMN_NAME": "mode",
+      "COLUMN_COMMENT": "写入策略：readonly 只读、draft 草稿、direct 普通直接写入"
+    },
     {
       "TABLE_NAME": "exchangerate",
       "COLUMN_NAME": "id",

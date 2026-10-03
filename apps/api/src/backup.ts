@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { metalConfig, metalPriceInput } from './metals';
 import { scheduleInput } from './schedules';
 import { movementDeltas } from './movement';
@@ -298,8 +299,9 @@ export function validateBackup(raw: unknown) {
   if (!b.currencies.includes(b.baseCurrency)) throw new BadRequestException('本位币清单不完整');
   return b;
 }
-@Controller('api/backup')
-export class BackupController implements OnModuleDestroy, OnModuleInit {
+
+@Injectable()
+export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
   private uploads = new Map<
     string,
     { sessionId: string; userId: string; path: string; expires: number }
@@ -336,6 +338,20 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       : JSON.parse((await readFile(path, 'utf8')).replace(/^\uFEFF/, ''));
   }
   constructor(private db: Database) {}
+  async snapshot(userId: string) {
+    return this.fingerprint(await this.data(userId));
+  }
+  async inspectUpload(r: UserRequest, token: string) {
+    const v = this.uploads.get(token);
+    if (!v || v.userId !== r.userId || v.sessionId !== r.sessionId || v.expires < Date.now())
+      throw new BadRequestException('导入预览已失效，请重新上传备份');
+    const data = await this.uploadedData(v.path);
+    return { data, preview: await this.preview(r, data) };
+  }
+  async restoreUpload(r: UserRequest, token: string) {
+    const prepared = await this.inspectUpload(r, token);
+    return this.restore(r, { confirmed: true, backup: prepared.data });
+  }
   private async data(
     userId: string,
     client: Database | Prisma.TransactionClient = this.db,
@@ -472,10 +488,12 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       })),
     });
   }
-  @Get() async download(@Req() r: UserRequest, @Res() res: Response) {
+  async download(r: UserRequest, res: Response, expectedFingerprint?: string) {
     const b = await this.db.$transaction(
       async (tx) => {
         const b = await this.data(r.userId, tx);
+        if (expectedFingerprint && this.fingerprint(b) !== expectedFingerprint)
+          throw new ConflictException('账目已变化，请重新确认备份导出');
         await tx.session.update({
           where: { id: r.sessionId },
           data: {
@@ -498,17 +516,8 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     archive.pipe(res);
     await archive.finalize().catch(() => res.destroy());
   }
-  @Post('upload')
-  @UseInterceptors(
-    FileInterceptor('file', {
-      storage: diskStorage({
-        destination: tmpdir(),
-        filename: (_req, _file, cb) => cb(null, 'worthpath-import-' + randomUUID() + '.zip'),
-      }),
-      limits: { files: 1, fileSize: MAX_UPLOAD_BYTES, fields: 0 },
-    }),
-  )
-  async upload(@Req() r: UserRequest, @UploadedFile() file?: Express.Multer.File) {
+
+  async upload(r: UserRequest, file?: Express.Multer.File) {
     if (!file) throw new BadRequestException('请选择 ZIP 备份文件');
     try {
       const b = validateBackup(await this.uploadedData(file.path));
@@ -534,7 +543,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
   async onModuleInit() {
     await this.prune();
   }
-  @Post('import-file') async importFile(@Req() r: UserRequest, @Body() raw: unknown) {
+  async importFile(r: UserRequest, raw: unknown) {
     const { token } = z
       .object({ confirmed: z.literal(true), token: z.string().uuid() })
       .strict()
@@ -566,11 +575,11 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     data.icons?.sort((a, b) => a.id.localeCompare(b.id));
     return createHash('sha256').update(JSON.stringify(data)).digest('hex');
   }
-  @Get('clear-status') async clearStatus(@Req() r: UserRequest) {
+  async clearStatus(r: UserRequest) {
     const s = await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } });
     return { ready: !!s.backupDigest && !!s.backupExpiresAt && +s.backupExpiresAt > Date.now() };
   }
-  @Post('clear') async clear(@Req() r: UserRequest, @Body() raw: unknown) {
+  async clear(r: UserRequest, raw: unknown) {
     z.object({ confirmation: z.literal('确定清空') })
       .strict()
       .parse(raw);
@@ -596,7 +605,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 300000 },
     );
   }
-  @Post('preview') async preview(@Req() r: UserRequest, @Body() raw: unknown) {
+  async preview(r: UserRequest, raw: unknown) {
     const b = validateBackup(raw),
       existing = await this.data(r.userId);
     for (const i of b.icons || []) await validateStoredIcon(i.image, i.hash);
@@ -631,7 +640,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         throw new ConflictException('已有同日汇率与备份冲突，未修改数据');
     }
   }
-  @Post('import') async restore(@Req() r: UserRequest, @Body() raw: unknown) {
+  async restore(r: UserRequest, raw: unknown) {
     const { backup } = z
         .object({ confirmed: z.literal(true), backup: backupSchema })
         .strict()
@@ -817,5 +826,41 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       },
       { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 300000 },
     );
+  }
+}
+
+@Controller('api/backup')
+export class BackupController {
+  constructor(private service: BackupBusinessService) {}
+  @Get() async download(@Req() r: UserRequest, @Res() res: Response) {
+    return this.service.download(r, res);
+  }
+  @Post('upload')
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: diskStorage({
+        destination: tmpdir(),
+        filename: (_req, _file, cb) => cb(null, 'worthpath-import-' + randomUUID() + '.zip'),
+      }),
+      limits: { files: 1, fileSize: MAX_UPLOAD_BYTES, fields: 0 },
+    }),
+  )
+  async upload(@Req() r: UserRequest, @UploadedFile() file?: Express.Multer.File) {
+    return this.service.upload(r, file);
+  }
+  @Post('import-file') async importFile(@Req() r: UserRequest, @Body() raw: unknown) {
+    return this.service.importFile(r, raw);
+  }
+  @Get('clear-status') async clearStatus(@Req() r: UserRequest) {
+    return this.service.clearStatus(r);
+  }
+  @Post('clear') async clear(@Req() r: UserRequest, @Body() raw: unknown) {
+    return this.service.clear(r, raw);
+  }
+  @Post('preview') async preview(@Req() r: UserRequest, @Body() raw: unknown) {
+    return this.service.preview(r, raw);
+  }
+  @Post('import') async restore(@Req() r: UserRequest, @Body() raw: unknown) {
+    return this.service.restore(r, raw);
   }
 }

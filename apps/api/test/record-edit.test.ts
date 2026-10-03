@@ -4,17 +4,17 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { Database } from '../src/database';
-import { TransfersController } from '../src/transfers';
-import { PortfolioController } from '../src/portfolio';
-import { CalendarController } from '../src/calendar';
+import { TransfersBusinessService } from '../src/transfers';
+import { PortfolioBusinessService } from '../src/portfolio';
+import { CalendarBusinessService } from '../src/calendar';
 import { toBusinessDate } from '../src/validation';
 
 test('record edits replay paired movements, expense deltas, anchors and calendar atomically', async () => {
   const db = new Database();
   const users: string[] = [];
-  const movements = new TransfersController(db);
-  const portfolio = new PortfolioController(db, {} as any, {} as any);
-  const calendar = new CalendarController(db);
+  const movements = new TransfersBusinessService(db);
+  const portfolio = new PortfolioBusinessService(db, {} as any, {} as any);
+  const calendar = new CalendarBusinessService(db);
   try {
     const user = await db.user.create({
       data: { username: 'wp_edit_' + randomUUID(), passwordHash: 'unused' },

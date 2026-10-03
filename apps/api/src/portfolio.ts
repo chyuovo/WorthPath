@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import {
   Controller,
   Get,
@@ -32,8 +33,9 @@ import { MetalsService } from './metals';
 import { RatesService } from './rates';
 import { captureReplay } from './replay';
 import { changeMovement } from './transfers';
-@Controller('api')
-export class PortfolioController {
+
+@Injectable()
+export class PortfolioBusinessService {
   constructor(
     private db: Database,
     private fx: RatesService,
@@ -45,7 +47,7 @@ export class PortfolioController {
     if (!p) throw new NotFoundException('项目不存在');
     return p;
   }
-  @Get('positions') async list(@Req() r: UserRequest, @Query('kind') inputKind?: string) {
+  async list(r: UserRequest, inputKind?: string) {
     const kind = z.enum(['account', 'asset', 'debt']).optional().parse(inputKind);
     return this.db.$transaction(async (tx) => {
       const rows = await currentPositions(tx, r.userId, r.revealed, undefined, kind);
@@ -71,18 +73,14 @@ export class PortfolioController {
       }));
     });
   }
-  @Get('positions/:id') async detail(@Req() r: UserRequest, @Param('id') id: string) {
+  async detail(r: UserRequest, id: string) {
     const { revisions, userId, ...p } = await this.own(r.userId, id, r.revealed);
     return { ...p, amount: revisions[0]?.amount.toString() || '0' };
   }
-  @Get('history') async history(@Req() r: UserRequest, @Query() query: unknown) {
+  async history(r: UserRequest, query: unknown) {
     return this.db.$transaction((tx) => historyPage(tx, r.userId, r.revealed, query));
   }
-  @Get('positions/:id/history') async positionHistory(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Query() query: Record<string, string>,
-  ) {
+  async positionHistory(r: UserRequest, id: string, query: Record<string, string>) {
     return this.db.$transaction(async (tx) => {
       const p = await tx.position.findFirst({
         where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
@@ -91,7 +89,7 @@ export class PortfolioController {
       return historyPage(tx, r.userId, r.revealed, { ...query, positionId: id });
     });
   }
-  @Get('trend') async trend(@Req() r: UserRequest, @Query() query: unknown) {
+  async trend(r: UserRequest, query: unknown) {
     const q = trendInput(query);
     return this.db.$transaction(
       async (tx) => {
@@ -106,7 +104,7 @@ export class PortfolioController {
       { timeout: 30000 },
     );
   }
-  @Post('positions') async create(@Req() r: UserRequest, @Body() b: unknown) {
+  async create(r: UserRequest, b: unknown) {
     const v = positionInput.parse(b),
       { amount, date, ...meta } = v;
     await this.icons.requireVisible(r.userId, meta.iconId);
@@ -128,11 +126,7 @@ export class PortfolioController {
     this.fx.invalidate(r.userId);
     return created;
   }
-  @Patch('positions/:id') async edit(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Body() b: unknown,
-  ) {
+  async edit(r: UserRequest, id: string, b: unknown) {
     const v = positionMeta.parse(b),
       p = await this.own(r.userId, id, r.revealed);
     if (
@@ -153,11 +147,7 @@ export class PortfolioController {
     });
     return { ok: true };
   }
-  @Post('positions/:id/revisions') async revise(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Body() b: unknown,
-  ) {
+  async revise(r: UserRequest, id: string, b: unknown) {
     const v = revisionInput.parse(b);
     if (pairedReasons.includes(v.reason)) throw new BadRequestException('请使用账户转账接口');
     return this.db.serial(async (tx) => {
@@ -197,12 +187,7 @@ export class PortfolioController {
       });
     });
   }
-  @Put('positions/:id/revisions/:revisionId') async correct(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Param('revisionId') revisionId: string,
-    @Body() b: unknown,
-  ) {
+  async correct(r: UserRequest, id: string, revisionId: string, b: unknown) {
     const v = revisionInput.parse(b);
     return this.db.serial(async (tx) => {
       await tx.$queryRaw(
@@ -234,11 +219,7 @@ export class PortfolioController {
     });
   }
 
-  @Delete('positions/:id/revisions/:revisionId') async deleteRevision(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Param('revisionId') revisionId: string,
-  ) {
+  async deleteRevision(r: UserRequest, id: string, revisionId: string) {
     return this.db.serial(async (tx) => {
       const p = await tx.position.findFirst({
         where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
@@ -264,11 +245,7 @@ export class PortfolioController {
     });
   }
 
-  @Put('positions/:id/links') async link(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Body() b: unknown,
-  ) {
+  async link(r: UserRequest, id: string, b: unknown) {
     const { targetIds } = z
       .object({ targetIds: z.array(z.string().uuid()).max(20) })
       .strict()
@@ -281,7 +258,12 @@ export class PortfolioController {
       });
       if (!source) throw new NotFoundException('债务不存在');
       const count = await tx.position.count({
-        where: { id: { in: targetIds }, userId: r.userId, kind: { in: ['account', 'asset'] } },
+        where: {
+          id: { in: targetIds },
+          userId: r.userId,
+          kind: { in: ['account', 'asset'] },
+          ...(r.revealed ? {} : { hidden: false }),
+        },
       });
       if (count !== targetIds.length) throw new BadRequestException('只能关联自己的账户或资产');
       await tx.positionLink.deleteMany({ where: { sourceId: id } });
@@ -291,9 +273,11 @@ export class PortfolioController {
       return { ok: true };
     });
   }
-  @Get('overview') async overview(@Req() r: UserRequest) {
-    void this.fx.daily(r.userId);
-    void this.metals.daily(r.userId);
+  async overview(r: UserRequest) {
+    if (!r.agent) {
+      void this.fx.daily(r.userId);
+      void this.metals.daily(r.userId);
+    }
     return this.db.$transaction(async (tx) => {
       const user = await tx.user.findUniqueOrThrow({
         where: { id: r.userId },
@@ -321,5 +305,71 @@ export class PortfolioController {
         revealed: r.revealed,
       };
     });
+  }
+}
+
+@Controller('api')
+export class PortfolioController {
+  constructor(private service: PortfolioBusinessService) {}
+  @Get('positions') async list(@Req() r: UserRequest, @Query('kind') inputKind?: string) {
+    return this.service.list(r, inputKind);
+  }
+  @Get('positions/:id') async detail(@Req() r: UserRequest, @Param('id') id: string) {
+    return this.service.detail(r, id);
+  }
+  @Get('history') async history(@Req() r: UserRequest, @Query() query: unknown) {
+    return this.service.history(r, query);
+  }
+  @Get('positions/:id/history') async positionHistory(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Query() query: Record<string, string>,
+  ) {
+    return this.service.positionHistory(r, id, query);
+  }
+  @Get('trend') async trend(@Req() r: UserRequest, @Query() query: unknown) {
+    return this.service.trend(r, query);
+  }
+  @Post('positions') async create(@Req() r: UserRequest, @Body() b: unknown) {
+    return this.service.create(r, b);
+  }
+  @Patch('positions/:id') async edit(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.edit(r, id, b);
+  }
+  @Post('positions/:id/revisions') async revise(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.revise(r, id, b);
+  }
+  @Put('positions/:id/revisions/:revisionId') async correct(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Param('revisionId') revisionId: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.correct(r, id, revisionId, b);
+  }
+  @Delete('positions/:id/revisions/:revisionId') async deleteRevision(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Param('revisionId') revisionId: string,
+  ) {
+    return this.service.deleteRevision(r, id, revisionId);
+  }
+  @Put('positions/:id/links') async link(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.link(r, id, b);
+  }
+  @Get('overview') async overview(@Req() r: UserRequest) {
+    return this.service.overview(r);
   }
 }

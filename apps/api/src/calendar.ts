@@ -1,3 +1,4 @@
+import { Injectable } from '@nestjs/common';
 import { Controller, Get, Query, Req } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import Decimal from 'decimal.js';
@@ -24,8 +25,9 @@ export function calendarMonth(value: unknown) {
   const last = new Date(+next - 86400000).toISOString().slice(0, 10);
   return { month, from, to: last > today() ? today() : last, days: Number(last.slice(-2)) };
 }
-@Controller('api/calendar')
-export class CalendarController {
+
+@Injectable()
+export class CalendarBusinessService {
   constructor(private db: Database) {}
   private async replay(
     tx: Prisma.TransactionClient,
@@ -113,7 +115,7 @@ export class CalendarController {
       }),
     };
   }
-  @Get() async month(@Req() r: UserRequest, @Query('month') input?: string) {
+  async month(r: UserRequest, input?: string) {
     const q = calendarMonth(input);
     return this.db.$transaction(
       async (tx) => {
@@ -144,7 +146,7 @@ export class CalendarController {
       { timeout: 30000 },
     );
   }
-  @Get('day') async day(@Req() r: UserRequest, @Query('date') input?: string) {
+  async day(r: UserRequest, input?: string) {
     const day = date.parse(input || today());
     return this.db.$transaction(
       async (tx) => {
@@ -158,5 +160,16 @@ export class CalendarController {
       },
       { timeout: 30000 },
     );
+  }
+}
+
+@Controller('api/calendar')
+export class CalendarController {
+  constructor(private service: CalendarBusinessService) {}
+  @Get() async month(@Req() r: UserRequest, @Query('month') input?: string) {
+    return this.service.month(r, input);
+  }
+  @Get('day') async day(@Req() r: UserRequest, @Query('date') input?: string) {
+    return this.service.day(r, input);
   }
 }
