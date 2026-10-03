@@ -116,3 +116,7 @@ cd E:\WorthPath
 服务采用无状态 Streamable HTTP，请求结束关闭 transport/server；不共享用户认证上下文，不支持长期 GET SSE 或持久会话。代理转发规范 Host，禁用 MCP 响应缓冲，超时建议 330 秒；同时代理 /.well-known/、/authorize、/token、/register、/revoke 和 /api/。网站备份上传上限 512 MiB，ZIP 解压总计 1 GiB，代理配置对应 body 限制。日志不能保存 Authorization、密码、令牌或上传正文。
 
 当前实际通过前后端类型检查/构建、34 项单元测试、18 组 REST/MySQL、4 组官方 SDK 测试。24 项迁移已 deploy；17 张表、159 个字段注释完整。未部署或推送。
+
+### Windows 执行环境挂起
+
+配置提示词已包含短命令排查：优先无 profile 模式，超过 15 秒仅结束自己启动的检查，受限环境仍挂起时使用执行工具的正常权限申请流程继续。OAuth 等待网页回调不适用短命令超时。2026-10-04 本机通过提升权限、login:false 和官方 CLI 完整路径执行 --version 成功，版本 0.160.0。不能据此保证所有客户端沙箱均允许本机执行；权限申请被拒时必须报告具体原因。本次未修改真实 MCP 配置或发起新的用户授权。

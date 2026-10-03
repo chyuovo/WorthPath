@@ -110,6 +110,9 @@ function codexSetupPrompt(url: string, level: string) {
       selected +
       '。不申请隐藏账户权限；最终授权由我在 WorthPath 网页审核完成。不要让我把密码或个人令牌发送到聊天里，也不要替我点击授权确认。',
     '先检查本机 codex 命令是否可用，并核对 mcp add/login 的帮助。只检查 WorthPath 相关配置，不输出凭据、Authorization 头或其他秘密。如果你运行在云端或另一台电脑，无法访问此 localhost 地址，请如实说明，不要声称已连接。',
+    'Windows 命令执行排查也请由你完成，不要一遇到 PowerShell 挂起就让我自行确认 CLI。版本和帮助检查是短命令：执行工具支持时先设置 login:false（或等效 -NoProfile），避免启动配置文件。若短命令超过 15 秒无输出，结束你自己启动的这一条检查，不要停止 WorthPath 服务或其他进程；不要反复原样重试。',
+    '若受限执行环境中的短命令仍挂起，使用执行工具提供的正常权限申请流程，申请 sandbox_permissions=require_escalated 或等效本机执行权限，说明用途是核对 Codex CLI 并配置 WorthPath OAuth。我授权这项必要的本机检查和 WorthPath 连接配置。获得工具批准后继续执行；若被拒绝，报告具体拒绝原因和受影响步骤。不要绕过权限限制，也不要仅因普通沙箱命令挂起就认定 CLI 不可用。',
+    'CLI 找不到时，在本机已安装 Codex 的官方目录中定位可执行文件并使用完整路径；不要安装未知程序、永久修改 PATH 或读取其他凭据。区分短命令故障和 OAuth 等待：授权登录进程在等待网页回调时应保留，不适用上述 15 秒短命令期限。',
     '使用 codex mcp add worthpath --url ' +
       url +
       ' 添加连接；已有同名、同地址且启用的 OAuth 连接时跳过添加。若同名连接指向不同服务，请先说明冲突，不覆盖它。若这条连接使用旧 Bearer 认证，将本连接切换为 OAuth 并移除其静态 Authorization 或 bearer_token_env_var，保留其余配置，不展示旧令牌。',
