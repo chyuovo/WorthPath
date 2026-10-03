@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
 import type { Backup } from './backup';
+import { accountGroupOrder } from './validation';
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 1024 * 1024 * 1024;
 const files = [
@@ -149,6 +150,7 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
           .object({
             showSidebar: z.boolean().optional(),
             hiddenMenus: z.array(z.string()).optional(),
+            accountGroupOrder: accountGroupOrder.optional(),
             showNotes: z.boolean().optional(),
             idleMinutes: z.number().int().min(0).max(1440),
           })

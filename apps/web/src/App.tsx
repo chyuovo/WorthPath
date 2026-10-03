@@ -1,5 +1,5 @@
 import { t as tr, useLocale, LanguagePicker } from './i18n';
-import { useState, useEffect, useRef, type FormEvent, type ReactNode } from 'react';
+import { useState, useEffect, useRef, createElement, type FormEvent, type ReactNode } from 'react';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -38,6 +38,8 @@ import {
   type PageResult,
 } from './api';
 import './style.css';
+import { GroupOrderContext } from './GroupOrderContext';
+import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
 import { IconPicker } from './IconPicker';
@@ -225,6 +227,7 @@ export default function App() {
       h?: History;
       transfer?: Transfer;
       operation?: DebtOperation;
+      groups?: string[];
     } | null>(null),
     [busy, setBusy] = useState(false),
     [loading, setLoading] = useState(false),
@@ -232,7 +235,7 @@ export default function App() {
     [success, setSuccess] = useState('');
   const [calendarRefresh, setCalendarRefresh] = useState(0);
   const [quickMode, setQuickMode] = useState(false),
-    [accountGroup, setAccountGroup] = useState('');
+    [accountGroup, setAccountGroup] = useState<string | null>(null);
   const [fxStatus, setFxStatus] = useState<{
     state: string;
     message: string;
@@ -284,6 +287,7 @@ export default function App() {
     setHistoryCursor(null);
     setTransferCursor(null);
     setFxStatus(null);
+    setAccountGroup(null);
     setModal(null);
     setSelected(null);
     setBackup(null);
@@ -823,7 +827,14 @@ export default function App() {
     ['settings', Settings],
   ] as const;
   const visibleNav = nav.filter(([key]) => !(user.hiddenMenus || []).includes(key));
-  return (
+  const groups = orderedGroups(
+    positions.filter((p) => p.kind === 'account').map((p) => p.groupName || ''),
+    user.accountGroupOrder,
+  );
+  const groupRanks = new Map(groups.map((g, index) => [g, index]));
+  return createElement(
+    GroupOrderContext.Provider,
+    { value: user.accountGroupOrder || [] },
     <div className={user.showNotes === false ? 'app notes-hidden' : 'app'}>
       {
         <aside className="sidebar">
@@ -1305,22 +1316,27 @@ export default function App() {
                       </button>
                       <select
                         aria-label={tr('账户分组')}
-                        value={accountGroup}
-                        onChange={(e) => setAccountGroup(e.target.value)}
+                        value={accountGroup === null ? 'all' : JSON.stringify(accountGroup)}
+                        onChange={(e) =>
+                          setAccountGroup(
+                            e.target.value === 'all' ? null : JSON.parse(e.target.value),
+                          )
+                        }
                       >
-                        <option value="">{tr('全部账户')}</option>
-                        {[
-                          ...new Set(
-                            positions
-                              .filter((p) => p.kind === 'account')
-                              .map((p) => p.groupName || '未分组'),
-                          ),
-                        ].map((g) => (
-                          <option key={g} value={g}>
-                            {tr(g)}
+                        <option value="all">{tr('全部账户')}</option>
+                        {groups.map((g) => (
+                          <option key={g} value={JSON.stringify(g)}>
+                            {g || tr('未分组')}
                           </option>
                         ))}
                       </select>
+                      <button
+                        className="secondary"
+                        disabled={busy || groups.length < 2}
+                        onClick={() => setModal({ kind: 'group-order', groups: [...groups] })}
+                      >
+                        {tr('分组排序')}
+                      </button>
                     </div>
                     {quickMode && <p className="muted">{tr('点击账户卡片，直接填写当前余额。')}</p>}
                   </>
@@ -1332,8 +1348,14 @@ export default function App() {
                         (p) =>
                           p.kind === page &&
                           (page !== 'account' ||
-                            !accountGroup ||
-                            (p.groupName || '未分组') === accountGroup),
+                            accountGroup === null ||
+                            (p.groupName || '') === accountGroup),
+                      )
+                      .sort((a, b) =>
+                        page === 'account'
+                          ? (groupRanks.get(a.groupName || '') || 0) -
+                            (groupRanks.get(b.groupName || '') || 0)
+                          : 0,
                       )
                       .map((p) => (
                         <button
@@ -2048,6 +2070,64 @@ export default function App() {
           )}
         </Modal>
       )}
+      {modal?.kind === 'group-order' && modal.groups && (
+        <Modal title={tr('分组排序')} close={() => !busy && setModal(null)}>
+          <p className="muted">{tr('调整账户分组顺序，账户页和选择弹窗会同步使用。')}</p>
+          <ol className="group-order-list">
+            {modal.groups.map((g, index) => (
+              <li key={g}>
+                <span>{g || tr('未分组')}</span>
+                <div>
+                  {[-1, 1].map((offset) => (
+                    <button
+                      key={offset}
+                      type="button"
+                      className="secondary"
+                      disabled={
+                        busy || index + offset < 0 || index + offset >= modal.groups!.length
+                      }
+                      aria-label={(g || tr('未分组')) + ' ' + tr(offset < 0 ? '上移' : '下移')}
+                      onClick={() =>
+                        setModal((current) => {
+                          if (!current?.groups) return current;
+                          const next = [...current.groups];
+                          [next[index], next[index + offset]] = [next[index + offset], next[index]];
+                          return { ...current, groups: next };
+                        })
+                      }
+                    >
+                      {tr(offset < 0 ? '上移' : '下移')}
+                    </button>
+                  ))}
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="modal-actions">
+            <button className="secondary" disabled={busy} onClick={() => setModal(null)}>
+              {tr('取消')}
+            </button>
+            <button
+              className="primary"
+              disabled={busy}
+              onClick={() =>
+                void act(
+                  () =>
+                    api('/settings', 'PATCH', {
+                      accountGroupOrder: mergeGroupOrder(
+                        modal.groups!,
+                        user.accountGroupOrder || [],
+                      ),
+                    }),
+                  tr('分组顺序已保存'),
+                )
+              }
+            >
+              {tr(busy ? '正在保存…' : '保存')}
+            </button>
+          </div>
+        </Modal>
+      )}
       {modal?.kind === 'delete-record' && (
         <Modal
           title={tr('删除记录')}
@@ -2170,7 +2250,7 @@ export default function App() {
           </form>
         </Modal>
       )}
-      {modal && !['transfer-edit', 'delete-record'].includes(modal.kind) && (
+      {modal && !['transfer-edit', 'delete-record', 'group-order'].includes(modal.kind) && (
         <Modal
           title={
             modal.kind === 'debt-payment'
@@ -2330,11 +2410,9 @@ export default function App() {
                           placeholder={tr('例如：日常、消费、理财')}
                         />
                         <datalist id="account-groups">
-                          {[...new Set(positions.map((p) => p.groupName).filter(Boolean))].map(
-                            (g) => (
-                              <option key={g} value={g} />
-                            ),
-                          )}
+                          {groups.filter(Boolean).map((g) => (
+                            <option key={g} value={g} />
+                          ))}
                         </datalist>
                       </Field>
                     </>
@@ -2524,7 +2602,7 @@ export default function App() {
           )}
         </Modal>
       )}
-    </div>
+    </div>,
   );
 }
 function HistoryTable({

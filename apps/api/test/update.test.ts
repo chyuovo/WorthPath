@@ -120,7 +120,7 @@ test('negative balances are confined to accounts; group names and debt principal
     category: 'bank',
     kind: 'account',
     side: 'asset',
-    amount: '-12.12345678',
+    amount: '-12.24681357',
     currency: 'CNY',
     date,
     groupName: '日常',
@@ -159,9 +159,9 @@ test('trend starts at the first balance, retains valid zero days and handles an 
   assert.deepEqual(trend([p], [], 'CNY', '2026-09-01', '2026-09-14'), []);
 });
 test('debt signs and currency symbols preserve the original decimal strings', () => {
-  const p = { kind: 'debt', side: 'liability', amount: '9999999999999999.12345678' } as Position;
-  assert.equal(positionAmount(p), '-9999999999999999.12345678');
-  assert.equal(money(positionAmount(p), 'HKD'), 'HK$ -9,999,999,999,999,999.12345678');
+  const p = { kind: 'debt', side: 'liability', amount: '9999999999999999.24681357' } as Position;
+  assert.equal(positionAmount(p), '-9999999999999999.24681357');
+  assert.equal(money(positionAmount(p), 'HKD'), 'HK$ -9,999,999,999,999,999.24681357');
   assert.equal(positionAmount({ ...p, amount: '0.00000000' }), '0.00000000');
   assert.equal(positionAmount({ ...p, side: 'asset' }), p.amount);
 });
@@ -348,14 +348,14 @@ test('liability account credit balances invert display and input without losing 
   const card = {
     kind: 'account',
     side: 'liability',
-    amount: '-9999999999999999.12345678',
+    amount: '-9999999999999999.24681357',
   } as Position;
-  assert.equal(positionAmount(card), '9999999999999999.12345678');
-  assert.equal(positionAmount(card, '12.12345678'), '-12.12345678');
+  assert.equal(positionAmount(card), '9999999999999999.24681357');
+  assert.equal(positionAmount(card, '12.24681357'), '-12.24681357');
   assert.equal(positionAmount(card, '-0.00000000'), '0.00000000');
-  assert.equal(accountInputAmount(card, '12.12345678'), '-12.12345678');
-  assert.equal(accountInputAmount(card, '-12.12345678'), '12.12345678');
-  assert.equal(accountInputAmount({ ...card, kind: 'debt' }, '12.12345678'), '12.12345678');
+  assert.equal(accountInputAmount(card, '12.24681357'), '-12.24681357');
+  assert.equal(accountInputAmount(card, '-12.24681357'), '12.24681357');
+  assert.equal(accountInputAmount({ ...card, kind: 'debt' }, '12.24681357'), '12.24681357');
 });
 test('credit balances count as assets across zero, retain FX attribution and do not offset other liabilities', () => {
   const card: Holding = {
@@ -421,4 +421,14 @@ test('credit balances count as assets across zero, retain FX attribution and do 
   assert.equal(mixed.net, '180.00');
   assert.equal(cashflowDelta('liability', 'balance', '100', '-25').toFixed(), '125');
   assert.equal(cashflowDelta('liability', 'balance', '-25', '10').toFixed(), '-35');
+});
+
+test('group order keeps visible subsets stable and distinguishes unnamed and named groups', async () => {
+  const { orderedGroups, mergeGroupOrder } = await import('../../web/src/group-order');
+  assert.deepEqual(
+    orderedGroups(['日常', '', '未分组', '理财', '日常'], ['理财', '', '日常', '已隐藏']),
+    ['理财', '', '日常', '未分组'],
+  );
+  assert.deepEqual(orderedGroups(['日常'], ['理财', '', '日常']), ['日常']);
+  assert.deepEqual(mergeGroupOrder(['日常', '理财'], ['理财', '隐藏']), ['日常', '理财', '隐藏']);
 });

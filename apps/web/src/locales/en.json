@@ -467,5 +467,11 @@
   "溢缴存款": "Credit balance",
   "信用卡、贷款账户：负数为欠款，正数为溢缴存款；其余账户按实际余额填写。": "Credit cards and loan accounts: negative means debt, positive means credit. Enter the actual balance for other accounts.",
   "负数表示欠款，正数表示溢缴存款；溢缴部分计入总资产。": "Negative means debt, positive means credit. Credit balances count towards total assets.",
-  "仅账户支持负余额": "Only accounts support negative balances."
+  "仅账户支持负余额": "Only accounts support negative balances.",
+  "分组排序": "Group order",
+  "上移": "Move up",
+  "下移": "Move down",
+  "分组顺序已保存": "Group order saved",
+  "分组不可重复": "Groups must be unique",
+  "调整账户分组顺序，账户页和选择弹窗会同步使用。": "Change the group order for both accounts and account selection."
 }

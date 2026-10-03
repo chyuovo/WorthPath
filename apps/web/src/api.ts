@@ -23,6 +23,7 @@ export type User = {
   hiddenMenus: string[];
   showNotes: boolean;
   idleMinutes: number;
+  accountGroupOrder?: string[];
   revealed?: boolean;
   revealUntil?: string | null;
   lastActivity?: string;

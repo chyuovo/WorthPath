@@ -170,11 +170,13 @@ export class AuthController {
         hiddenMenus: true,
         showNotes: true,
         idleMinutes: true,
+        accountGroupOrder: true,
       },
     });
     const session = await this.db.session.findUniqueOrThrow({ where: { id: req.sessionId } });
     return {
       ...user,
+      accountGroupOrder: user.accountGroupOrder || [],
       hiddenMenus: user.hiddenMenus.split(',').filter(Boolean),
       revealed: req.revealed,
       revealUntil: session.revealUntil,

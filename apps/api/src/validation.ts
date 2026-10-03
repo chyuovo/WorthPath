@@ -182,3 +182,8 @@ export const credentialChange = z
   })
   .strict()
   .refine((v) => !!v.username || !!v.newPassword, '请填写新的账号或密码');
+
+export const accountGroupOrder = z
+  .array(z.string().trim().max(60))
+  .max(1000)
+  .refine((v) => new Set(v).size === v.length, '分组不可重复');

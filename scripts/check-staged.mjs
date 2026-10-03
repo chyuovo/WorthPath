@@ -11,7 +11,13 @@ if (
   names.some((n) => /\.(db|sqlite|log)$/.test(n))
 )
   throw Error('Blocked: forbidden file staged');
-const diff = git('diff', '--cached', '--no-ext-diff');
+// Review newly introduced content; removing a secret or changing a numeric example
+// must not be blocked by the removed lines or unchanged diff context.
+const diff = git('diff', '--cached', '--no-ext-diff', '--unified=0')
+  .split('\n')
+  .filter((line) => line.startsWith('+') && !line.startsWith('+++ '))
+  .map((line) => line.slice(1))
+  .join('\n');
 if (existsSync('apps/api/.env')) {
   const text = readFileSync('apps/api/.env', 'utf8'),
     value = text.match(/^DATABASE_URL=["']?([^"'\r\n]+)/m)?.[1];

@@ -1494,3 +1494,27 @@ textarea,
 .record-actions button + button {
   margin-left: 16px;
 }
+
+.group-order-list {
+  list-style: none;
+  padding: 0;
+  max-height: 55vh;
+  overflow-y: auto;
+}
+.group-order-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid #e5e9e5;
+}
+.group-order-list li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.group-order-list li > div {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}

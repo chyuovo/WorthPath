@@ -1,7 +1,9 @@
-import { useId, useRef, useState } from 'react';
+import { useId, useRef, useState, useContext } from 'react';
 import { type Position, money, positionAmount } from './api';
 import { t as tr } from './i18n';
 import { iconUrl } from './IconLibrary';
+import { GroupOrderContext } from './GroupOrderContext';
+import { orderedGroups } from './group-order';
 export function AccountPicker({
   name,
   accounts,
@@ -25,7 +27,13 @@ export function AccountPicker({
       p.id !== excludeId &&
       `${p.name} ${p.groupName || ''} ${p.currency}`.toLowerCase().includes(query.toLowerCase()),
   );
-  const groups = grouped ? [...new Set(rows.map((p) => p.groupName || '未分组'))] : ['全部账户'];
+  const order = useContext(GroupOrderContext);
+  const groups = grouped
+    ? orderedGroups(
+        rows.map((p) => p.groupName || ''),
+        order,
+      )
+    : ['全部账户'];
   return (
     <div className="account-picker">
       <input name={name} type="hidden" value={value} />
@@ -61,9 +69,9 @@ export function AccountPicker({
         </div>
         {groups.map((group) => (
           <section key={group}>
-            <h3>{tr(group)}</h3>
+            <h3>{grouped ? group || tr('未分组') : tr('全部账户')}</h3>
             {rows
-              .filter((p) => !grouped || (p.groupName || '未分组') === group)
+              .filter((p) => !grouped || (p.groupName || '') === group)
               .map((p) => (
                 <button
                   type="button"

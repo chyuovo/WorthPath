@@ -1,6 +1,6 @@
 {
   "tableCount": 9,
-  "columnCount": 88,
+  "columnCount": 89,
   "tables": [
     {
       "TABLE_NAME": "exchangerate",
@@ -479,6 +479,11 @@
       "TABLE_NAME": "user",
       "COLUMN_NAME": "showNotes",
       "COLUMN_COMMENT": "是否显示备注"
+    },
+    {
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "accountGroupOrder",
+      "COLUMN_COMMENT": "账户分组显示顺序；空值表示沿用默认顺序"
     }
   ]
 }

@@ -190,3 +190,12 @@ test('ZIP v7 restores groups and schedules while v6 remains readable', async () 
   contents['manifest.json'] = JSON.stringify(manifest);
   assert.equal(validateBackup(await readBackupZip(await archive(contents))).schedules, undefined);
 });
+
+test('ZIP settings retain group order while missing legacy order remains optional', async () => {
+  const b = empty();
+  b.preferences!.accountGroupOrder = ['理财', '', '未分组', '日常'];
+  const restored = validateBackup(await readBackupZip(await archive(packBackup(b))));
+  assert.deepEqual(restored.preferences!.accountGroupOrder, b.preferences!.accountGroupOrder);
+  const legacy = validateBackup(await readBackupZip(await archive(packBackup(empty()))));
+  assert.equal(legacy.preferences!.accountGroupOrder, undefined);
+});

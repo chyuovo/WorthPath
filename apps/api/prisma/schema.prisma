@@ -17,6 +17,8 @@ model User {
   baseCurrency String @default("CNY") @db.Char(3)
   /// 隐藏菜单标识列表
   hiddenMenus String @default("") @db.VarChar(128)
+  /// 账户分组显示顺序；空值表示沿用默认顺序
+  accountGroupOrder Json?
   /// 是否显示备注
   showNotes Boolean @default(true)
   /// 无操作退出分钟数，0 表示关闭

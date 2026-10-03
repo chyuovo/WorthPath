@@ -35,6 +35,7 @@ import {
   revisionInput,
   rateInput,
   hiddenMenus,
+  accountGroupOrder,
   transferInput,
 } from './validation';
 import { createHash } from 'node:crypto';
@@ -77,6 +78,7 @@ const backupSchema = z
       .object({
         showSidebar: z.boolean().optional(),
         hiddenMenus: hiddenMenus.optional(),
+        accountGroupOrder: accountGroupOrder.optional(),
         showNotes: z.boolean().optional(),
         idleMinutes: z.number().int().min(0).max(1440),
       })
@@ -301,7 +303,13 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     const [user, ps, rates] = await Promise.all([
       client.user.findUniqueOrThrow({
         where: { id: userId },
-        select: { baseCurrency: true, hiddenMenus: true, showNotes: true, idleMinutes: true },
+        select: {
+          baseCurrency: true,
+          hiddenMenus: true,
+          showNotes: true,
+          idleMinutes: true,
+          accountGroupOrder: true,
+        },
       }),
       client.position.findMany({
         where: { userId },
@@ -360,6 +368,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         hiddenMenus: user.hiddenMenus.split(',').filter(Boolean),
         showNotes: user.showNotes,
         idleMinutes: user.idleMinutes,
+        accountGroupOrder: accountGroupOrder.parse(user.accountGroupOrder || []),
       },
       currencies: [
         ...new Set([
@@ -707,6 +716,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               idleMinutes: b.preferences?.idleMinutes,
               hiddenMenus: b.preferences?.hiddenMenus?.join(','),
               showNotes: b.preferences?.showNotes,
+              accountGroupOrder: b.preferences?.accountGroupOrder,
             },
           });
         return { ok: true, positions: b.positions.length };

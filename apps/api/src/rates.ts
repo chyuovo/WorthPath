@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { Database } from './database';
 import { UserRequest } from './auth';
-import { currency, date, rateValue, today, hiddenMenus } from './validation';
+import { currency, date, rateValue, today, hiddenMenus, accountGroupOrder } from './validation';
 import { z } from 'zod';
 import Decimal from 'decimal.js';
 // Fixed public request; no user currency choices, identifiers or amounts leave the server.
@@ -176,10 +176,12 @@ export class SettingsController {
         hiddenMenus: true,
         showNotes: true,
         idleMinutes: true,
+        accountGroupOrder: true,
       },
     });
     return {
       ...u,
+      accountGroupOrder: u.accountGroupOrder || [],
       hiddenMenus: u.hiddenMenus.split(',').filter(Boolean),
       lastActivity: (await this.db.session.findUniqueOrThrow({ where: { id: r.sessionId } }))
         .lastActivity,
@@ -203,6 +205,7 @@ export class SettingsController {
       .object({
         baseCurrency: currency.optional(),
         hiddenMenus: hiddenMenus.optional(),
+        accountGroupOrder: accountGroupOrder.optional(),
         showNotes: z.boolean().optional(),
         idleMinutes: z.number().int().min(0).max(1440).optional(),
       })

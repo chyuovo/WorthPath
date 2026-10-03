@@ -11,6 +11,7 @@ import {
   transferInput,
   currency,
   hiddenMenus,
+  accountGroupOrder,
 } from './validation';
 export function setupOpenApi(app: INestApplication) {
   const document = SwaggerModule.createDocument(
@@ -45,6 +46,7 @@ export function setupOpenApi(app: INestApplication) {
       .object({
         baseCurrency: currency.optional(),
         hiddenMenus: hiddenMenus.optional(),
+        accountGroupOrder: accountGroupOrder.optional(),
         showNotes: z.boolean().optional(),
         idleMinutes: z.number().int().min(0).max(1440).optional(),
       })
