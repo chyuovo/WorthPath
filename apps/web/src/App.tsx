@@ -1,5 +1,13 @@
 import { t as tr, useLocale, LanguagePicker } from './i18n';
-import { useState, useEffect, useRef, createElement, type FormEvent, type ReactNode } from 'react';
+import {
+  useState,
+  useEffect,
+  useRef,
+  createElement,
+  Fragment,
+  type FormEvent,
+  type ReactNode,
+} from 'react';
 import {
   LayoutDashboard,
   CalendarDays,
@@ -39,6 +47,7 @@ import {
 } from './api';
 import './style.css';
 import { GroupOrderContext } from './GroupOrderContext';
+import { GroupOrderList } from './GroupOrderList';
 import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
@@ -1357,59 +1366,67 @@ export default function App() {
                             (groupRanks.get(b.groupName || '') || 0)
                           : 0,
                       )
-                      .map((p) => (
-                        <button
-                          className="position-card"
-                          key={p.id}
-                          onClick={() =>
-                            page === 'account' && quickMode && !p.archived
-                              ? setModal({ kind: 'revision', p })
-                              : setSelected(p.id)
-                          }
-                        >
-                          <div>
-                            <span className="position-icon">
-                              {p.iconId ? (
-                                <img src={iconUrl(p.iconId)} alt={tr('账户图标')} />
-                              ) : p.kind === 'asset' ? (
-                                <Landmark />
-                              ) : p.kind === 'debt' ? (
-                                <HandCoins />
-                              ) : (
-                                <Wallet />
-                              )}
-                            </span>
-                            <ArrowUpRight size={18} />
-                          </div>
-                          <h3>{p.name}</h3>
-                          {p.groupName && <span className="badge">{p.groupName}</span>}
-                          <p>
-                            {categoryLabel(p)} ·{' '}
-                            {p.kind === 'debt'
-                              ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
-                              : p.side === 'asset'
-                                ? tr('资产')
-                                : tr(
-                                    p.kind === 'account' && p.amount.startsWith('-')
-                                      ? '溢缴存款'
-                                      : '负债',
-                                  )}
-                            {p.archived ? tr(' · 已归档') : ''}
-                          </p>
-                          <strong
-                            className={
-                              positionAmount(p).startsWith('-') ? 'danger-text' : undefined
+                      .map((p, index, rows) => (
+                        <Fragment key={p.id}>
+                          {page === 'account' &&
+                            accountGroup === null &&
+                            (index === 0 ||
+                              (rows[index - 1].groupName || '') !== (p.groupName || '')) && (
+                              <h3 className="account-group-title">{p.groupName || tr('未分组')}</h3>
+                            )}
+                          <button
+                            className="position-card"
+                            key={p.id}
+                            onClick={() =>
+                              page === 'account' && quickMode && !p.archived
+                                ? setModal({ kind: 'revision', p })
+                                : setSelected(p.id)
                             }
                           >
-                            {money(positionAmount(p), p.currency)}
-                          </strong>
-                          <small>
-                            {tr('折合')}{' '}
-                            {p.converted === null
-                              ? tr('缺少汇率')
-                              : money(positionAmount(p, p.converted || '0'), user.baseCurrency)}
-                          </small>
-                        </button>
+                            <div>
+                              <span className="position-icon">
+                                {p.iconId ? (
+                                  <img src={iconUrl(p.iconId)} alt={tr('账户图标')} />
+                                ) : p.kind === 'asset' ? (
+                                  <Landmark />
+                                ) : p.kind === 'debt' ? (
+                                  <HandCoins />
+                                ) : (
+                                  <Wallet />
+                                )}
+                              </span>
+                              <ArrowUpRight size={18} />
+                            </div>
+                            <h3>{p.name}</h3>
+                            {p.groupName && <span className="badge">{p.groupName}</span>}
+                            <p>
+                              {categoryLabel(p)} ·{' '}
+                              {p.kind === 'debt'
+                                ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
+                                : p.side === 'asset'
+                                  ? tr('资产')
+                                  : tr(
+                                      p.kind === 'account' && p.amount.startsWith('-')
+                                        ? '溢缴存款'
+                                        : '负债',
+                                    )}
+                              {p.archived ? tr(' · 已归档') : ''}
+                            </p>
+                            <strong
+                              className={
+                                positionAmount(p).startsWith('-') ? 'danger-text' : undefined
+                              }
+                            >
+                              {money(positionAmount(p), p.currency)}
+                            </strong>
+                            <small>
+                              {tr('折合')}{' '}
+                              {p.converted === null
+                                ? tr('缺少汇率')
+                                : money(positionAmount(p, p.converted || '0'), user.baseCurrency)}
+                            </small>
+                          </button>
+                        </Fragment>
                       ))}
                   </div>
                 ) : (
@@ -2072,37 +2089,15 @@ export default function App() {
       )}
       {modal?.kind === 'group-order' && modal.groups && (
         <Modal title={tr('分组排序')} close={() => !busy && setModal(null)}>
-          <p className="muted">{tr('调整账户分组顺序，账户页和选择弹窗会同步使用。')}</p>
-          <ol className="group-order-list">
-            {modal.groups.map((g, index) => (
-              <li key={g}>
-                <span>{g || tr('未分组')}</span>
-                <div>
-                  {[-1, 1].map((offset) => (
-                    <button
-                      key={offset}
-                      type="button"
-                      className="secondary"
-                      disabled={
-                        busy || index + offset < 0 || index + offset >= modal.groups!.length
-                      }
-                      aria-label={(g || tr('未分组')) + ' ' + tr(offset < 0 ? '上移' : '下移')}
-                      onClick={() =>
-                        setModal((current) => {
-                          if (!current?.groups) return current;
-                          const next = [...current.groups];
-                          [next[index], next[index + offset]] = [next[index + offset], next[index]];
-                          return { ...current, groups: next };
-                        })
-                      }
-                    >
-                      {tr(offset < 0 ? '上移' : '下移')}
-                    </button>
-                  ))}
-                </div>
-              </li>
-            ))}
-          </ol>
+          <GroupOrderList
+            groups={modal.groups}
+            busy={busy}
+            onChange={(groups) =>
+              setModal((current) =>
+                current?.kind === 'group-order' ? { ...current, groups } : current,
+              )
+            }
+          />
           <div className="modal-actions">
             <button className="secondary" disabled={busy} onClick={() => setModal(null)}>
               {tr('取消')}

@@ -432,3 +432,14 @@ test('group order keeps visible subsets stable and distinguishes unnamed and nam
   assert.deepEqual(orderedGroups(['日常'], ['理财', '', '日常']), ['日常']);
   assert.deepEqual(mergeGroupOrder(['日常', '理财'], ['理财', '隐藏']), ['日常', '理财', '隐藏']);
 });
+
+test('drag insertion moves groups without swapping neighbours, mutating input or crossing bounds', async () => {
+  const { moveGroup } = await import('../../web/src/group-order');
+  const original = ['日常', '', '消费', '理财'];
+  assert.deepEqual(moveGroup(original, 3, 0), ['理财', '日常', '', '消费']);
+  assert.deepEqual(moveGroup(original, 0, 3), ['', '消费', '理财', '日常']);
+  assert.deepEqual(original, ['日常', '', '消费', '理财']);
+  assert.equal(moveGroup(original, 0, -1), original);
+  assert.equal(moveGroup(original, 3, 4), original);
+  assert.equal(moveGroup(original, 2, 2), original);
+});

@@ -473,5 +473,9 @@
   "下移": "Move down",
   "分组顺序已保存": "Group order saved",
   "分组不可重复": "Groups must be unique",
-  "调整账户分组顺序，账户页和选择弹窗会同步使用。": "Change the group order for both accounts and account selection."
+  "调整账户分组顺序，账户页和选择弹窗会同步使用。": "Change the group order for both accounts and account selection.",
+  "拖动手柄调整顺序，也可聚焦手柄后使用方向键。保存后同步到账户页和选择弹窗。": "Drag a handle to reorder, or focus it and use the arrow keys. Save to apply the order to accounts and account selection.",
+  "账户分组顺序": "Account group order",
+  "拖动分组": "Drag group",
+  "已取消拖拽": "Drag cancelled"
 }
