@@ -144,7 +144,21 @@ test('reject invalid dates, negative values and credit card assets', () => {
 test('backup rejects auth data and broken relations', () => {
   const b = {
     format: 'worthpath',
-    version: 1,
+    version: 9,
+    preferences: {
+      hiddenMenus: [],
+      showNotes: true,
+      idleMinutes: 0,
+      accountGroupOrder: [],
+      sessionHours: 168,
+      requireHiddenPassword: true,
+      overviewCards: ['net'],
+      includeIndependentAssets: true,
+    },
+    icons: [],
+    transfers: [],
+    schedules: [],
+    metalPrices: [],
     exportedAt: new Date().toISOString(),
     baseCurrency: 'CNY',
     currencies: ['CNY'],

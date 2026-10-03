@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ test('liability account credit balances survive revisions, replay, calendar, pri
     return { id: u.id, cookie: 'wp_session=' + token };
   }
   async function call(path: string, cookie: string, method = 'GET', body?: unknown) {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: cookie,
@@ -163,7 +164,7 @@ test('liability account credit balances survive revisions, replay, calendar, pri
     assert.equal(zip.status, 200);
     const backup: any = await readBackupZip(Buffer.from(await zip.arrayBuffer()));
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     const restored = (await call('/overview', b.cookie)).data;

@@ -28,7 +28,7 @@
     },
     {
       "TABLE_NAME": "agentpolicy",
-      "TABLE_COMMENT": "用户的 Agent 写入策略"
+      "TABLE_COMMENT": "已停用的历史 Agent 策略数据，保留原数据但不参与权限判定"
     },
     {
       "TABLE_NAME": "exchangerate",
@@ -215,7 +215,7 @@
     {
       "TABLE_NAME": "agentgrant",
       "COLUMN_NAME": "scopes",
-      "COLUMN_COMMENT": "权限列表：read、draft、write、sensitive"
+      "COLUMN_COMMENT": "权限列表：read、draft 或 write；隐藏账户附加权限 hidden_read、hidden_write"
     },
     {
       "TABLE_NAME": "agentgrant",
@@ -235,7 +235,7 @@
     {
       "TABLE_NAME": "agentgrant",
       "COLUMN_NAME": "expiresAt",
-      "COLUMN_COMMENT": "到期时间，UTC"
+      "COLUMN_COMMENT": "访问令牌到期时间，UTC；空表示可撤销的永久个人令牌"
     },
     {
       "TABLE_NAME": "agentgrant",

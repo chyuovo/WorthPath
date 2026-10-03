@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { metalConfig, metalPriceInput } from './metals';
+import { metalConfig, metalHoldingInput } from './metals';
 import { scheduleInput } from './schedules';
 import { z } from 'zod';
 import {
@@ -47,7 +47,7 @@ export function setupOpenApi(app: INestApplication) {
     'PATCH /api/schedules/{id}': z.object({ enabled: z.boolean() }).strict(),
     'PATCH /api/settings': settingsInput,
     'PUT /api/metals/{id}': metalConfig,
-    'POST /api/metals/prices': metalPriceInput,
+    'POST /api/metals/holdings': metalHoldingInput,
     'POST /api/backup/clear': z.object({ confirmation: z.literal('确定清空') }),
     'POST /api/backup/import-file': z.object({
       token: z.string().uuid(),
@@ -155,14 +155,6 @@ export function setupOpenApi(app: INestApplication) {
           },
         };
       }
-      if (['/api/backup/preview', '/api/backup/import'].includes(path))
-        operation.requestBody = {
-          required: true,
-          description: '旧版 JSON 兼容入口；新版请使用 upload + import-file（支持完整 ZIP 备份）',
-          content: {
-            'application/json': { schema: { type: 'object', additionalProperties: true } },
-          },
-        };
     }
   }
   SwaggerModule.setup('api/docs', app, document, {

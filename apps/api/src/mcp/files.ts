@@ -8,28 +8,20 @@ import {
 } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { Request, Response, Express } from 'express';
-import multer, { diskStorage, memoryStorage } from 'multer';
-import { tmpdir } from 'node:os';
-import { unlink } from 'node:fs/promises';
+import multer, { memoryStorage } from 'multer';
 import { AgentOAuth, urls } from './oauth';
 import { UserRequest } from '../auth';
-import { BackupBusinessService } from '../backup';
 import { IconsBusinessService } from '../icons';
-import { MAX_UPLOAD_BYTES } from '../zip';
-import { Database } from '../database';
 import { InvalidTokenError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 
 type Ticket = {
   userId: string;
   grantId: string;
   expires: number;
-  kind: 'backup' | 'icon' | 'download' | 'image';
-  snapshot?: string;
+  kind: 'icon' | 'image';
   iconId?: string;
   buffer?: Buffer;
   name?: string;
-  preview?: unknown;
-  token?: string;
 };
 @Injectable()
 export class AgentFiles implements OnModuleDestroy {
@@ -39,9 +31,7 @@ export class AgentFiles implements OnModuleDestroy {
   }, 60000).unref();
   constructor(
     private oauth: AgentOAuth,
-    private backup: BackupBusinessService,
     private icons: IconsBusinessService,
-    private db: Database,
   ) {}
   onModuleDestroy() {
     clearInterval(this.timer);
@@ -60,19 +50,15 @@ export class AgentFiles implements OnModuleDestroy {
       kind,
       iconId,
       expires: Date.now() + 600000,
-      ...(kind === 'download' ? { snapshot: await this.backup.snapshot(r.userId) } : {}),
     });
     return {
       fileId: id,
       url: new URL('/api/agent/files/' + id, urls().issuer).toString(),
-      method: kind === 'download' || kind === 'image' ? 'GET' : 'POST',
+      method: kind === 'image' ? 'GET' : 'POST',
       headers: { Authorization: 'Bearer <your access token>' },
       expiresAt: new Date(Date.now() + 600000).toISOString(),
-      maxBytes: kind === 'backup' ? MAX_UPLOAD_BYTES : 2 * 1024 * 1024,
-      format:
-        kind === 'backup'
-          ? 'multipart/form-data; field file; WorthPath ZIP/JSON'
-          : 'multipart/form-data; field file; image',
+      maxBytes: 2 * 1024 * 1024,
+      format: kind === 'image' ? 'image/png' : 'multipart/form-data; field file; image',
     };
   }
   private ticket(r: UserRequest, grantId: string, id: string) {
@@ -94,9 +80,7 @@ export class AgentFiles implements OnModuleDestroy {
     const t = this.ticket(r, grantId, id);
     return {
       fileId: id,
-      uploaded: !!t.buffer || !!t.token,
-      token: t.token,
-      preview: t.preview,
+      uploaded: !!t.buffer,
       expiresAt: new Date(t.expires).toISOString(),
     };
   }
@@ -117,13 +101,6 @@ export class AgentFiles implements OnModuleDestroy {
     };
   }
   install(app: Express) {
-    const disk = multer({
-      storage: diskStorage({
-        destination: tmpdir(),
-        filename: (_r, _f, cb) => cb(null, 'worthpath-import-' + randomUUID() + '.zip'),
-      }),
-      limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 0 },
-    }).single('file');
     const memory = multer({
       storage: memoryStorage(),
       limits: { fileSize: 2 * 1024 * 1024, files: 1, fields: 0 },
@@ -136,38 +113,23 @@ export class AgentFiles implements OnModuleDestroy {
           res.status(405).end();
           return;
         }
-        if ((req.method === 'POST') !== (t.kind === 'backup' || t.kind === 'icon')) {
+        if ((req.method === 'POST') !== (t.kind === 'icon')) {
           res.status(405).end();
           return;
         }
         if (req.method === 'GET') {
-          if (t.kind === 'download') await this.backup.download(r, res, t.snapshot);
-          else await this.icons.image(r, t.iconId!, res);
+          await this.icons.image(r, t.iconId!, res);
           return;
         }
         const selected = grant.scopes as string[];
         if (!selected.includes('draft') && !selected.includes('write'))
           throw new ForbiddenException('上传需要 draft 或 write 权限');
-        if (
-          (await this.db.agentPolicy.findUnique({ where: { userId: grant.userId } }))?.mode ===
-          'readonly'
-        )
-          throw new ForbiddenException('当前策略为只读');
         await new Promise<void>((resolve, reject) =>
-          (t.kind === 'backup' ? disk : memory)(req, res, (e) => (e ? reject(e) : resolve())),
+          memory(req, res, (e) => (e ? reject(e) : resolve())),
         );
         if (!req.file) throw new BadRequestException('请选择文件');
-        try {
-          if (t.kind === 'backup') {
-            const v = await this.backup.upload(r, req.file);
-            t.token = v.token;
-            t.preview = v;
-          } else t.buffer = req.file.buffer;
-          res.json(await this.inspect(r, grant.id, String(req.params.id)));
-        } catch (e) {
-          if (req.file.path) await unlink(req.file.path).catch(() => {});
-          throw e;
-        }
+        t.buffer = req.file.buffer;
+        res.json(await this.inspect(r, grant.id, String(req.params.id)));
       } catch (e) {
         if (!res.headersSent)
           res

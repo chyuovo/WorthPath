@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { api, money, type Position, currencies } from './api';
+import { api, money, type Position } from './api';
 import { t as tr } from './i18n';
 import { useToast } from './Toast';
 type Quote = { metalType: string; currency: string; price: string; date: string; source: string };
@@ -87,7 +87,7 @@ export function MetalPanel({
       <h2>{tr('贵金属估价')}</h2>
       <p className="muted">
         {tr(
-          '黄金与白银按重量、纯度及每克参考价估值。每日尝试更新，失败保留旧价；参考价不含工费与回收折价。',
+          '黄金与白银按重量及每克参考价估值。每日尝试更新，失败保留旧价；参考价不含工费与回收折价。',
         )}
       </p>
       {position && (
@@ -96,7 +96,6 @@ export function MetalPanel({
             position.id +
             String(position.metalGrams) +
             String(position.autoValuation) +
-            String(position.metalPurity) +
             String(position.metalType) +
             String(position.metalCostPerGram)
           }
@@ -109,7 +108,6 @@ export function MetalPanel({
                   metalType: f.get('metalType'),
                   metalGrams: f.get('metalGrams'),
                   metalCostPerGram: f.get('metalCostPerGram') || null,
-                  metalPurity: f.get('metalPurity'),
                   autoValuation: f.has('autoValuation'),
                 }),
               '贵金属估价设置已保存',
@@ -134,18 +132,6 @@ export function MetalPanel({
             />
           </label>
           <label>
-            {tr('纯度（0–1，例如 0.999）')}
-            <input
-              name="metalPurity"
-              required
-              type="number"
-              min="0.00000001"
-              max="1"
-              step="0.00000001"
-              defaultValue={position.metalPurity || '1'}
-            />
-          </label>
-          <label>
             {tr('买入价（每克，选填）')}（{position.currency}）
             <input
               name="metalCostPerGram"
@@ -155,7 +141,7 @@ export function MetalPanel({
             />
           </label>
           <p className="muted">
-            {tr('买入成本按实物总克数计算；参考估值按克数和纯度计算。清空买入价后不显示盈亏。')}
+            {tr('买入成本按总克数计算；新持仓按克数和参考价估值。清空买入价后不显示盈亏。')}
           </p>
           {position.metalCost != null && (
             <p>
@@ -205,57 +191,6 @@ export function MetalPanel({
       <p className={data?.status.state === 'error' ? 'danger-text' : 'muted'}>
         {tr(data?.status.message || '尚未尝试更新')}
       </p>
-      <details>
-        <summary>{tr('手动录入贵金属价格')}</summary>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const f = new FormData(e.currentTarget);
-            void act(
-              () => api('/metals/prices', 'POST', Object.fromEntries(f)),
-              '贵金属价格已保存',
-            );
-          }}
-        >
-          <label>
-            {tr('贵金属品种')}
-            <select name="metalType" defaultValue={position?.metalType || 'gold'}>
-              <option value="gold">{tr('黄金')}</option>
-              <option value="silver">{tr('白银')}</option>
-            </select>
-          </label>
-          <label>
-            {tr('币种')}
-            <select name="currency" defaultValue={position?.currency || 'CNY'}>
-              {currencies.map((c) => (
-                <option key={c}>{c}</option>
-              ))}
-            </select>
-          </label>
-          <label>
-            {tr('每克纯金属价格')}
-            <input
-              name="price"
-              required
-              inputMode="decimal"
-              pattern="(0|[1-9][0-9]{0,11})([.][0-9]{1,12})?"
-            />
-          </label>
-          <label>
-            {tr('报价日期')}
-            <input
-              name="date"
-              type="date"
-              required
-              max={new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)}
-              defaultValue={new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10)}
-            />
-          </label>
-          <button className="primary" disabled={busy}>
-            {tr('保存参考价')}
-          </button>
-        </form>
-      </details>
       {!position && (
         <div className="table-wrap">
           <table>

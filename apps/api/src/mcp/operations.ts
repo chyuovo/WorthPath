@@ -6,12 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma, AgentGrant } from '@prisma/client';
-import { compare } from 'bcryptjs';
 import { Response } from 'express';
 import { z } from 'zod';
 import { Database } from '../database';
-import { AuthBusinessService, UserRequest } from '../auth';
-import { BackupBusinessService } from '../backup';
+import { UserRequest } from '../auth';
 import { AgentOAuth, digest, webLink } from './oauth';
 import { AgentCatalogue, ToolDefinition, empty } from './catalogue';
 import { AgentFiles } from './files';
@@ -46,40 +44,22 @@ export class AgentOperations {
     private db: Database,
     private oauth: AgentOAuth,
     catalogue: AgentCatalogue,
-    private auth: AuthBusinessService,
-    private backup: BackupBusinessService,
     private files: AgentFiles,
   ) {
     this.tools = [
       ...catalogue.tools,
       {
-        name: 'backup_export',
-        description:
-          '创建短期受 Bearer 保护的完整 ZIP 备份下载入口，包含隐藏项目；网页验证密码并确认后 operation_get 获取入口，URL 本身不是凭证。',
-        schema: empty,
-        scope: 'sensitive',
-        run: async (r) => this.files.issue(r, r.agentGrantId!, 'download'),
-      },
-      {
         name: 'icon_publish',
-        description:
-          '保存已上传图标，shared=true 发布到共享库，须中文名称及网页确认。先 file_upload_request(kind=icon)。',
+        description: '保存已上传私有图标，不允许发布共享图标。先 file_upload_request(kind=icon)。',
         schema: z
           .object({
             fileId: z.string().uuid(),
             name: z.string().min(1).max(100),
-            shared: z.boolean().default(false),
+            shared: z.literal(false).default(false),
           })
           .strict(),
         scope: 'write',
         run: (r, p) => this.files.publishIcon(r, r.agentGrantId!, p.fileId, p.name, p.shared),
-      },
-      {
-        name: 'hidden_lock',
-        description: '立即锁定本连接的隐藏项目授权。',
-        schema: empty,
-        scope: 'write',
-        run: async (r) => this.auth.lock(r),
       },
     ];
   }
@@ -88,13 +68,32 @@ export class AgentOperations {
     if (!t) throw new BadRequestException('未知工具');
     return t;
   }
-  async context(grant: AgentGrant) {
-    const s = await this.db.session.findUnique({ where: { id: grant.sessionId } });
+  async context(grant: AgentGrant, writing = false) {
+    let s = await this.db.session.findUnique({ where: { id: grant.sessionId } });
+    // A permanent PAT is the credential. Its internal business session has a bounded
+    // lifetime and may be recreated after the normal expired-session cleanup.
+    if (!grant.expiresAt && !grant.clientId && (!s || s.expiresAt <= new Date())) {
+      await this.oauth.grant(grant.id, grant.userId);
+      s = await this.db.session.upsert({
+        where: { id: grant.sessionId },
+        create: {
+          id: grant.sessionId,
+          userId: grant.userId,
+          expiresAt: new Date(Date.now() + 86400000),
+        },
+        update: {
+          expiresAt: new Date(Date.now() + 86400000),
+          revealUntil: null,
+          backupDigest: null,
+          backupExpiresAt: null,
+        },
+      });
+    }
     if (!s || s.expiresAt <= new Date()) throw new ForbiddenException('连接会话失效，请重新授权');
     return {
       userId: grant.userId,
       sessionId: grant.sessionId,
-      revealed: !!s.revealUntil && +s.revealUntil > Date.now(),
+      revealed: (grant.scopes as string[]).includes(writing ? 'hidden_write' : 'hidden_read'),
       agent: true,
       agentGrantId: grant.id,
       cookies: {},
@@ -134,35 +133,26 @@ export class AgentOperations {
     ]);
     return digest(stable(plain(data)));
   }
-  private sensitive(t: ToolDefinition, p: any) {
-    return (
-      t.scope === 'sensitive' ||
-      (t.name === 'settings_update' && p.requireHiddenPassword !== undefined) ||
-      (t.name === 'icon_publish' && p.shared)
-    );
-  }
   private async permission(grant: AgentGrant, t: ToolDefinition, p: any) {
-    const selected = grant.scopes as string[],
-      mode =
-        (await this.db.agentPolicy.findUnique({ where: { userId: grant.userId } }))?.mode ||
-        'draft';
+    const selected = grant.scopes as string[];
     if (!selected.includes('read')) throw new ForbiddenException('缺少 read 权限');
-    if (t.scope === 'read') return { mode, sensitive: false };
-    const sensitive = this.sensitive(t, p);
-    if (sensitive && !selected.includes('sensitive'))
-      throw new ForbiddenException('此操作需要 sensitive 权限');
-    if (!sensitive && !selected.includes('write') && !selected.includes('draft'))
-      throw new ForbiddenException('缺少 draft 或 write 权限');
-    if (mode === 'readonly' && !['backup_export', 'hidden_unlock_request'].includes(t.name))
-      throw new ForbiddenException('当前用户写入策略为只读');
-    return { mode, sensitive };
+    const mode = selected.includes('write')
+      ? 'direct'
+      : selected.includes('draft')
+        ? 'draft'
+        : 'readonly';
+    if (t.scope === 'read') return { mode };
+    if (mode === 'readonly') throw new ForbiddenException('本连接只有只读权限');
+    if (!selected.includes('hidden_write') && (p.hidden === true || p.data?.hidden === true))
+      throw new ForbiddenException('缺少隐藏账户修改权限');
+    return { mode };
   }
   async call(grantId: string, name: string, input: any) {
     const t = this.get(name);
     const parsed = (t.scope === 'read' ? t.schema : t.schema.safeExtend(writing)).parse(input);
     const { idempotencyKey, expectedState, ...p } = parsed as any;
-    const grant = await this.oauth.grant(grantId),
-      permission = await this.permission(grant, t, p);
+    const grant = await this.oauth.grant(grantId);
+    await this.permission(grant, t, p);
     if (t.scope === 'read') return t.run!(await this.context(grant), p);
     const hash = digest(stable({ tool: name, parameters: p, expectedState }));
     return this.db.atomic(async () => {
@@ -192,11 +182,7 @@ export class AgentOperations {
           expiresAt: new Date(Date.now() + 600000),
         },
       });
-      if (
-        access.sensitive ||
-        access.mode === 'draft' ||
-        !(fresh.scopes as string[]).includes('write')
-      )
+      if (access.mode === 'draft' || !(fresh.scopes as string[]).includes('write'))
         return this.view(row);
       const result = await this.execute(t, fresh, p);
       return this.view(
@@ -208,7 +194,7 @@ export class AgentOperations {
     });
   }
   private async execute(t: ToolDefinition, grant: AgentGrant, p: any) {
-    return t.run!(await this.context(grant), p);
+    return t.run!(await this.context(grant, true), p);
   }
   private view(row: any) {
     return {
@@ -234,22 +220,9 @@ export class AgentOperations {
     const t = this.get(row.tool),
       grant = await this.oauth.grant(row.grantId, userId);
     let impact: unknown = { parameters: row.parameters, message: t.description };
-    if (t.name === 'backup_import')
-      impact = (
-        await this.backup.inspectUpload(await this.context(grant), (row.parameters as any).token)
-      ).preview;
-    if (t.web === 'clear')
-      impact = {
-        positions: await this.db.position.count({ where: { userId } }),
-        history: await this.db.revision.count({ where: { position: { userId } } }),
-        schedules: await this.db.schedule.count({ where: { userId } }),
-        message: '清空账户、资产、债务、历史、私有图标和汇率；保留账号和个人设置。先下载当前备份。',
-      };
     return {
       ...this.view(row),
       impact,
-      web: t.web,
-      sensitive: this.sensitive(t, row.parameters),
       description: t.description,
     };
   }
@@ -257,10 +230,6 @@ export class AgentOperations {
     const input = z
       .object({
         approve: z.boolean(),
-        password: z.string().max(72).optional(),
-        username: z.string().max(64).optional(),
-        newPassword: z.string().max(72).optional(),
-        confirmation: z.string().max(20).optional(),
       })
       .strict()
       .parse(raw);
@@ -280,44 +249,10 @@ export class AgentOperations {
       const grant = await this.oauth.grant(row.grantId, r.userId),
         t = this.get(row.tool),
         p = row.parameters as any;
-      const access = await this.permission(grant, t, p);
-      if (access.sensitive) {
-        const u = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
-        if (!input.password || !(await compare(input.password, u.passwordHash)))
-          throw new ForbiddenException('请验证当前密码');
-      }
+      await this.permission(grant, t, p);
       if ((await this.state(r.userId)) !== row.snapshot)
         throw new ConflictException('账目已变化，请取消并重新创建操作');
-      let result: unknown;
-      if (t.web === 'credentials') {
-        result = await this.auth.changeCredentials(
-          r,
-          {
-            currentPassword: input.password,
-            username: input.username,
-            newPassword: input.newPassword,
-          },
-          res,
-        );
-        await this.db.agentGrant.updateMany({
-          where: { userId: r.userId, id: { not: grant.id } },
-          data: { revokedAt: new Date() },
-        });
-        await this.db.session.create({
-          data: { id: grant.sessionId, userId: r.userId, expiresAt: new Date(Date.now() + 300000) },
-        });
-        await this.db.agentGrant.update({
-          where: { id: grant.id },
-          data: { scopes: ['read'], expiresAt: new Date(Date.now() + 300000), refreshDigest: null },
-        });
-      } else if (t.web === 'reveal')
-        result = await this.auth.reveal(
-          Object.assign(Object.create(r), { sessionId: grant.sessionId }),
-          { password: input.password },
-        );
-      else if (t.web === 'clear')
-        result = await this.backup.clear(r, { confirmation: input.confirmation });
-      else result = await this.execute(t, grant, p);
+      const result = await this.execute(t, grant, p);
       return this.view(
         await this.db.agentOperation.update({
           where: { id },
@@ -326,16 +261,11 @@ export class AgentOperations {
       );
     }, 300000);
   }
-  async uploadRequest(grantId: string, kind: 'backup' | 'icon') {
+  async uploadRequest(grantId: string, kind: 'icon') {
     const grant = await this.oauth.grant(grantId);
     const selected = grant.scopes as string[];
     if (!selected.includes('draft') && !selected.includes('write'))
       throw new ForbiddenException('上传需要 draft 或 write 权限');
-    if (
-      (await this.db.agentPolicy.findUnique({ where: { userId: grant.userId } }))?.mode ===
-      'readonly'
-    )
-      throw new ForbiddenException('当前策略为只读');
     return this.files.issue(await this.context(grant), grantId, kind);
   }
   async fileStatus(grantId: string, id: string) {

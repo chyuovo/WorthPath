@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ test('credentials rotate sessions; deleting paired and empty histories preserves
     ids: string[] = [];
   const origin = process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!;
   async function call(path: string, cookie = '', method = 'GET', body?: unknown) {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: cookie,
@@ -141,6 +142,30 @@ test('credentials rotate sessions; deleting paired and empty histories preserves
     const backup: any = await readBackupZip(bytes);
     assert.equal(backup.positions.find((p: any) => p.id === emptyId).revisions.length, 0);
     assert.equal(backup.positions.find((p: any) => p.id === sourceId).revisions[0].amount, '-10');
+    const beforeRejected = await db.position.count({ where: { userId: b.id } });
+    for (const version of [1, 2, 3, 9]) {
+      const unsupported = new FormData();
+      unsupported.set(
+        'file',
+        new Blob([JSON.stringify({ ...backup, version })], { type: 'application/json' }),
+        'backup.json',
+      );
+      const rejected = await fetch(base + '/backup/upload', {
+        method: 'POST',
+        headers: { Cookie: b.cookie, Origin: origin },
+        body: unsupported,
+      });
+      assert.equal(rejected.status, 400);
+    }
+    for (const path of ['/backup/import', '/backup/preview']) {
+      const removed = await fetch(base + path, {
+        method: 'POST',
+        headers: { Cookie: b.cookie, Origin: origin, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ confirmed: true, backup }),
+      });
+      assert.equal(removed.status, 404);
+    }
+    assert.equal(await db.position.count({ where: { userId: b.id } }), beforeRejected);
     const form = new FormData();
     form.append('file', new Blob([bytes]), 'backup.zip');
     const upload = await fetch(base + '/backup/upload', {
@@ -234,10 +259,13 @@ test('credentials rotate sessions; deleting paired and empty histories preserves
       emptyAccountData.positions.find((p: any) => p.id === sourceId).revisions.at(-1).amount,
       '-5',
     );
-    assert.equal((await call('/backup/preview', b.cookie, 'POST', emptyAccountData)).status, 409);
+    assert.equal(
+      (await call('/backup/preview-fixture', b.cookie, 'POST', emptyAccountData)).status,
+      409,
+    );
     const fresh = await user();
     assert.equal(
-      (await call('/backup/preview', fresh.cookie, 'POST', emptyAccountData)).status,
+      (await call('/backup/preview-fixture', fresh.cookie, 'POST', emptyAccountData)).status,
       201,
     );
   } finally {

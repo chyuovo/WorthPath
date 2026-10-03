@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
     names: string[] = [],
     publicIds: string[] = [];
   async function call(path: string, cookie = '', method = 'GET', data?: unknown) {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: cookie,
@@ -153,16 +154,21 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
     assert.doesNotMatch(JSON.stringify(backup.data), /passwordHash|sessionId|ownerId|token/i);
     const broken = structuredClone(backup.data);
     broken.icons[0].image = 'invalid';
-    assert.equal((await call('/backup/preview', b.cookie, 'POST', broken)).status, 400);
+    assert.equal((await call('/backup/preview-fixture', b.cookie, 'POST', broken)).status, 400);
     const before = await db.icon.count();
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup: broken })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup: broken }))
+        .status,
       400,
     );
     assert.equal(await db.icon.count(), before);
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup: backup.data }))
-        .status,
+      (
+        await call('/backup/restore-fixture', b.cookie, 'POST', {
+          confirmed: true,
+          backup: backup.data,
+        })
+      ).status,
       201,
     );
     const imported = await db.position.findMany({

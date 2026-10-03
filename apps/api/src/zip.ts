@@ -3,8 +3,8 @@ import * as yauzl from 'yauzl';
 import { createHash } from 'node:crypto';
 import { BadRequestException } from '@nestjs/common';
 import { z } from 'zod';
+import { BACKUP_ZIP_VERSION } from './backup-format';
 import type { Backup } from './backup';
-import { accountGroupOrder, sessionHours, overviewCards } from './validation';
 export const MAX_UPLOAD_BYTES = 512 * 1024 * 1024;
 const MAX_EXPANDED_BYTES = 1024 * 1024 * 1024;
 const files = [
@@ -38,9 +38,9 @@ export function packBackup(b: Backup) {
     ),
     'links.json': b.links,
     'rates.json': b.rates,
-    'icons.json': b.icons || [],
-    'transfers.json': b.transfers || [],
-    'schedules.json': b.schedules || [],
+    'icons.json': b.icons,
+    'transfers.json': b.transfers,
+    'schedules.json': b.schedules,
   };
   const contents = Object.fromEntries(
     files.map((name) => [name, JSON.stringify(data[name], null, 2)]),
@@ -48,7 +48,7 @@ export function packBackup(b: Backup) {
   contents['manifest.json'] = JSON.stringify(
     {
       format: 'worthpath',
-      version: 8,
+      version: BACKUP_ZIP_VERSION,
       exportedAt: b.exportedAt,
       files: files.map((name) => ({ name, sha256: sha(contents[name]) })),
     },
@@ -123,30 +123,17 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const manifest = z
       .object({
         format: z.literal('worthpath'),
-        version: z.union([
-          z.literal(3),
-          z.literal(4),
-          z.literal(5),
-          z.literal(6),
-          z.literal(7),
-          z.literal(8),
-        ]),
+        version: z.literal(BACKUP_ZIP_VERSION),
         exportedAt: z.iso.datetime(),
         files: z
           .array(
             z.object({ name: z.enum(files), sha256: z.string().regex(/^[a-f0-9]{64}$/) }).strict(),
           )
-          .min(files.length - 3)
-          .max(files.length),
+          .length(files.length),
       })
       .strict()
       .parse(parse('manifest.json'));
-    const expected = files.filter(
-      (f) =>
-        (manifest.version >= 4 || f !== 'icons.json') &&
-        (manifest.version >= 5 || f !== 'transfers.json') &&
-        (manifest.version >= 7 || f !== 'schedules.json'),
-    );
+    const expected = files;
     if (
       contents.size !== expected.length + 1 ||
       new Set(manifest.files.map((f) => f.name)).size !== expected.length ||
@@ -157,21 +144,8 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const settings = z
       .object({
         baseCurrency: z.string(),
-        metalPrices: z.array(z.record(z.string(), z.unknown())).optional(),
-        preferences: z
-          .object({
-            showSidebar: z.boolean().optional(),
-            hiddenMenus: z.array(z.string()).optional(),
-            accountGroupOrder: accountGroupOrder.optional(),
-            sessionHours: sessionHours.optional(),
-            requireHiddenPassword: z.boolean().optional(),
-            overviewCards: overviewCards.optional(),
-            includeIndependentAssets: z.boolean().optional(),
-            showNotes: z.boolean().optional(),
-            idleMinutes: z.number().int().min(0).max(1440),
-          })
-          .strict()
-          .optional(),
+        metalPrices: z.array(z.record(z.string(), z.unknown())),
+        preferences: z.record(z.string(), z.unknown()),
       })
       .strict()
       .parse(parse('settings.json'));
@@ -194,20 +168,20 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     }
     return {
       format: 'worthpath',
-      version: 2,
+      version: BACKUP_ZIP_VERSION,
       exportedAt: manifest.exportedAt,
       ...settings,
       currencies: parse('currencies.json'),
       positions: positions.map((p) => ({ ...p, revisions: grouped.get(p.id) || [] })),
       links: parse('links.json'),
       rates: parse('rates.json'),
-      ...(manifest.version >= 5 ? { transfers: parse('transfers.json') } : {}),
-      ...(manifest.version >= 7 ? { schedules: parse('schedules.json') } : {}),
-      ...(manifest.version >= 4 ? { icons: parse('icons.json') } : {}),
+      transfers: parse('transfers.json'),
+      schedules: parse('schedules.json'),
+      icons: parse('icons.json'),
     };
   } catch {
     throw new BadRequestException(
-      '备份 ZIP 无效：请检查 JSON 文件、完整性及文件大小（上传 512 MB，解压总计 1 GB；不限制记录条数）',
+      '备份 ZIP 无效：仅接受当前 v9 格式，不支持旧备份。请检查 JSON 文件、完整性及文件大小（上传 512 MB，解压总计 1 GB；不限制记录条数）',
     );
   } finally {
     zip.close();

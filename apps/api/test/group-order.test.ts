@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import { randomUUID, randomBytes, createHash } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import { readBackupZip } from '../src/zip';
 const base = process.env.TEST_API_URL || 'http://127.0.0.1:3100/api';
-test('group order persists per user, validates input and survives ZIP and legacy imports', async () => {
+test('group order persists per user, validates input and survives ZIP and reject incomplete imports', async () => {
   const db = new PrismaClient(),
     ids: string[] = [];
   const origin = process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!;
@@ -25,7 +26,7 @@ test('group order persists per user, validates input and survives ZIP and legacy
     return { id: u.id, cookie: 'wp_session=' + token };
   }
   async function call(path: string, cookie: string, method = 'GET', body?: unknown) {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: cookie,
@@ -80,20 +81,20 @@ test('group order persists per user, validates input and survives ZIP and legacy
     const backup: any = await readBackupZip(Buffer.from(await zip.arrayBuffer()));
     assert.deepEqual(backup.preferences.accountGroupOrder, order);
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     assert.deepEqual((await call('/auth/me', b.cookie)).data.accountGroupOrder, order);
     await call('/settings', b.cookie, 'PATCH', { accountGroupOrder: ['日常'] });
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       409,
     );
     assert.deepEqual((await call('/settings', b.cookie)).data.accountGroupOrder, ['日常']);
     delete backup.preferences.accountGroupOrder;
     assert.equal(
-      (await call('/backup/import', c.cookie, 'POST', { confirmed: true, backup })).status,
-      201,
+      (await call('/backup/restore-fixture', c.cookie, 'POST', { confirmed: true, backup })).status,
+      400,
     );
     assert.deepEqual((await call('/auth/me', c.cookie)).data.accountGroupOrder, []);
     const comments: any[] = await db.$queryRawUnsafe(

@@ -6,9 +6,8 @@ import { TransfersBusinessService } from '../transfers';
 import { SchedulesBusinessService, scheduleInput } from '../schedules';
 import { CalendarBusinessService } from '../calendar';
 import { SettingsBusinessService } from '../rates';
-import { MetalsBusinessService, metalConfig, metalHoldingInput, metalPriceInput } from '../metals';
+import { MetalsBusinessService, metalConfig, metalHoldingInput } from '../metals';
 import { IconsBusinessService } from '../icons';
-import { BackupBusinessService } from '../backup';
 import {
   positionInput,
   positionMeta,
@@ -49,9 +48,8 @@ export type ToolDefinition = {
   name: string;
   description: string;
   schema: z.ZodObject<any>;
-  scope: 'read' | 'write' | 'sensitive';
+  scope: 'read' | 'write';
   destructive?: boolean;
-  web?: 'credentials' | 'reveal' | 'clear';
   run?: (r: UserRequest, p: any) => Promise<unknown>;
 };
 @Injectable()
@@ -65,7 +63,6 @@ export class AgentCatalogue {
     settings: SettingsBusinessService,
     metals: MetalsBusinessService,
     icons: IconsBusinessService,
-    backup: BackupBusinessService,
   ) {
     const read = (
       name: string,
@@ -282,12 +279,12 @@ export class AgentCatalogue {
       ),
       write(
         'settings_update',
-        '修改个人设置、本位币、分组排序、登录时长及纳入统计配置。隐私设置变更需网页确认。',
-        settingsInput,
+        '修改个人设置、本位币、分组排序、登录时长及纳入统计配置。安全设置仅在网站修改。',
+        settingsInput.safeExtend({
+          requireHiddenPassword: z.never().optional(),
+          sessionHours: z.never().optional(),
+        }),
         (r, p) => settings.update(r, p, undefined as any),
-      ),
-      write('rates_refresh', '重试公共日汇率更新，失败保留原币和历史汇率。', empty, (r) =>
-        settings.refresh(r),
       ),
       write(
         'metal_holding_create',
@@ -296,18 +293,9 @@ export class AgentCatalogue {
         (r, p) => metals.create(r, p),
       ),
       read('metals_prices', '最近 100 条金银每克报价和更新状态。', empty, (r) => metals.list(r)),
-      write('metals_refresh', '刷新贵金属报价并沿用现有自动估值规则。', empty, (r) =>
-        metals.refresh(r),
-      ),
-      write(
-        'metal_price_set',
-        '设置指定日期、币种、品种每克价格；price 十进制字符串，可能触发自动估值历史。',
-        metalPriceInput,
-        (r, p) => metals.manual(r, p),
-      ),
       write(
         'metal_configure',
-        '设置金银重量、纯度和自动估值，复用现有估值规则。',
+        '设置金银重量和自动估值，复用现有估值规则。',
         z.object({ id, data: metalConfig }).strict(),
         (r, p) => metals.configure(r, p.id, p.data),
       ),
@@ -328,46 +316,6 @@ export class AgentCatalogue {
           .strict(),
         (r, p) => icons.list(r, p.q, String(p.page)),
       ),
-      {
-        name: 'backup_import',
-        description:
-          '提交已上传备份的追加恢复。先 file_upload_request → 上传 → import_preview；强制网页展示影响并确认，事务失败不保留部分账目。',
-        schema: z.object({ token: id }).strict(),
-        scope: 'sensitive',
-        destructive: true,
-        run: (r, p) => backup.restoreUpload(r, p.token),
-      },
-      read(
-        'import_preview',
-        '预检已上传备份并显示追加影响、冲突和条数。',
-        z.object({ token: id }).strict(),
-        async (r, p) => (await backup.inspectUpload(r, p.token)).preview,
-      ),
-      {
-        name: 'credentials_change_request',
-        description:
-          '发起账号或密码修改，返回网页入口。当前密码及新密码仅在网页输入，不传给 Agent。完成后 operation_get 查询结果。',
-        schema: empty,
-        scope: 'sensitive',
-        web: 'credentials',
-      },
-      {
-        name: 'hidden_unlock_request',
-        description:
-          '发起隐藏项目解锁。网页用户验证密码后本连接解锁 5 分钟；operation_get 查询结果。',
-        schema: empty,
-        scope: 'sensitive',
-        web: 'reveal',
-      },
-      {
-        name: 'data_clear_request',
-        description:
-          '发起清空本账号财务数据。网页须先下载当前备份、验证密码并输入“确定清空”，展示数量；账号保留。',
-        schema: empty,
-        scope: 'sensitive',
-        web: 'clear',
-        destructive: true,
-      },
     ];
   }
   get(name: string) {

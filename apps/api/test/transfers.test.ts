@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
   const db = new PrismaClient(),
     names: string[] = [];
   async function call(path: string, cookie = '', method = 'GET', data?: unknown) {
-    const r = await fetch(base + path, {
+    const r = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: cookie,
@@ -227,12 +228,13 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     const broken = structuredClone(backup);
     broken.transfers[0].amount = '999';
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup: broken })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup: broken }))
+        .status,
       400,
     );
     assert.equal(await db.transfer.count({ where: { userId: b.id } }), 0);
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     const restored = (await call('/backup', b.cookie)).data;
@@ -241,7 +243,7 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     assert.equal((await call('/settings', b.cookie)).data.showNotes, true);
     const c = await account();
     assert.equal(
-      (await call('/backup/import', c.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', c.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     assert.equal((await call('/settings', c.cookie)).data.showNotes, false);

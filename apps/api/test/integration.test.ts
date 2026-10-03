@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +12,7 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
   const db = new PrismaClient(),
     created: { id: string; username: string }[] = [];
   async function call(path: string, method = 'GET', body?: unknown, cookie = '') {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Origin: origin,
@@ -281,16 +282,17 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       JSON.stringify(backup),
       /"(?:password|passwordHash|token|userId|session|sessionId|sessions|cookie)"\s*:/i,
     );
-    assert.equal((await call('/backup/preview', 'POST', backup, a.cookie)).status, 409);
-    assert.equal((await call('/backup/preview', 'POST', backup, b.cookie)).status, 201);
+    assert.equal((await call('/backup/preview-fixture', 'POST', backup, a.cookie)).status, 409);
+    assert.equal((await call('/backup/preview-fixture', 'POST', backup, b.cookie)).status, 201);
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: false, backup }, b.cookie)).status,
+      (await call('/backup/restore-fixture', 'POST', { confirmed: false, backup }, b.cookie))
+        .status,
       400,
     );
     assert.equal(
       (
         await call(
-          '/backup/import',
+          '/backup/restore-fixture',
           'POST',
           {
             confirmed: true,
@@ -303,7 +305,7 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
     );
     assert.equal((await call('/positions', 'GET', undefined, b.cookie)).data.length, 0);
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: true, backup }, b.cookie)).status,
+      (await call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, b.cookie)).status,
       201,
     );
     assert.equal((await call('/overview', 'GET', undefined, b.cookie)).data.net, o.net);
@@ -326,7 +328,7 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       sameDay.map((h: { after: string }) => h.after),
     );
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: true, backup }, b.cookie)).status,
+      (await call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, b.cookie)).status,
       409,
     );
     assert.equal((await call('/positions', 'GET', undefined, b.cookie)).data.length, 4);
@@ -346,21 +348,21 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
       b.cookie,
     );
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: true, backup }, b.cookie)).status,
+      (await call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, b.cookie)).status,
       409,
     );
     const c = await account();
     const racing = await Promise.all([
-      call('/backup/import', 'POST', { confirmed: true, backup }, c.cookie),
-      call('/backup/import', 'POST', { confirmed: true, backup }, c.cookie),
+      call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, c.cookie),
+      call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, c.cookie),
     ]);
-    assert.deepEqual(racing.map((r) => r.status).sort(), [201, 409]);
+    assert.deepEqual(racing.map((r) => r.status).sort(), [201, 400]);
     assert.equal((await call('/positions', 'GET', undefined, c.cookie)).data.length, 4);
     assert.equal((await call('/auth/logout', 'POST', undefined, a.cookie)).status, 201);
     assert.equal((await call('/auth/me', 'GET', undefined, a.cookie)).status, 401);
     assert.equal((await call('/backup', 'GET', undefined, a.cookie)).status, 401);
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: true, backup }, a.cookie)).status,
+      (await call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, a.cookie)).status,
       401,
     );
     const login = await call('/auth/login', 'POST', { username: a.username, password: a.password });

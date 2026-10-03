@@ -13,7 +13,7 @@ const root = process.env.TEST_API_URL?.replace(/\/api$/, '') || 'http://127.0.0.
 const resource = process.env.MCP_PUBLIC_URL || 'http://localhost:3100/mcp';
 const origin = process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!;
 
-test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isolation, files and sensitive confirmation', async () => {
+test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isolation, hidden permissions and removed capabilities', async () => {
   const db = new PrismaClient(),
     users: string[] = [],
     clients: Client[] = [];
@@ -33,15 +33,22 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
       cookie: response.headers.get('set-cookie')?.split(';')[0] || cookie,
     };
   }
-  async function fixture(mode = 'direct', selected = ['read', 'draft', 'write', 'sensitive']) {
+  async function fixture(
+    mode = 'direct',
+    selected = mode === 'direct'
+      ? ['read', 'write']
+      : mode === 'draft'
+        ? ['read', 'draft']
+        : ['read'],
+  ) {
     const username = 'mcp_test_' + randomUUID().slice(0, 12),
       password = randomBytes(20).toString('hex');
     const registered = await web('', '/auth/register', 'POST', { username, password });
     assert.equal(registered.status, 201);
     const user = await db.user.findUniqueOrThrow({ where: { username } });
     users.push(user.id);
+    await db.agentPolicy.create({ data: { userId: user.id, mode: 'readonly' } }); // Historical policy must not override connection permissions.
     const cookie = registered.cookie;
-    assert.equal((await web(cookie, '/agent/policy', 'PUT', { mode, password })).status, 200);
     const token = await web(cookie, '/agent/tokens', 'POST', {
       name: 'Official SDK integration',
       days: 1,
@@ -82,7 +89,6 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
   async function confirm(a: any, operation: any, extra: any = {}) {
     const v = await web(a.cookie, '/agent/operations/' + operation.operationId, 'POST', {
       approve: true,
-      password: a.password,
       ...extra,
     });
     assert.equal(v.status, 201, JSON.stringify(v.data));
@@ -113,11 +119,10 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
     const a = await fixture(),
       b = await fixture(),
       d = await fixture('draft', ['read', 'draft']);
-    await write(a, 'rates_refresh');
-    await write(a, 'metals_refresh');
     await call(a, 'connection_info');
     const discovered = await a.client.listTools();
-    assert.equal(discovered.tools.length, 49);
+    assert.equal(discovered.tools.length, 39);
+    assert.ok(!discovered.tools.some((t) => t.name === 'metal_price_set'));
     assert.equal(
       discovered.tools.find((t) => t.name === 'positions_list')!.annotations!.readOnlyHint,
       true,
@@ -310,15 +315,20 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
       id: metal,
       data: { name: 'gold', category: 'gold', notes: '', archived: false, hidden: false },
     });
-    await write(a, 'metal_price_set', {
-      metalType: 'gold',
-      currency: 'CNY',
-      price: '10.876543210987',
-      date: day,
+    await db.metalPrice.create({
+      data: {
+        userId: a.id,
+        metalType: 'gold',
+        currency: 'CNY',
+        price: '10.876543210987',
+        date: new Date(day),
+        source: 'goldapi',
+        quotedAt: new Date(),
+      },
     });
     await write(a, 'metal_configure', {
       id: metal,
-      data: { metalType: 'gold', metalGrams: '2', metalPurity: '1', autoValuation: true },
+      data: { metalType: 'gold', metalGrams: '2', autoValuation: true },
     });
     assert.equal((await call(a, 'position_get', { id: metal })).amount, '21.75308642');
     await write(a, 'metal_value', { id: metal });
@@ -328,7 +338,6 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
         currency: 'CNY',
         metalType: 'gold',
         metalGrams: '2',
-        metalPurity: '1',
         autoValuation: true,
         metalCostPerGram: '9',
         date: day,
@@ -362,9 +371,8 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
     assert.notEqual((await call(a, 'position_get', { id: cash })).amount, before);
     assert.equal((await write(a, 'schedules_run')).result.executed, 0);
     await write(a, 'schedule_delete', { id: plan });
-    const hidden = (
-      await write(a, 'position_create', { ...position, name: 'hidden', hidden: true })
-    ).result.id;
+    const hidden = (await write(a, 'position_create', { ...position, name: 'hidden' })).result.id;
+    await db.position.update({ where: { id: hidden }, data: { hidden: true } });
     await fail(a, 'position_get', { id: hidden });
     await fail(a, 'debt_links_set', {
       id: debt,
@@ -377,80 +385,45 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
       expectedState: (await call(d, 'state_get')).state,
       idempotencyKey: randomUUID(),
     });
-    const unlock = await write(a, 'hidden_unlock_request');
-    await confirm(a, unlock);
-    assert.equal((await call(a, 'position_get', { id: hidden })).id, hidden);
-    await write(a, 'hidden_lock');
-    await fail(a, 'position_get', { id: hidden });
-    const exported = await write(a, 'backup_export');
-    assert.equal(exported.status, 'pending');
-    const out = (await confirm(a, exported)).result;
-    assert.equal((await fetch(out.url)).status, 401);
-    assert.equal(
-      (await fetch(out.url, { headers: { Authorization: 'Bearer ' + b.token } })).status,
-      403,
-    );
-    const download = await fetch(out.url, { headers: { Authorization: 'Bearer ' + a.token } });
-    assert.equal(download.status, 200);
-    const zipped = Buffer.from(await download.arrayBuffer());
-    const backup: any = await readBackupZip(zipped);
-    assert.ok(backup.positions.find((p: any) => p.id === hidden));
-    assert.equal(JSON.stringify(backup).includes(a.token), false);
-    const target = await fixture('draft'),
-      upload = await call(target, 'file_upload_request', { kind: 'backup' }),
-      form = new FormData();
-    form.append('file', new Blob([zipped]), 'backup.zip');
-    const uploaded = await fetch(upload.url, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + target.token },
-      body: form,
+    for (const removed of [
+      'rates_refresh',
+      'metals_refresh',
+      'metal_price_set',
+      'backup_export',
+      'backup_import',
+      'credentials_change_request',
+      'hidden_unlock_request',
+      'hidden_lock',
+      'data_clear_request',
+      'import_preview',
+    ]) {
+      assert.ok(!discovered.tools.some((t) => t.name === removed));
+      await fail(a, removed);
+    }
+    await db.agentGrant.update({
+      where: { id: a.grantId },
+      data: { scopes: ['read', 'write', 'hidden_read'] },
     });
-    assert.equal(uploaded.status, 200);
-    const info = await uploaded.json();
-    assert.ok(info.token);
-    await call(target, 'file_status', { fileId: upload.fileId });
-    await call(target, 'import_preview', { token: info.token });
-    const imported = await write(target, 'backup_import', { token: info.token });
-    await confirm(target, imported);
+    assert.equal((await call(a, 'position_get', { id: hidden })).id, hidden);
+    await fail(a, 'position_update', {
+      id: hidden,
+      data: { name: 'forbidden', category: 'cash', hidden: true },
+      expectedState: (await call(a, 'state_get')).state,
+      idempotencyKey: randomUUID(),
+    });
+    await db.agentGrant.update({
+      where: { id: a.grantId },
+      data: { scopes: ['read', 'write', 'hidden_read', 'hidden_write'] },
+    });
+    await write(a, 'position_update', {
+      id: hidden,
+      data: { name: 'authorized hidden', category: 'cash', hidden: true },
+    });
     assert.equal(
-      await db.position.count({ where: { userId: target.id } }),
-      backup.positions.length,
+      (await db.position.findUniqueOrThrow({ where: { id: hidden } })).name,
+      'authorized hidden',
     );
-    const retry = await write(target, 'backup_import', { token: info.token });
-    assert.equal(
-      (
-        await web(target.cookie, '/agent/operations/' + retry.operationId, 'POST', {
-          approve: true,
-          password: target.password,
-        })
-      ).status,
-      409,
-    );
-    assert.equal(
-      await db.position.count({ where: { userId: target.id } }),
-      backup.positions.length,
-    );
-    const clear = await write(target, 'data_clear_request');
-    assert.equal(
-      (
-        await web(target.cookie, '/agent/operations/' + clear.operationId, 'POST', {
-          approve: true,
-          password: target.password,
-          confirmation: '确定清空',
-        })
-      ).status,
-      400,
-    );
-    const save = await fetch(root + '/api/backup', { headers: { Cookie: target.cookie } });
-    assert.equal(save.status, 200);
-    await save.arrayBuffer();
-    await confirm(target, clear, { confirmation: '确定清空' });
-    assert.equal(await db.position.count({ where: { userId: target.id } }), 0);
-    assert.equal(
-      (await web(a.cookie, '/agent/policy', 'PUT', { mode: 'readonly', password: a.password }))
-        .status,
-      200,
-    );
+    await db.agentGrant.update({ where: { id: a.grantId }, data: { scopes: ['read'] } });
     await fail(a, 'position_create', {
       ...position,
       expectedState: (await call(a, 'state_get')).state,
@@ -495,7 +468,7 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
   }
 });
 
-test('real concurrent MCP idempotency, stale writes, icon workflow, nested rollback and credentials completion', async () => {
+test('real concurrent MCP idempotency, stale writes, icon workflow, nested rollback', async () => {
   const db = new PrismaClient();
   const username = 'mcp_extra_' + randomUUID().slice(0, 10),
     password = randomBytes(20).toString('hex');
@@ -534,12 +507,11 @@ test('real concurrent MCP idempotency, stale writes, icon workflow, nested rollb
   try {
     assert.equal((await web('/auth/register', 'POST', { username, password })).status, 201);
     userId = (await db.user.findUniqueOrThrow({ where: { username } })).id;
-    await web('/agent/policy', 'PUT', { mode: 'direct', password });
     const grant = (
       await web('/agent/tokens', 'POST', {
         name: 'extra',
         days: 1,
-        scopes: ['read', 'draft', 'write', 'sensitive'],
+        scopes: ['read', 'write'],
         password,
       })
     ).data;
@@ -602,18 +574,15 @@ test('real concurrent MCP idempotency, stale writes, icon workflow, nested rollb
     iconIds.push(published.id);
     const image = await call(c, 'icon_image', { id: published.id });
     assert.equal((await fetch(image.url, { headers })).status, 200);
-    const shared = await write(c, 'icon_publish', {
+    const forbiddenShared = await tool(c, 'icon_publish', {
       fileId: upload.fileId,
       name: '测试共享图标',
       shared: true,
+      expectedState: (await call(c, 'state_get')).state,
+      idempotencyKey: randomUUID(),
     });
-    assert.equal(shared.status, 'pending');
-    assert.equal(
-      (await web('/agent/operations/' + shared.operationId, 'POST', { approve: true, password }))
-        .status,
-      201,
-    );
-    iconIds.push((await call(c, 'operation_get', { operationId: shared.operationId })).result.id);
+    assert.equal(forbiddenShared.isError, true);
+    assert.equal(await db.icon.count({ where: { ownerId: userId, shared: true } }), 0);
     // A failed paired transfer leaves neither side changed, including inside outer
     // idempotency transaction and nested service savepoints.
     const account = one.result.id,
@@ -670,36 +639,6 @@ test('real concurrent MCP idempotency, stale writes, icon workflow, nested rollb
     const management = (await web('/agent')).data;
     assert.ok(management.calls.some((v: any) => v.status === 'error'));
     assert.equal(JSON.stringify(management).includes(grant.token), false);
-    const operation = await write(c, 'credentials_change_request');
-    const replacement = randomBytes(20).toString('hex');
-    assert.equal(
-      (
-        await web('/agent/operations/' + operation.operationId, 'POST', {
-          approve: true,
-          password,
-          newPassword: replacement,
-        })
-      ).status,
-      201,
-    );
-    assert.equal(
-      (await call(c, 'operation_get', { operationId: operation.operationId })).status,
-      'completed',
-    );
-    assert.equal(
-      (
-        await tool(c, 'position_create', {
-          ...position,
-          idempotencyKey: randomUUID(),
-          expectedState: (await call(c, 'state_get')).state,
-        })
-      ).isError,
-      true,
-    );
-    assert.equal(
-      (await web('/auth/login', 'POST', { username, password: replacement })).status,
-      201,
-    );
   } finally {
     for (const c of clients) await c.close().catch(() => {});
     await db.icon.deleteMany({ where: { id: { in: iconIds } } });
@@ -726,7 +665,7 @@ test('official SDK OAuth discovery, DCR, PKCE, consent, one-use codes, rotation 
       grant_types: ['authorization_code', 'refresh_token'],
       response_types: ['code'],
       token_endpoint_auth_method: 'none',
-      scope: 'read draft write sensitive',
+      scope: 'read write',
     },
     clientInformation: () => saved,
     saveClientInformation: (v) => {
@@ -766,19 +705,22 @@ test('official SDK OAuth discovery, DCR, PKCE, consent, one-use codes, rotation 
     const registered = await post('/api/auth/register', { username, password });
     assert.equal(registered.status, 201);
     userId = (await db.user.findUniqueOrThrow({ where: { username } })).id;
-    assert.equal(
-      await auth(provider, { serverUrl: resource, scope: 'read draft write sensitive' }),
-      'REDIRECT',
-    );
+    assert.equal(await auth(provider, { serverUrl: resource, scope: 'read write' }), 'REDIRECT');
     assert.ok(authorization);
     const redirected = await fetch(authorization!, { redirect: 'manual' });
     assert.equal(redirected.status, 302);
     const location = new URL(redirected.headers.get('location')!);
     const id = location.searchParams.get('agent_authorization');
     assert.ok(id);
+    const deniedEscalation = await post(
+      '/api/agent/authorizations/' + id,
+      { approve: true, scopes: ['read', 'write', 'hidden_read'] },
+      registered.cookie,
+    );
+    assert.equal(deniedEscalation.status, 400);
     const consent = await post(
       '/api/agent/authorizations/' + id,
-      { approve: true },
+      { approve: true, scopes: ['read', 'write'] },
       registered.cookie,
     );
     assert.equal(consent.status, 201);
@@ -795,7 +737,7 @@ test('official SDK OAuth discovery, DCR, PKCE, consent, one-use codes, rotation 
     await client.connect(
       new StreamableHTTPClientTransport(new URL(resource), { authProvider: provider }),
     );
-    assert.ok((await client.listTools()).tools.length >= 40);
+    assert.ok((await client.listTools()).tools.length === 39);
     await client.close();
     async function exchange(params: Record<string, string>) {
       const r = await fetch(root + '/token', {
@@ -885,6 +827,150 @@ test('official SDK OAuth discovery, DCR, PKCE, consent, one-use codes, rotation 
   } finally {
     if (userId) await db.user.deleteMany({ where: { id: userId } });
     if (clientId) await db.agentClient.deleteMany({ where: { id: clientId } });
+    await db.$disconnect();
+  }
+});
+test('fixed PAT durations, permanent session renewal, expiry, isolation and revocation are real', async () => {
+  const db = new PrismaClient(),
+    users: string[] = [],
+    clients: Client[] = [];
+  const { createHash } = await import('node:crypto'),
+    { hash } = await import('bcryptjs');
+  const password = 'Temporary-pat-test-Only!';
+  async function fixture() {
+    const u = await db.user.create({
+      data: {
+        username: 'pat_' + randomUUID(),
+        passwordHash: await hash(password, 4),
+        idleMinutes: 0,
+      },
+    });
+    users.push(u.id);
+    const token = randomBytes(32).toString('hex');
+    await db.session.create({
+      data: {
+        id: createHash('sha256').update(token).digest('hex'),
+        userId: u.id,
+        expiresAt: new Date(Date.now() + 86400000),
+      },
+    });
+    return { id: u.id, cookie: 'wp_session=' + token };
+  }
+  async function web(u: any, path: string, method = 'GET', body?: unknown) {
+    const r = await fetch(root + '/api' + path, {
+      method,
+      headers: {
+        Origin: origin,
+        Cookie: u.cookie,
+        ...(body ? { 'Content-Type': 'application/json' } : {}),
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: r.status, data: await r.json() };
+  }
+  try {
+    const a = await fixture(),
+      b = await fixture();
+    let permanent: any;
+    const issuedTokens = new Map<string, string>();
+    for (const days of [1, 3, 7, 30, 365, null]) {
+      const issued = await web(a, '/agent/tokens', 'POST', {
+        name: 'expiry fixture',
+        scopes: ['read'],
+        days,
+        password,
+      });
+      assert.equal(issued.status, 201, JSON.stringify(issued.data));
+      issuedTokens.set(issued.data.id, issued.data.token);
+      const row = await db.agentGrant.findUniqueOrThrow({ where: { id: issued.data.id } });
+      assert.equal(row.accessDigest, createHash('sha256').update(issued.data.token).digest('hex'));
+      if (days === null) {
+        assert.equal(row.expiresAt, null);
+        permanent = issued.data;
+      } else {
+        assert.ok(row.expiresAt);
+        assert.ok(Math.abs(+row.expiresAt! - Date.now() - days * 86400000) < 5000);
+      }
+    }
+    assert.equal(
+      (
+        await web(a, '/agent/tokens', 'POST', {
+          name: 'invalid duration',
+          scopes: ['read'],
+          days: 2,
+          password,
+        })
+      ).status,
+      400,
+    );
+    for (const scopes of [
+      ['read', 'sensitive'],
+      ['read', 'draft', 'write'],
+      ['read', 'hidden_write'],
+    ]) {
+      assert.equal(
+        (
+          await web(a, '/agent/tokens', 'POST', {
+            name: 'invalid scopes',
+            scopes,
+            days: 1,
+            password,
+          })
+        ).status,
+        400,
+      );
+    }
+    assert.equal((await web(a, '/agent/policy', 'PUT', { mode: 'direct', password })).status, 404);
+    const management = await web(a, '/agent');
+    assert.equal(management.data.capabilities.length, 39);
+    assert.ok(!management.data.capabilities.some((t: any) => t.name === 'metal_price_set'));
+    assert.equal((await web(b, '/agent')).data.grants.length, 0);
+    assert.equal((await web(b, '/agent/connections/' + permanent.id, 'DELETE')).status, 200);
+    assert.equal(
+      (await db.agentGrant.findUniqueOrThrow({ where: { id: permanent.id } })).revokedAt,
+      null,
+    );
+    const row = await db.agentGrant.findUniqueOrThrow({ where: { id: permanent.id } });
+    await db.session.delete({ where: { id: row.sessionId } });
+    const client = new Client({ name: 'Permanent PAT test', version: '1.31.0' });
+    clients.push(client);
+    await client.connect(
+      new StreamableHTTPClientTransport(new URL(resource), {
+        requestInit: { headers: { Authorization: 'Bearer ' + permanent.token } },
+      }),
+    );
+    const result: any = await client.callTool({ name: 'connection_info', arguments: {} });
+    assert.ok(!result.isError, JSON.stringify(result));
+    assert.equal(result.structuredContent.data.expiresAt, null);
+    const business: any = await client.callTool({
+      name: 'positions_list',
+      arguments: { limit: 1 },
+    });
+    assert.ok(!business.isError, JSON.stringify(business));
+    assert.ok(
+      (await db.session.findUniqueOrThrow({ where: { id: row.sessionId } })).expiresAt > new Date(),
+    );
+    assert.equal((await web(a, '/agent/connections/' + permanent.id, 'DELETE')).status, 200);
+    await assert.rejects(() => client.listTools());
+    const finite = management.data.grants.find((g: any) => g.expiresAt);
+    await db.agentGrant.update({ where: { id: finite.id }, data: { expiresAt: new Date(0) } });
+    const expiredClient = new Client({ name: 'Expired PAT test', version: '1.31.0' });
+    clients.push(expiredClient);
+    await assert.rejects(() =>
+      expiredClient.connect(
+        new StreamableHTTPClientTransport(new URL(resource), {
+          requestInit: { headers: { Authorization: 'Bearer ' + issuedTokens.get(finite.id) } },
+        }),
+      ),
+    );
+    const expired = await web(a, '/agent');
+    assert.equal(
+      expired.data.grants.find((g: any) => g.id === finite.id).expiresAt,
+      '1970-01-01T00:00:00.000Z',
+    );
+  } finally {
+    for (const c of clients) await c.close().catch(() => {});
+    await db.user.deleteMany({ where: { id: { in: users } } });
     await db.$disconnect();
   }
 });

@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import { request } from 'node:http';
@@ -28,6 +29,14 @@ async function fixture() {
 // Give this fixture suite its own loopback source address so independent auth
 // scenarios do not consume the existing suite's per-IP production rate limit.
 async function call(path: string, cookie: string, method = 'GET', body?: unknown) {
+  if (path.endsWith('-fixture')) {
+    const response = await fixtureFetch(base + path, {
+      method,
+      headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, data: await response.json(), cookie: null };
+  }
   const data = body === undefined ? undefined : JSON.stringify(body);
   return new Promise<{ status: number; data: any; cookie: string | null }>((resolve, reject) => {
     const req = request(
@@ -200,7 +209,6 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
         await call('/metals/' + cash, a.cookie, 'PUT', {
           metalType: 'gold',
           metalGrams: '10',
-          metalPurity: '0.999',
           autoValuation: true,
         })
       ).status,
@@ -211,7 +219,6 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
         await call('/metals/' + metal, b.cookie, 'PUT', {
           metalType: 'gold',
           metalGrams: '10',
-          metalPurity: '0.999',
           autoValuation: true,
         })
       ).status,
@@ -222,24 +229,26 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
         await call('/metals/' + metal, a.cookie, 'PUT', {
           metalType: 'gold',
           metalGrams: '10.86420978',
-          metalPurity: '0.999',
           autoValuation: true,
         })
       ).status,
       200,
     );
+    await db.position.update({ where: { id: metal }, data: { metalPurity: '0.999' } }); // Existing stored valuations are preserved, not an editable setting.
     const d = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
-    assert.equal(
-      (
-        await call('/metals/prices', a.cookie, 'POST', {
-          metalType: 'gold',
-          currency: 'CNY',
-          price: '700.864209789012',
-          date: d,
-        })
-      ).status,
-      201,
-    );
+    assert.equal((await call('/metals/prices', a.cookie, 'POST', {})).status, 404);
+    await db.metalPrice.create({
+      data: {
+        userId: a.id,
+        metalType: 'gold',
+        currency: 'CNY',
+        price: '700.864209789012',
+        date: new Date(d),
+        source: 'manual',
+        quotedAt: new Date(),
+      },
+    });
+    await call('/metals/' + metal + '/value', a.cookie, 'POST', {});
     const expected = (await import('../src/metals')).metalValue(
       '10.86420978',
       '0.999',
@@ -250,12 +259,7 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
       expected.replace(/0+$/, '').replace(/\.$/, ''),
     );
     const count = await db.revision.count({ where: { positionId: metal } });
-    await call('/metals/prices', a.cookie, 'POST', {
-      metalType: 'gold',
-      currency: 'CNY',
-      price: '700.864209789012',
-      date: d,
-    });
+    await call('/metals/' + metal + '/value', a.cookie, 'POST', {});
     assert.equal(await db.revision.count({ where: { positionId: metal } }), count);
     const controller = new (await import('../src/backup')).BackupBusinessService(db as any);
     const backup = await (controller as any).data(a.id);
@@ -267,8 +271,12 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
     await done;
     const restoredBackup = await readBackupZip(Buffer.concat(chunks));
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup: restoredBackup }))
-        .status,
+      (
+        await call('/backup/restore-fixture', b.cookie, 'POST', {
+          confirmed: true,
+          backup: restoredBackup,
+        })
+      ).status,
       201,
     );
     assert.equal((await call('/auth/me', b.cookie)).data.includeIndependentAssets, false);
@@ -294,7 +302,7 @@ test('inclusion preferences and precious metal settings, valuation and quotes re
     await db.$disconnect();
   }
 });
-test('gram-only creation, optional exact purchase cost, pending totals and backward-compatible backups', async () => {
+test('gram-only creation, optional exact purchase cost, pending totals and strict current backups', async () => {
   const a = await fixture(),
     b = await fixture();
   try {
@@ -303,13 +311,22 @@ test('gram-only creation, optional exact purchase cost, pending totals and backw
       currency: 'CNY',
       metalType: 'gold',
       metalGrams: '2.5',
-      metalPurity: '0.8',
       autoValuation: true,
       date: '2026-10-01T12:00',
       metalCostPerGram: '12.8',
     };
+    assert.equal(
+      (await call('/metals/holdings', a.cookie, 'POST', { ...input, metalPurity: '0.8' })).status,
+      400,
+    );
     const created = await call('/metals/holdings', a.cookie, 'POST', input);
     assert.equal(created.status, 201, JSON.stringify(created.data));
+    assert.equal(
+      (
+        await db.position.findUniqueOrThrow({ where: { id: created.data.id } })
+      ).metalPurity.toString(),
+      '1',
+    );
     assert.equal(created.data.valuationAvailable, false);
     const id = created.data.id;
     let p = (await call('/positions/' + id, a.cookie)).data;
@@ -326,36 +343,40 @@ test('gram-only creation, optional exact purchase cost, pending totals and backw
         await call('/metals/' + id, b.cookie, 'PUT', {
           metalType: 'gold',
           metalGrams: '2.5',
-          metalPurity: '0.8',
           autoValuation: true,
         })
       ).status,
       404,
     );
-    const price = await call('/metals/prices', a.cookie, 'POST', {
-      metalType: 'gold',
-      currency: 'CNY',
-      price: '20',
-      date: '2026-10-01',
+    await db.metalPrice.create({
+      data: {
+        userId: a.id,
+        metalType: 'gold',
+        currency: 'CNY',
+        price: '20',
+        date: new Date('2026-10-01'),
+        source: 'goldapi',
+        quotedAt: new Date(),
+      },
     });
-    assert.equal(price.status, 201, JSON.stringify(price.data));
+    assert.equal((await call('/metals/' + id + '/value', a.cookie, 'POST', {})).status, 201);
     p = (await call('/positions/' + id, a.cookie)).data;
-    assert.equal(p.amount, '40');
-    assert.equal(p.metalProfit, '8.00000000');
+    assert.equal(p.amount, '50');
+    assert.equal(p.metalProfit, '18.00000000');
     assert.equal(p.valuationAvailable, true);
-    const cfg = { metalType: 'gold', metalGrams: '2.5', metalPurity: '0.8', autoValuation: true };
+    const cfg = { metalType: 'gold', metalGrams: '2.5', autoValuation: true };
     assert.equal((await call('/metals/' + id, a.cookie, 'PUT', cfg)).status, 200);
     assert.equal((await call('/positions/' + id, a.cookie)).data.metalCostPerGram, '12.8');
     const controller = new (await import('../src/backup')).BackupBusinessService(db as any);
     const backup = await (controller as any).data(a.id);
     assert.equal(backup.positions[0].metalCostPerGram, '12.8');
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     const restored = (await call('/positions?kind=asset', b.cookie)).data[0];
     assert.equal(restored.metalCostPerGram, '12.8');
-    assert.equal(restored.metalProfit, '8.00000000');
+    assert.equal(restored.metalProfit, '18.00000000');
     const invalidCost = structuredClone(backup);
     Object.assign(invalidCost.positions[0], {
       metalType: null,
@@ -367,7 +388,7 @@ test('gram-only creation, optional exact purchase cost, pending totals and backw
     );
     const old = structuredClone(backup);
     delete old.positions[0].metalCostPerGram;
-    assert.doesNotThrow(() =>
+    assert.throws(() =>
       (require('../src/backup') as typeof import('../src/backup')).validateBackup(old),
     );
     assert.equal(
@@ -382,7 +403,7 @@ test('gram-only creation, optional exact purchase cost, pending totals and backw
     });
     assert.equal(next.status, 201);
     assert.equal(next.data.valuationAvailable, true);
-    assert.equal((await call('/positions/' + next.data.id, a.cookie)).data.amount, '40');
+    assert.equal((await call('/positions/' + next.data.id, a.cookie)).data.amount, '50');
     assert.equal(
       (await call('/metals/holdings', a.cookie, 'POST', { ...input, metalGrams: '0' })).status,
       400,

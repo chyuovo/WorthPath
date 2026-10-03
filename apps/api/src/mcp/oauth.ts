@@ -20,12 +20,19 @@ import {
   InvalidTargetError,
 } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 
-export const scopes = ['read', 'draft', 'write', 'sensitive'] as const;
+export const scopes = ['read', 'draft', 'write', 'hidden_read', 'hidden_write'] as const;
 export const scopeInput = z
   .array(z.enum(scopes))
   .min(1)
   .max(4)
-  .refine((v) => v.includes('read') && new Set(v).size === v.length);
+  .refine(
+    (v) =>
+      v.includes('read') &&
+      new Set(v).size === v.length &&
+      !(v.includes('draft') && v.includes('write')) &&
+      (!v.includes('hidden_write') ||
+        (v.includes('hidden_read') && (v.includes('draft') || v.includes('write')))),
+  );
 export const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
 export function urls() {
@@ -115,7 +122,15 @@ export class AgentOAuth implements OAuthServerProvider {
   async authorize(client: OAuthClientInformationFull, params: AuthorizationParams, res: Response) {
     this.resource(params.resource);
     const selected = params.scopes?.length ? params.scopes : ['read'];
-    if (!scopeInput.safeParse(selected).success) throw new InvalidScopeError('Unsupported scope');
+    if (
+      !z
+        .array(z.enum(scopes))
+        .min(1)
+        .max(scopes.length)
+        .refine((v) => v.includes('read') && new Set(v).size === v.length)
+        .safeParse(selected).success
+    )
+      throw new InvalidScopeError('Unsupported scope');
     const row = await this.db.agentAuthorization.create({
       data: {
         clientId: client.client_id,
@@ -141,10 +156,15 @@ export class AgentOAuth implements OAuthServerProvider {
       resource: p.resource,
     };
   }
-  async consent(userId: string, id: string, approved: boolean) {
+  async consent(userId: string, id: string, approved: boolean, selected?: string[]) {
     return this.db.atomic(async () => {
       await this.pending(id);
       const row = await this.db.agentAuthorization.findUniqueOrThrow({ where: { id } });
+      const parameters = row.parameters as any;
+      const allowed = selected || ['read'];
+      scopeInput.parse(allowed);
+      if (allowed.some((scope: string) => !parameters.scopes.includes(scope)))
+        throw new BadRequestException('不能授予客户端未请求的权限');
       const code = secret();
       const changed = await this.db.agentAuthorization.updateMany({
         where: { id, status: 'pending', expiresAt: { gt: new Date() } },
@@ -152,6 +172,7 @@ export class AgentOAuth implements OAuthServerProvider {
           userId,
           status: approved ? 'approved' : 'denied',
           codeDigest: approved ? digest(code) : null,
+          parameters: { ...parameters, scopes: allowed },
         },
       });
       if (!changed.count) throw new BadRequestException('授权请求已处理');
@@ -175,14 +196,25 @@ export class AgentOAuth implements OAuthServerProvider {
       throw new InvalidGrantError('Invalid authorization code');
     return (row.parameters as any).codeChallenge as string;
   }
-  async issue(userId: string, name: string, selected: string[], days: number, clientId?: string) {
+  async issue(
+    userId: string,
+    name: string,
+    selected: string[],
+    days: number | null,
+    clientId?: string,
+  ) {
+    if (clientId && days === null) throw new BadRequestException('OAuth 连接必须有期限');
     const access = secret(),
       refresh = clientId ? secret() : undefined,
       sessionId = digest(secret());
-    const expiresAt = new Date(Date.now() + days * 86400000),
+    const expiresAt = days === null ? null : new Date(Date.now() + days * 86400000),
       refreshExpiresAt = clientId ? new Date(Date.now() + 30 * 86400000) : null;
     await this.db.session.create({
-      data: { id: sessionId, userId, expiresAt: refreshExpiresAt || expiresAt },
+      data: {
+        id: sessionId,
+        userId,
+        expiresAt: refreshExpiresAt || expiresAt || new Date(Date.now() + 86400000),
+      },
     });
     const grant = await this.db.agentGrant.create({
       data: {
@@ -203,7 +235,7 @@ export class AgentOAuth implements OAuthServerProvider {
       tokens: {
         access_token: access,
         token_type: 'Bearer',
-        expires_in: Math.floor(days * 86400),
+        ...(days === null ? {} : { expires_in: Math.floor(days * 86400) }),
         scope: selected.join(' '),
         ...(refresh ? { refresh_token: refresh } : {}),
       } as OAuthTokens,
@@ -296,7 +328,7 @@ export class AgentOAuth implements OAuthServerProvider {
     if (
       !row ||
       row.revokedAt ||
-      row.expiresAt <= new Date() ||
+      (row.expiresAt ? row.expiresAt <= new Date() : !!row.clientId) ||
       row.resource !== urls().resource.toString()
     )
       throw new InvalidTokenError('Expired, revoked or invalid resource token');
@@ -304,7 +336,9 @@ export class AgentOAuth implements OAuthServerProvider {
       token,
       clientId: row.clientId || row.id,
       scopes: row.scopes as string[],
-      expiresAt: Math.floor(+row.expiresAt / 1000),
+      // SDK bearer middleware requires a finite verified-authentication expiry.
+      // A permanent PAT stays expiry-free in storage; every request rechecks revocation.
+      expiresAt: Math.floor((row.expiresAt?.getTime() ?? Date.now() + 3600000) / 1000),
       resource: new URL(row.resource),
       extra: { grantId: row.id, userId: row.userId },
     };
@@ -320,7 +354,12 @@ export class AgentOAuth implements OAuthServerProvider {
   }
   async grant(id: string, userId?: string) {
     const row = await this.db.agentGrant.findFirst({
-      where: { id, ...(userId ? { userId } : {}), revokedAt: null, expiresAt: { gt: new Date() } },
+      where: {
+        id,
+        ...(userId ? { userId } : {}),
+        revokedAt: null,
+        OR: [{ expiresAt: { gt: new Date() } }, { expiresAt: null, clientId: null }],
+      },
     });
     if (!row) throw new ForbiddenException('Agent 连接已过期或撤销');
     return row;

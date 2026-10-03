@@ -1538,7 +1538,6 @@ export default function App() {
                               <ArrowUpRight size={18} />
                             </div>
                             <h3>{p.name}</h3>
-                            {p.groupName && <span className="badge">{p.groupName}</span>}
                             {(p.included === false ||
                               (p.kind === 'asset' && user.includeIndependentAssets === false)) && (
                               <span className="badge">{tr('不计入总览')}</span>
@@ -2268,7 +2267,7 @@ export default function App() {
                     {tr('选择备份并验证')}
                     <input
                       type="file"
-                      accept=".zip,application/zip,.json,application/json"
+                      accept=".zip,application/zip"
                       disabled={busy}
                       onChange={async (e) => {
                         setBackup(null);
@@ -2685,7 +2684,6 @@ export default function App() {
                         date: v.date,
                         metalType: v.metalType,
                         metalGrams: v.metalGrams,
-                        metalPurity: v.metalPurity,
                         metalCostPerGram: v.metalCostPerGram || null,
                         autoValuation: true,
                         hidden: f.has('hidden'),
@@ -2865,9 +2863,6 @@ export default function App() {
                       inputMode="decimal"
                       pattern="(0|[1-9][0-9]{0,15})([.][0-9]{1,8})?"
                     />
-                  </Field>
-                  <Field label={tr('纯度（0–1，例如 0.999）')}>
-                    <input name="metalPurity" required defaultValue="1" inputMode="decimal" />
                   </Field>
                   <Field label={tr('买入价（每克，选填）')}>
                     <input

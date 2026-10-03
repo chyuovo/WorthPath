@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -9,7 +10,7 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
   const db = new PrismaClient(),
     names: string[] = [];
   async function call(path: string, method = 'GET', data?: unknown, cookie = '') {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Origin: process.env.WEB_ORIGIN === '*' ? 'http://localhost:5173' : process.env.WEB_ORIGIN!,
@@ -118,7 +119,7 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
     );
     assert.equal(history[1].delta, '15');
     const backup = (await call('/backup', 'GET', undefined, a.cookie)).data;
-    assert.equal(backup.version, 2);
+    assert.equal(backup.version, 9);
     assert.equal(backup.positions.find((p: { id: string }) => p.id === hidden).hidden, true);
     assert.equal(
       backup.positions.find((p: { id: string }) => p.id === hidden).revisions[0].date,
@@ -192,7 +193,7 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
     );
     assert.equal((await call('/overview', 'GET', undefined, c.cookie)).data.net, '20.00');
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: true, backup }, b.cookie)).status,
+      (await call('/backup/restore-fixture', 'POST', { confirmed: true, backup }, b.cookie)).status,
       201,
     );
     assert.equal((await call('/overview', 'GET', undefined, b.cookie)).data.net, '27.00');
@@ -267,11 +268,17 @@ test('privacy, minute history, backup-gated clear and idle sessions remain user 
     assert.equal((await call('/auth/me', 'GET', undefined, otherSession.cookie)).status, 200);
     const login = await call('/auth/login', 'POST', { username: a.username, password: a.password });
     assert.equal(
-      (await call('/backup/import', 'POST', { confirmed: true, backup: legacy }, login.cookie))
-        .status,
-      201,
+      (
+        await call(
+          '/backup/restore-fixture',
+          'POST',
+          { confirmed: true, backup: legacy },
+          login.cookie,
+        )
+      ).status,
+      400,
     );
-    assert.equal((await call('/positions', 'GET', undefined, login.cookie)).data.length, 2);
+    assert.equal((await call('/positions', 'GET', undefined, login.cookie)).data.length, 0);
   } finally {
     for (const username of names) await db.user.deleteMany({ where: { username } });
     await db.$disconnect();

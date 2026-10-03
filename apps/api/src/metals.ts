@@ -30,14 +30,15 @@ import {
 } from './validation';
 import { businessTime, businessDay } from './calculation';
 export const metalType = z.enum(['gold', 'silver']);
+// Historical stored ratios remain part of valuation and ZIP data, not user input.
+export const storedMetalPurity = z
+  .string()
+  .regex(/^(0|1)(\.\d{1,8})?$/)
+  .refine((v) => new Decimal(v).gt(0) && new Decimal(v).lte(1), '纯度应大于 0 且不超过 1');
 export const metalConfig = z
   .object({
     metalType,
     metalGrams: amount.refine((v) => new Decimal(v).gt(0), '重量必须大于零'),
-    metalPurity: z
-      .string()
-      .regex(/^(0|1)(\.\d{1,8})?$/)
-      .refine((v) => new Decimal(v).gt(0) && new Decimal(v).lte(1), '纯度应大于 0 且不超过 1'),
     metalCostPerGram: rateValue
       .nullable()
       .optional()
@@ -152,8 +153,7 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
       },
     });
     if (!p) throw new NotFoundException('贵金属资产不存在或已归档');
-    if (!p.metalType || !p.metalGrams)
-      throw new BadRequestException('请先设置贵金属品种、重量和纯度');
+    if (!p.metalType || !p.metalGrams) throw new BadRequestException('请先设置贵金属品种和重量');
     const quote = await tx.metalPrice.findFirst({
       where: {
         userId,
@@ -163,7 +163,7 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
       },
       orderBy: { date: 'desc' },
     });
-    if (!quote) throw new BadRequestException('缺少该币种的贵金属价格，请刷新或手动录价');
+    if (!quote) throw new BadRequestException('缺少该币种的贵金属价格，请刷新报价后重试');
     const value = metalValue(
       p.metalGrams.toString(),
       p.metalPurity.toString(),
@@ -286,17 +286,17 @@ export class MetalsService implements OnModuleInit, OnModuleDestroy {
           if (p.autoValuation) await this.apply(tx, userId, p.id, true);
         }
       });
-      const message = '贵金属参考价已更新；同日手动价格已保留，已开启的自动估价已记入历史';
+      const message = '贵金属参考价已更新，已开启的自动估价已记入历史';
       this.attempts.set(userId, today());
       this.outcomes.set(userId, { state: 'ok', message, attemptedAt: new Date().toISOString() });
       return { message };
     } catch {
       this.outcomes.set(userId, {
         state: 'error',
-        message: '贵金属价格更新失败，已有价格与估值已保留，可手动录价',
+        message: '贵金属价格更新失败，已有价格与估值已保留，请稍后重试',
         attemptedAt: new Date().toISOString(),
       });
-      throw new BadGatewayException('贵金属价格更新失败，已有价格与估值已保留，可手动录价');
+      throw new BadGatewayException('贵金属价格更新失败，已有价格与估值已保留，请稍后重试');
     } finally {
       this.running.delete(userId);
     }
@@ -322,37 +322,6 @@ export class MetalsBusinessService {
   }
   refresh(r: UserRequest) {
     return this.metals.refresh(r.userId);
-  }
-  async manual(r: UserRequest, body: unknown) {
-    const v = metalPriceInput.parse(body);
-    const key = {
-      userId: r.userId,
-      metalType: v.metalType,
-      currency: v.currency,
-      date: new Date(v.date),
-    };
-    return this.db.serial(async (tx) => {
-      await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id=${r.userId} FOR UPDATE`);
-      await tx.metalPrice.upsert({
-        where: { userId_metalType_currency_date: key },
-        create: { ...key, price: v.price, source: 'manual', quotedAt: new Date() },
-        update: { price: v.price, source: 'manual', quotedAt: new Date() },
-      });
-      const ps = await tx.position.findMany({
-        where: {
-          userId: r.userId,
-          kind: 'asset',
-          category: 'gold',
-          metalType: v.metalType,
-          currency: v.currency,
-          archived: false,
-          autoValuation: true,
-          ...(r.revealed ? {} : { hidden: false }),
-        },
-      });
-      for (const p of ps) await this.metals.apply(tx, r.userId, p.id, r.revealed);
-      return { message: '贵金属价格已保存' };
-    });
   }
   async create(r: UserRequest, body: unknown) {
     const v = metalHoldingInput.parse(body);
@@ -435,9 +404,6 @@ export class MetalsController {
   }
   @Post('refresh') refresh(@Req() r: UserRequest) {
     return this.service.refresh(r);
-  }
-  @Post('prices') async manual(@Req() r: UserRequest, @Body() body: unknown) {
-    return this.service.manual(r, body);
   }
   @Put(':id') async configure(
     @Req() r: UserRequest,

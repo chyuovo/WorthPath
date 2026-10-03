@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import { request } from 'node:http';
@@ -28,6 +29,14 @@ async function fixture() {
 // Give this fixture suite its own loopback source address so independent auth
 // scenarios do not consume the existing suite's per-IP production rate limit.
 async function call(path: string, cookie: string, method = 'GET', body?: unknown) {
+  if (path.endsWith('-fixture')) {
+    const response = await fixtureFetch(base + path, {
+      method,
+      headers: { Cookie: cookie, Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    return { status: response.status, data: await response.json(), cookie: null };
+  }
   const data = body === undefined ? undefined : JSON.stringify(body);
   return new Promise<{ status: number; data: any; cookie: string | null }>((resolve, reject) => {
     const req = request(
@@ -127,7 +136,7 @@ test('session duration boundaries, privacy isolation and card settings survive b
     assert.equal(backup.preferences.sessionHours, 720);
     assert.equal(backup.preferences.requireHiddenPassword, false);
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     const imported = (await call('/settings', b.cookie)).data;
@@ -138,8 +147,8 @@ test('session duration boundaries, privacy isolation and card settings survive b
     delete backup.preferences.requireHiddenPassword;
     delete backup.preferences.overviewCards;
     assert.equal(
-      (await call('/backup/import', c.cookie, 'POST', { confirmed: true, backup })).status,
-      201,
+      (await call('/backup/restore-fixture', c.cookie, 'POST', { confirmed: true, backup })).status,
+      400,
     );
     const legacy = (await call('/settings', c.cookie)).data;
     assert.equal(legacy.sessionHours, 168);

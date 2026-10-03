@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,7 +26,7 @@ test('borrow/lend/collect/repay pair balances atomically and survive concurrency
     return { id: row.id, token };
   }
   async function call(token: string, path: string, method = 'GET', body?: unknown) {
-    const response = await fetch(base + path, {
+    const response = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: 'wp_session=' + token,
@@ -151,11 +152,11 @@ test('borrow/lend/collect/repay pair balances atomically and survive concurrency
       200,
     );
     const backup = (await call(a.token, '/backup')).data;
-    assert.equal(JSON.parse(packBackup(backup)['manifest.json']).version, 8);
+    assert.equal(JSON.parse(packBackup(backup)['manifest.json']).version, 9);
     assert.equal(backup.transfers.length, 5);
     assert.ok(backup.transfers.some((p: any) => p.operation === 'lend' && p.fee === '-2'));
     assert.equal(
-      (await call(b.token, '/backup/import', 'POST', { confirmed: true, backup })).status,
+      (await call(b.token, '/backup/restore-fixture', 'POST', { confirmed: true, backup })).status,
       201,
     );
     assert.equal(

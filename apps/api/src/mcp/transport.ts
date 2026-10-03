@@ -183,13 +183,13 @@ export class AgentTransport {
         register(
           'file_upload_request',
           '创建受 Bearer 保护的短期文件上传入口；multipart/form-data 的 file 字段。',
-          z.object({ kind: z.enum(['backup', 'icon']) }).strict(),
+          z.object({ kind: z.enum(['icon']) }).strict(),
           (p) => this.operations.uploadRequest(grantId, p.kind),
           false,
         );
         register(
           'file_status',
-          '查看此连接文件上传状态、预检结果和备份导入 token。',
+          '查看此连接私有图标上传状态，不返回令牌。',
           z.object({ fileId: z.string().uuid() }).strict(),
           (p) => this.operations.fileStatus(grantId, p.fileId),
         );
@@ -201,7 +201,7 @@ export class AgentTransport {
         );
         register(
           'connection_info',
-          '查询本连接权限、到期时间、资源和用户写入策略；不返回任何令牌。',
+          '查询本连接权限、到期时间、资源及隐藏账户权限；不返回任何令牌。',
           z.object({}).strict(),
           async () => {
             const g = await this.oauth.grant(grantId);
@@ -210,9 +210,13 @@ export class AgentTransport {
               scopes: g.scopes,
               expiresAt: g.expiresAt,
               resource: g.resource,
-              writePolicy:
-                (await this.db.agentPolicy.findUnique({ where: { userId: g.userId } }))?.mode ||
-                'draft',
+              permission: (g.scopes as string[]).includes('write')
+                ? 'write'
+                : (g.scopes as string[]).includes('draft')
+                  ? 'draft'
+                  : 'read',
+              readHidden: (g.scopes as string[]).includes('hidden_read'),
+              writeHidden: (g.scopes as string[]).includes('hidden_write'),
             };
           },
         );

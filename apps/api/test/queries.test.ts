@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -15,7 +16,9 @@ test('bounded APIs preserve seeds, predecessor balances, pagination, archive and
     sessionId = createHash('sha256').update(token).digest('hex');
   let restoredUserId: string | undefined;
   async function call(path: string) {
-    const response = await fetch(base + path, { headers: { Cookie: 'wp_session=' + token } });
+    const response = await fixtureFetch(base + path, {
+      headers: { Cookie: 'wp_session=' + token },
+    });
     return { status: response.status, data: await response.json() };
   }
   try {
@@ -142,7 +145,7 @@ test('bounded APIs preserve seeds, predecessor balances, pagination, archive and
       date: '2026-09-03T00:01',
     };
     const post = async (path: string, body: unknown, cookie = token) => {
-      const response = await fetch(base + path, {
+      const response = await fixtureFetch(base + path, {
         method: 'POST',
         headers: {
           Cookie: 'wp_session=' + cookie,
@@ -179,7 +182,7 @@ test('bounded APIs preserve seeds, predecessor balances, pagination, archive and
       },
     });
     assert.equal(
-      (await post('/backup/import', { confirmed: true, backup }, restoredToken)).status,
+      (await post('/backup/restore-fixture', { confirmed: true, backup }, restoredToken)).status,
       201,
     );
     const restoredTransfer = await db.transfer.findFirstOrThrow({ where: { userId: restored.id } });

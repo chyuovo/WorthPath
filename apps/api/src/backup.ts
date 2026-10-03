@@ -1,5 +1,6 @@
+import { BACKUP_ZIP_VERSION } from './backup-format';
 import { Injectable } from '@nestjs/common';
-import { metalConfig, metalPriceInput } from './metals';
+import { metalConfig, metalPriceInput, storedMetalPurity } from './metals';
 import { scheduleInput } from './schedules';
 import { movementDeltas } from './movement';
 import { pairedReasons } from './validation';
@@ -21,7 +22,7 @@ import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import { tmpdir } from 'node:os';
-import { unlink, open, readFile, readdir, stat } from 'node:fs/promises';
+import { unlink, readdir, stat } from 'node:fs/promises';
 import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { archiveBackup, readBackupZip, MAX_UPLOAD_BYTES } from './zip';
@@ -56,22 +57,31 @@ const timestamp = z.iso
   );
 const record = positionMeta
   .extend({
-    metalType: z.enum(['gold', 'silver']).nullable().optional(),
-    metalGrams: amount.nullable().optional(),
-    metalCostPerGram: metalConfig.shape.metalCostPerGram,
-    metalPurity: metalConfig.shape.metalPurity.optional(),
-    autoValuation: z.boolean().optional(),
+    groupName: z.string().max(60),
+    included: z.boolean(),
+    iconId: z.string().uuid().nullable(),
+    notes: z.string().max(2000),
+    archived: z.boolean(),
+    hidden: z.boolean(),
+    metalType: z.enum(['gold', 'silver']).nullable(),
+    metalGrams: amount.nullable(),
+    metalCostPerGram: metalConfig.shape.metalCostPerGram.nonoptional(),
+    metalPurity: storedMetalPurity,
+    autoValuation: z.boolean(),
     kind: z.enum(['account', 'asset', 'debt']),
     side: z.enum(['asset', 'liability']),
     currency,
     id: z.string().uuid(),
-    importedFromId: z.string().uuid().nullable().optional(),
+    importedFromId: z.string().uuid().nullable(),
     createdAt: timestamp,
     updatedAt: timestamp,
     revisions: z.array(
       revisionInput.extend({
         id: z.string().uuid(),
-        sequence: z.number().int().positive().max(2147483647).optional(),
+        notes: z.string().max(2000),
+        reason: revisionInput.shape.reason.unwrap(),
+        date: revisionInput.shape.date.refine((s) => s.length === 16, '备份业务时间必须精确到分钟'),
+        sequence: z.number().int().positive().max(2147483647),
         createdAt: timestamp,
         updatedAt: timestamp,
       }),
@@ -81,68 +91,65 @@ const record = positionMeta
 const backupSchema = z
   .object({
     format: z.literal('worthpath'),
-    version: z.union([z.literal(1), z.literal(2)]),
+    version: z.literal(BACKUP_ZIP_VERSION, { error: '备份数据必须来自当前 ZIP v9 格式' }),
     exportedAt: z.iso.datetime(),
     baseCurrency: currency,
     currencies: z.array(currency).max(10),
     preferences: z
       .object({
-        showSidebar: z.boolean().optional(),
-        hiddenMenus: hiddenMenus.optional(),
-        accountGroupOrder: accountGroupOrder.optional(),
-        sessionHours: sessionHours.optional(),
-        requireHiddenPassword: z.boolean().optional(),
-        overviewCards: overviewCards.optional(),
-        includeIndependentAssets: z.boolean().optional(),
-        showNotes: z.boolean().optional(),
+        hiddenMenus: hiddenMenus,
+        accountGroupOrder: accountGroupOrder,
+        sessionHours: sessionHours,
+        requireHiddenPassword: z.boolean(),
+        overviewCards: overviewCards,
+        includeIndependentAssets: z.boolean(),
+        showNotes: z.boolean(),
         idleMinutes: z.number().int().min(0).max(1440),
       })
-      .strict()
-      .optional(),
-    icons: z
-      .array(
-        z
-          .object({
-            id: z.string().uuid(),
-            name: iconName,
-            shared: z.boolean(),
-            image: z.string().max(3 * 1024 * 1024),
-            hash: z.string().regex(/^[a-f0-9]{64}$/),
-          })
-          .strict(),
-      )
-      .optional(),
-    transfers: z
-      .array(
-        transferInput.safeExtend({
+      .strict(),
+    icons: z.array(
+      z
+        .object({
           id: z.string().uuid(),
-          importedFromId: z.string().uuid().nullable().optional(),
-          sourceRevisionId: z.string().uuid(),
-          targetRevisionId: z.string().uuid(),
-          sourceCurrency: currency,
-          targetCurrency: currency,
-          createdAt: timestamp,
-        }),
-      )
-      .optional(),
-    schedules: z
-      .array(
-        scheduleInput.safeExtend({
-          id: z.string().uuid(),
-          importedFromId: z.string().uuid().nullable().optional(),
-          enabled: z.boolean(),
-          completed: z.boolean().default(false),
-        }),
-      )
-      .optional(),
-    metalPrices: z
-      .array(
-        metalPriceInput.extend({
-          source: z.enum(['manual', 'goldapi']),
-          quotedAt: timestamp,
-        }),
-      )
-      .optional(),
+          name: iconName,
+          shared: z.boolean(),
+          image: z.string().max(3 * 1024 * 1024),
+          hash: z.string().regex(/^[a-f0-9]{64}$/),
+        })
+        .strict(),
+    ),
+    transfers: z.array(
+      transferInput.safeExtend({
+        id: z.string().uuid(),
+        importedFromId: z.string().uuid().nullable(),
+        operation: transferInput.shape.operation.unwrap(),
+        fee: transferInput.shape.fee.unwrap(),
+        notes: z.string().max(2000),
+        date: transferInput.shape.date.refine((s) => s.length === 16),
+        sourceRevisionId: z.string().uuid(),
+        targetRevisionId: z.string().uuid(),
+        sourceCurrency: currency,
+        targetCurrency: currency,
+        createdAt: timestamp,
+      }),
+    ),
+    schedules: z.array(
+      scheduleInput.safeExtend({
+        id: z.string().uuid(),
+        importedFromId: z.string().uuid().nullable(),
+        enabled: z.boolean(),
+        completed: z.boolean(),
+        targetId: z.string().uuid().nullable(),
+        received: amount,
+        notes: z.string().max(2000),
+      }),
+    ),
+    metalPrices: z.array(
+      metalPriceInput.extend({
+        source: z.enum(['manual', 'goldapi']),
+        quotedAt: timestamp,
+      }),
+    ),
     positions: z.array(record),
     links: z.array(z.object({ sourceId: z.string().uuid(), targetId: z.string().uuid() }).strict()),
     rates: z.array(rateInput.safeExtend({ source: z.enum(['manual', 'frankfurter']) })),
@@ -155,11 +162,11 @@ export function validateBackup(raw: unknown) {
   if (ids.size !== b.positions.length) throw new BadRequestException('重复项目 ID');
   const origins = b.positions.map((p) => p.importedFromId || p.id);
   if (new Set(origins).size !== origins.length) throw new BadRequestException('备份内包含重复项目');
-  const quoteKeys = (b.metalPrices || []).map((q) => q.metalType + q.currency + q.date);
+  const quoteKeys = b.metalPrices.map((q) => q.metalType + q.currency + q.date);
   if (new Set(quoteKeys).size !== quoteKeys.length) throw new BadRequestException('重复贵金属报价');
-  const iconIds = new Set((b.icons || []).map((i) => i.id));
+  const iconIds = new Set(b.icons.map((i) => i.id));
   if (
-    iconIds.size !== (b.icons || []).length ||
+    iconIds.size !== b.icons.length ||
     b.positions.some((p) => p.iconId && !iconIds.has(p.iconId))
   )
     throw new BadRequestException('图标关联无效');
@@ -172,8 +179,7 @@ export function validateBackup(raw: unknown) {
         metalType: p.metalType,
         metalGrams: p.metalGrams,
         metalCostPerGram: p.metalCostPerGram,
-        metalPurity: p.metalPurity || '1',
-        autoValuation: p.autoValuation || false,
+        autoValuation: p.autoValuation,
       });
     }
     positionInput.parse({
@@ -203,7 +209,7 @@ export function validateBackup(raw: unknown) {
     if (p.kind !== 'account' && p.revisions.some((r) => r.amount.startsWith('-')))
       throw new BadRequestException('仅账户支持负余额');
   const planIds = new Set<string>();
-  for (const plan of b.schedules || []) {
+  for (const plan of b.schedules) {
     const source = ids.get(plan.sourceId),
       target = plan.targetId ? ids.get(plan.targetId) : null;
     if (
@@ -222,7 +228,7 @@ export function validateBackup(raw: unknown) {
   }
   const transferIds = new Set<string>(),
     usedRevisions = new Set<string>();
-  for (const t of b.transfers || []) {
+  for (const t of b.transfers) {
     const source = ids.get(t.sourceId),
       target = ids.get(t.targetId);
     const origin = t.importedFromId || t.id;
@@ -328,16 +334,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
     await this.prune(true);
   }
   private async uploadedData(path: string) {
-    const handle = await open(path, 'r');
-    const prefix = Buffer.alloc(2);
-    try {
-      await handle.read(prefix, 0, 2, 0);
-    } finally {
-      await handle.close();
-    }
-    return prefix.toString() === 'PK'
-      ? readBackupZip(path)
-      : JSON.parse((await readFile(path, 'utf8')).replace(/^\uFEFF/, ''));
+    return readBackupZip(path);
   }
   constructor(private db: Database) {}
   async snapshot(userId: string) {
@@ -429,7 +426,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
     const schedules = await client.schedule.findMany({ where: { userId } });
     return backupSchema.parse({
       format: 'worthpath',
-      version: 2,
+      version: BACKUP_ZIP_VERSION,
       exportedAt: new Date().toISOString(),
       baseCurrency: user.baseCurrency,
       preferences: {
@@ -569,13 +566,13 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
     data.rates.sort((a, b) =>
       (a.currency + a.baseCurrency + a.date).localeCompare(b.currency + b.baseCurrency + b.date),
     );
-    data.metalPrices?.sort((a, b) =>
+    data.metalPrices.sort((a, b) =>
       (a.metalType + a.currency + a.date).localeCompare(b.metalType + b.currency + b.date),
     );
     data.currencies.sort();
-    data.transfers?.sort((a, b) => a.id.localeCompare(b.id));
-    data.schedules?.sort((a, b) => a.id.localeCompare(b.id));
-    data.icons?.sort((a, b) => a.id.localeCompare(b.id));
+    data.transfers.sort((a, b) => a.id.localeCompare(b.id));
+    data.schedules.sort((a, b) => a.id.localeCompare(b.id));
+    data.icons.sort((a, b) => a.id.localeCompare(b.id));
     return createHash('sha256').update(JSON.stringify(data)).digest('hex');
   }
   async clearStatus(r: UserRequest) {
@@ -611,15 +608,15 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
   async preview(r: UserRequest, raw: unknown) {
     const b = validateBackup(raw),
       existing = await this.data(r.userId);
-    for (const i of b.icons || []) await validateStoredIcon(i.image, i.hash);
+    for (const i of b.icons) await validateStoredIcon(i.image, i.hash);
     this.conflicts(b, existing);
     return {
       positions: b.positions.length,
       revisions: b.positions.reduce((n, p) => n + p.revisions.length, 0),
       rates: b.rates.length,
-      icons: (b.icons || []).length,
-      transfers: (b.transfers || []).length,
-      schedules: (b.schedules || []).length,
+      icons: b.icons.length,
+      transfers: b.transfers.length,
+      schedules: b.schedules.length,
       baseCurrency: b.baseCurrency,
       currentBaseCurrency: existing.baseCurrency,
       message:
@@ -650,7 +647,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
         .parse(raw),
       b = validateBackup(backup);
     const iconData = new Map<string, Buffer>();
-    for (const i of b.icons || []) iconData.set(i.id, await validateStoredIcon(i.image, i.hash));
+    for (const i of b.icons) iconData.set(i.id, await validateStoredIcon(i.image, i.hash));
     return this.db.$transaction(
       async (tx) => {
         const ps = await tx.position.findMany({
@@ -671,7 +668,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
         } as unknown as Backup;
         this.conflicts(b, existing);
         const iconMapping = new Map<string, string>();
-        for (const i of b.icons || []) {
+        for (const i of b.icons) {
           const row = await tx.icon.upsert({
             where: { ownerId_hash_shared: { ownerId: r.userId, hash: i.hash, shared: false } },
             create: {
@@ -742,7 +739,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
           });
           originals.forEach((v, i) => revisionMapping.set(v.id, restored[i].id));
         }
-        for (const q of b.metalPrices || []) {
+        for (const q of b.metalPrices) {
           const key = {
             userId: r.userId,
             metalType: q.metalType,
@@ -759,7 +756,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
               data: { ...key, price: q.price, source: q.source, quotedAt: new Date(q.quotedAt) },
             });
         }
-        for (const t of b.transfers || [])
+        for (const t of b.transfers)
           await tx.transfer.create({
             data: {
               userId: r.userId,
@@ -779,7 +776,7 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
               createdAt: new Date(t.createdAt),
             },
           });
-        for (const plan of b.schedules || []) {
+        for (const plan of b.schedules) {
           const { id, importedFromId, ...v } = plan;
           await tx.schedule.create({
             data: {
@@ -814,17 +811,17 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
             where: { id: r.userId },
             data: {
               baseCurrency: b.baseCurrency,
-              idleMinutes: b.preferences?.idleMinutes,
-              hiddenMenus: b.preferences?.hiddenMenus?.join(','),
-              showNotes: b.preferences?.showNotes,
-              accountGroupOrder: b.preferences?.accountGroupOrder,
-              sessionHours: b.preferences?.sessionHours,
-              requireHiddenPassword: b.preferences?.requireHiddenPassword,
-              overviewCards: b.preferences?.overviewCards,
-              includeIndependentAssets: b.preferences?.includeIndependentAssets,
+              idleMinutes: b.preferences.idleMinutes,
+              hiddenMenus: b.preferences.hiddenMenus.join(','),
+              showNotes: b.preferences.showNotes,
+              accountGroupOrder: b.preferences.accountGroupOrder,
+              sessionHours: b.preferences.sessionHours,
+              requireHiddenPassword: b.preferences.requireHiddenPassword,
+              overviewCards: b.preferences.overviewCards,
+              includeIndependentAssets: b.preferences.includeIndependentAssets,
             },
           });
-        if (!ps.length && !rs.length && b.preferences?.requireHiddenPassword !== undefined)
+        if (!ps.length && !rs.length)
           await tx.session.updateMany({ where: { userId: r.userId }, data: { revealUntil: null } });
         return { ok: true, positions: b.positions.length };
       },
@@ -860,11 +857,5 @@ export class BackupController {
   }
   @Post('clear') async clear(@Req() r: UserRequest, @Body() raw: unknown) {
     return this.service.clear(r, raw);
-  }
-  @Post('preview') async preview(@Req() r: UserRequest, @Body() raw: unknown) {
-    return this.service.preview(r, raw);
-  }
-  @Post('import') async restore(@Req() r: UserRequest, @Body() raw: unknown) {
-    return this.service.restore(r, raw);
   }
 }

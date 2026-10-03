@@ -558,5 +558,7 @@
   "估值盈亏": "Valuation profit/loss",
   "待估值": "Awaiting valuation",
   "按克数添加，参考价自动估值；缺少报价时显示待估值，不计为已知零价值。": "Add by grams with automatic market valuation. Missing quotes mean awaiting valuation, not a known zero value.",
-  "缺少报价，当前总额不完整。": "Quotes are missing; current totals are incomplete."
+  "缺少报价，当前总额不完整。": "Quotes are missing; current totals are incomplete.",
+  "黄金与白银按重量及每克参考价估值。每日尝试更新，失败保留旧价；参考价不含工费与回收折价。": "Gold and silver are valued by weight and the reference price per gram. Daily updates retain prior prices on failure; fees and resale discounts are excluded.",
+  "买入成本按总克数计算；新持仓按克数和参考价估值。清空买入价后不显示盈亏。": "Purchase cost uses total grams. New holdings use grams and reference prices for valuation. Clearing purchase price hides profit and loss."
 }

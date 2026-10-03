@@ -1,3 +1,4 @@
+import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,7 +13,7 @@ test('real MySQL: groups, scheduled atomic execution, calendar, privacy and ZIP 
   const minute = (delta = 0) =>
     new Date(Date.now() + delta + 8 * 3600000).toISOString().slice(0, 16);
   async function call(path: string, cookie = '', method = 'GET', body?: unknown) {
-    const res = await fetch(base + path, {
+    const res = await fixtureFetch(base + path, {
       method,
       headers: {
         Cookie: cookie,
@@ -186,7 +187,7 @@ test('real MySQL: groups, scheduled atomic execution, calendar, privacy and ZIP 
     const backup = (await call('/backup', a.cookie)).data;
     assert.equal(backup.schedules.length, 3);
     assert.equal(
-      (await call('/backup/import', b.cookie, 'POST', { confirmed: true, backup })).status,
+      (await call('/backup/restore-fixture', b.cookie, 'POST', { confirmed: true, backup })).status,
       201,
     );
     assert.equal((await call('/schedules/run', b.cookie, 'POST', {})).data.executed, 0);

@@ -2,7 +2,6 @@ import {
   Controller,
   Get,
   Post,
-  Put,
   Delete,
   Req,
   Param,
@@ -18,6 +17,7 @@ import { Database } from '../database';
 import { AuthService, UserRequest } from '../auth';
 import { AgentOAuth, urls, scopeInput } from './oauth';
 import { AgentOperations } from './operations';
+import { protocolTools, tokenDays } from './information';
 @Controller('api/agent')
 export class AgentManagementController {
   constructor(
@@ -62,34 +62,26 @@ export class AgentManagementController {
     });
     return {
       mcpUrl: urls().resource.toString(),
-      mode:
-        (await this.db.agentPolicy.findUnique({ where: { userId: r.userId } }))?.mode || 'draft',
+      capabilities: [
+        ...this.operations.tools.map((t) => ({
+          name: t.name,
+          description: t.description,
+          scope: t.scope,
+          destructive: !!t.destructive,
+        })),
+        ...protocolTools,
+      ],
       grants,
       operations,
       calls,
     };
-  }
-  @Put('policy') async policy(@Req() r: UserRequest, @Body() raw: unknown) {
-    const { mode, password } = z
-      .object({ mode: z.enum(['readonly', 'draft', 'direct']), password: z.string().max(72) })
-      .strict()
-      .parse(raw);
-    this.auth.limit(r);
-    const u = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
-    if (!(await compare(password, u.passwordHash))) throw new ForbiddenException('密码错误');
-    await this.db.agentPolicy.upsert({
-      where: { userId: r.userId },
-      create: { userId: r.userId, mode },
-      update: { mode },
-    });
-    return { mode };
   }
   @Post('tokens') async token(@Req() r: UserRequest, @Body() raw: unknown) {
     const p = z
       .object({
         name: z.string().trim().min(1).max(100),
         scopes: scopeInput,
-        days: z.number().int().min(1).max(90),
+        days: z.union([z.literal(null), ...tokenDays.map((d) => z.literal(d))]),
         password: z.string().max(72),
       })
       .strict()
@@ -118,8 +110,11 @@ export class AgentManagementController {
     @Param('id') id: string,
     @Body() raw: unknown,
   ) {
-    const { approve } = z.object({ approve: z.boolean() }).strict().parse(raw);
-    return this.oauth.consent(r.userId, z.string().uuid().parse(id), approve);
+    const { approve, scopes } = z
+      .object({ approve: z.boolean(), scopes: scopeInput.optional() })
+      .strict()
+      .parse(raw);
+    return this.oauth.consent(r.userId, z.string().uuid().parse(id), approve, scopes);
   }
   @Get('operations/:id') preview(@Req() r: UserRequest, @Param('id') id: string) {
     return this.operations.preview(r.userId, z.string().uuid().parse(id));
