@@ -4,6 +4,10 @@
 
 ## 开始连接
 
+操作教程仅用于连接完成后的业务指引。把地址和教程贴进聊天不会注册 MCP 服务，也不会为当前会话授予工具；网页预览、Agent 回复“明白”均不能证明已连接。先在客户端配置服务并完成认证，再检查工具列表与 `connection_info`。
+
+`localhost` 是 MCP 客户端执行请求的电脑。本机客户端可以访问本机 WorthPath；远端或云端客户端需要能访问的 HTTPS 服务地址，不能直接访问你的电脑上的 `localhost:3100`。不要把个人令牌贴在聊天、URL、教程或 Git 配置中。
+
 在「设置与备份 → 连接 Agent」复制实际 MCP 地址和“Agent 使用教程”。支持远程 OAuth 的客户端填写此地址，选择 Streamable HTTP；在 WorthPath 网页登录，审核客户端名称、回调地址、资源，并选择连接权限。网页会回到已注册的精确回调地址并保留 state。客户端自行验证 state。
 
 OAuth 使用发现元数据、动态注册的公开客户端、授权码、S256 PKCE、RFC 8707 resource。每次 MCP 请求独立验证 Bearer；网页登录 Cookie、MCP 会话 ID 均不作为认证凭证。发现入口为 `/.well-known/oauth-protected-resource/mcp`，未授权响应提供 `WWW-Authenticate`。
@@ -21,6 +25,28 @@ OAuth 使用发现元数据、动态注册的公开客户端、授权码、S256 
 个人访问令牌仅作为支持自定义 Bearer 头客户端的补充。在网站验证当前密码，选择权限和 1、3、7、30 天、365 天或永久。完整值仅创建时展示，数据库只存 SHA-256 摘要。永久令牌数据库到期日为空，每个请求仍重新检查撤销和资源；为兼容 SDK 中间件，每次认证上下文有有限期验证断言，不改变令牌期限。永久令牌内部业务会话按天续期。OAuth 访问令牌一小时、刷新授权三十天，刷新时轮换摘要；不支持永久 OAuth。
 
 旧连接有 write 时，现在直接执行普通修改；旧全局策略不再阻止它。只想创建草稿时，撤销旧连接并重新授权 read draft。历史策略行保留但不参与任何权限判断；旧敏感工具草稿不可提交。
+
+## 本机 Codex OAuth 接入
+
+以下命令已核对本机 Codex CLI 0.160.0 帮助和[官方 MCP 文档](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)。在 WorthPath 所在电脑的 PowerShell 执行；已有名为 worthpath 的连接时跳过 add。CLI 与桌面/IDE 的配置共享不代表当前会话已经加载工具，授权后重启客户端或新建会话，并检查工具发现。
+
+```powershell
+codex mcp add worthpath --url http://localhost:3100/mcp
+codex mcp login worthpath --scopes read --oauth-client-registration dcr
+codex mcp list
+```
+
+浏览器打开 WorthPath 登录与授权页面；用户选择连接权限后客户端取得 OAuth 凭据，无需个人令牌。请求草稿改为 `--scopes read,draft`；请求普通写入改为 `--scopes read,write`。隐藏账户权限另行显式申请与授权。DCR 是当前服务实际支持并验证的客户端注册方式。
+
+使用独立临时 CODEX_HOME 和临时账号，真实通过 CLI OAuth/DCR 登录。CLI 保存的凭据随后通过官方 SDK 初始化、发现 39 个工具和调用 connection_info，权限 read、隐藏读写 false。已清理临时账号、注册及凭据；未更改真实用户的授权或 Codex 配置。尚未验证 Codex 桌面聊天内实际调用，不能把 CLI 登录测试等同于桌面端端到端验证。
+
+若客户端明确需要 PAT，Codex HTTP 配置支持 `bearer_token_env_var`，不是假定存在一个“安全自定义头”界面：
+
+```powershell
+codex mcp add worthpath --url http://localhost:3100/mcp --bearer-token-env-var WORTHPATH_MCP_TOKEN
+```
+
+令牌通过客户端进程可读取的 WORTHPATH_MCP_TOKEN 环境变量提供，不写入该命令或聊天。已经启动的桌面进程不会自动获得后来在另一个终端设置的环境变量。优先 OAuth，避免此进程环境问题；PAT 配置命令语法已核对，尚未通过 Codex 桌面端验证。
 
 ## Agent 操作
 
@@ -60,7 +86,7 @@ pnpm --filter @worthpath/api mcp:probe
 Remove-Item Env:MCP_ACCESS_TOKEN
 ```
 
-未验证 MCP Inspector、Claude、ChatGPT、Cursor、Codex 等商业客户端的配置和 OAuth 实际行为，不提供推测配置。生产 HTTPS 代理未部署验证。
+除上文 Codex CLI OAuth/DCR 登录外，未验证 MCP Inspector、Claude、ChatGPT、Cursor 或 Codex 桌面端实际工具调用。生产 HTTPS 代理未部署验证。
 
 ## 启动与部署
 

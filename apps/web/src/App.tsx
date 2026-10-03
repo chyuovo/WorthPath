@@ -307,6 +307,7 @@ export default function App() {
     [clearConfirmation, setClearConfirmation] = useState(0);
   useToast(error, 'error');
   useToast(success, 'success');
+  useToast(fxStatus?.state === 'error' ? fxStatus.message : '', 'error');
   const [settingsSection, setSettingsSection] = useState(
       new URLSearchParams(location.search).has('agent_authorization') ||
         new URLSearchParams(location.search).has('agent_operation')
@@ -2116,10 +2117,7 @@ export default function App() {
                 <section className="panel" hidden={settingsSection !== 'rates'}>
                   <h2>{tr('每日汇率')}</h2>
                   {fxStatus && (
-                    <p
-                      className={fxStatus.state === 'error' ? 'notice warning' : 'muted'}
-                      role="status"
-                    >
+                    <p className="muted" role="status">
                       {tr(fxStatus.message)}
                       {fxStatus.attemptedAt
                         ? ' · ' +

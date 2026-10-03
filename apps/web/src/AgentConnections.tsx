@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import { showToast, useToast } from './Toast';
 
 type Connection = {
   id: string;
@@ -87,8 +88,9 @@ const capabilityGroups = [
 ];
 function instructions(url: string) {
   return [
+    '以下是配置 MCP 连接后的操作说明，不会自动添加连接或授予工具。若本会话没有 WorthPath 工具，请先告知我，并指导我在客户端配置连接；不要仅凭网址或聊天中的令牌声称已连接。',
     '请使用已连接的 WorthPath MCP 服务处理我的资产与负债，服务地址：' + url,
-    '接入使用 Streamable HTTP。支持 OAuth 的客户端使用该地址发现授权服务，并由我在 WorthPath 网页登录授权；支持自定义 Bearer 头的客户端可在安全的凭据设置中填写个人令牌。不要让我把密码或令牌粘贴到对话中。',
+    '接入使用 Streamable HTTP。支持 OAuth 的客户端使用该地址发现授权服务，并由我在 WorthPath 网页登录授权；个人令牌仅用于明确支持 Bearer 认证的客户端，按其文档配置环境变量或凭据存储。不要假设客户端有自定义请求头界面，不要让我把密码或令牌粘贴到对话中。localhost 仅适用于 MCP 请求在 WorthPath 所在电脑执行的客户端；云端客户端需要可访问的 HTTPS 地址。',
     '先 tools/list 发现工具，调用 connection_info 核对权限：read 只读，draft 创建待网页确认的草稿，write 直接普通写入。隐藏账户读写以连接附加授权为准。',
     '查询：用 positions_list 搜索对象；遇到同名先让我选择稳定 ID；按 limit/offset 或 cursor 翻页。金额和克数使用十进制字符串，业务时间是 UTC+8 的 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm。',
     '写入：先 state_get 取得 state，使用 expectedState 与唯一 idempotencyKey 调用所需工具。网络重试保持键和全部参数一致；状态冲突则重新查询并换键。不要把估值更新、转账、还款或负债变化互相替代。',
@@ -113,6 +115,8 @@ export function AgentConnections() {
     [consentLevel, setConsentLevel] = useState('read'),
     [consentHiddenRead, setConsentHiddenRead] = useState(false),
     [consentHiddenWrite, setConsentHiddenWrite] = useState(false);
+  useToast(error, 'error');
+  useToast(message, 'success');
   const load = async () => setData(await api<Management>('/agent'));
   const act = async (work: () => Promise<unknown>) => {
     if (busy) return;
@@ -142,9 +146,9 @@ export function AgentConnections() {
   const copy = async (text: string, label: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      setMessage(label);
+      showToast(label, 'success');
     } catch {
-      setError('复制失败，请从下方可选中文本手动复制');
+      showToast('复制失败，请从下方可选中文本手动复制', 'error');
     }
   };
   return (
@@ -156,16 +160,6 @@ export function AgentConnections() {
         </div>
         {data && <span className="badge">{data.capabilities.length} 个工具 · 按连接授权</span>}
       </div>
-      {error && (
-        <p role="alert" className="danger-text">
-          {error}
-        </p>
-      )}
-      {message && (
-        <p role="status" className="agent-notice">
-          {message}
-        </p>
-      )}
       {data && (
         <div className="agent-layout">
           <nav className="agent-tabs agent-wide" aria-label="Agent 功能分区">
@@ -207,9 +201,14 @@ export function AgentConnections() {
                     复制地址
                   </button>
                 </div>
-                <p className="muted">在客户端添加地址，完成网页授权，再复制教程并描述任务。</p>
+                <p className="muted">
+                  先在客户端添加 MCP 连接并完成授权。复制下面的操作说明到聊天不会建立连接。
+                </p>
                 <details className="agent-details">
                   <summary>查看连接步骤</summary>
+                  <p>
+                    localhost 只适用于本机执行 MCP 请求的客户端；云端客户端需要可访问的 HTTPS 地址。
+                  </p>
                   <ol className="agent-steps">
                     <li>
                       <strong>配置连接</strong>：在支持远程 MCP OAuth 的客户端中填写地址，选择
@@ -219,6 +218,10 @@ export function AgentConnections() {
                       <strong>选择连接权限</strong>：先从 read
                       或草稿模式开始，根据需要增加权限。OAuth 访问令牌 1 小时，刷新授权最多 30
                       天并轮换。
+                    </li>
+                    <li>
+                      <strong>检查工具已加载</strong>：客户端须能列出 WorthPath 工具并成功调用
+                      connection_info。只有网址、网页预览或“明白”回复不能证明已连接。
                     </li>
                     <li>
                       <strong>把操作说明交给 Agent</strong>
@@ -251,10 +254,41 @@ export function AgentConnections() {
                   />
                 </details>
                 <details className="agent-details">
+                  <summary>本机 Codex：使用 OAuth，无需填写个人令牌</summary>
+                  <p>
+                    在运行 WorthPath 的电脑上打开 PowerShell。未添加连接时先运行第一行；已有
+                    worthpath 连接时直接运行登录命令，在 WorthPath 网页登录并选择权限。
+                  </p>
+                  <pre>{`codex mcp add worthpath --url ${data.mcpUrl}\ncodex mcp login worthpath --scopes read --oauth-client-registration dcr\ncodex mcp list`}</pre>
+                  <button
+                    className="secondary"
+                    type="button"
+                    onClick={() =>
+                      void copy(
+                        `codex mcp login worthpath --scopes read --oauth-client-registration dcr`,
+                        'OAuth 登录命令已复制',
+                      )
+                    }
+                  >
+                    复制 OAuth 登录命令
+                  </button>
+                  <p className="muted">
+                    read 为只读；草稿使用 read,draft，直接普通写入使用
+                    read,write。登录后重启客户端或新建会话，并检查 WorthPath 工具已加载。
+                  </p>
+                  <p className="muted">
+                    已验证 Codex CLI 0.160.0 的 OAuth/DCR 登录及其凭据通过官方 SDK
+                    的初始化、工具发现和 connection_info。尚未验证 Codex
+                    桌面会话内调用；云端聊天无法直接使用本机 localhost。
+                  </p>
+                </details>
+                <details className="agent-details">
                   <summary>支持 Bearer 头的客户端与已验证 SDK 配置</summary>
                   <p>
-                    在下方创建个人令牌，把完整值填入客户端的安全凭据设置；请求头为 Authorization:
-                    Bearer &lt;令牌&gt;。个人令牌只显示一次，不能作为通用 OAuth 的替代。
+                    仅在客户端明确支持 Bearer
+                    认证时创建个人令牌，按其文档配置环境变量或凭据存储；不要放入聊天、URL
+                    或教程。请求头为 Authorization: Bearer
+                    &lt;令牌&gt;。个人令牌只显示一次，不能作为通用 OAuth 的替代。
                   </p>
                   <pre>{`new StreamableHTTPClientTransport(new URL(${JSON.stringify(data.mcpUrl)}), {\n  requestInit: { headers: { Authorization: 'Bearer ' + process.env.MCP_ACCESS_TOKEN } }\n});`}</pre>
                   <button

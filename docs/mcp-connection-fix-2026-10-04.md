@@ -1,0 +1,29 @@
+# MCP 接入排查与提示统一
+
+2026-10-04 02:23（UTC+8）。使用临时账号验证，真实用户账目、令牌及 Codex 配置未修改。
+
+## 发现
+
+本机已有 enabled 的 worthpath Streamable HTTP 配置，URL 为 http://localhost:3100/mcp。该配置未指定 Bearer 环境变量或 Authorization 头；CLI auth_status=unknown，不能以该状态断言 OAuth 凭据存在或不存在。本次会话没有加载 WorthPath 工具。服务 OAuth 资源发现返回正常元数据，未认证 MCP 请求返回 401。
+
+教程贴入聊天不会注册 MCP 服务。客户端必须先完成配置、认证和工具加载。localhost 只指请求执行端所在电脑，远端客户端需要可达 HTTPS 服务，不能根据网页预览声称已连接。
+
+## 修改
+
+- apps/web/src/AgentConnections.tsx：教程前置连接检查、网络边界、Bearer 配置限制；折叠显示已验证 Codex OAuth 命令；成功和错误反馈统一右上角 Toast。
+- apps/web/src/Toast.tsx：提取 showToast，重复复制相同命令也刷新通知，复用已有自动消失、去重、关闭和模态框兼容机制。
+- apps/web/src/App.tsx：汇率更新失败使用相同 Toast；汇率状态仍作为可查询信息显示。缺少汇率造成总额不完整等持续业务说明保留。
+- docs/mcp.md：实际接入步骤、已验证客户端范围、环境变量 PAT 的进程继承限制。
+- update.md：完成提示统一要求并记录接入修正。
+
+## 实际验证
+
+- Codex CLI 0.160.0，独立临时 CODEX_HOME，OAuth/DCR + S256 PKCE；临时用户 read 授权成功，CLI 回调与凭据保存成功。
+- 使用 CLI 发行的 OAuth 凭据通过官方 SDK 1.31.0 初始化、发现 39 个工具、调用 connection_info；权限 read，隐藏读写均 false。
+- 临时用户、DCR 注册、授权和临时客户端凭据已清理，没有使用聊天中暴露的个人令牌。
+- 前端 TypeScript 检查及生产构建通过。
+- 浏览器验证新说明和命令、复制后右上角成功提示、重复复制刷新、错误密码请求拒绝且右上角错误提示。令牌值不出现在 Toast 中。
+
+本次没有数据库模型或业务服务变更，无新增迁移。没有重复运行此前 REST/MySQL 全业务回归；此前结果见更新记录。本次尚未验证 Codex 桌面会话直接工具调用、其他商业客户端或公网 HTTPS 部署。CLI 登录测试与 SDK 工具调用测试不等于这些验证。
+
+具体接入步骤见 [MCP 文档](mcp.md)。没有部署或推送。

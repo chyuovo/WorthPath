@@ -5,12 +5,15 @@ type Kind = 'success' | 'error';
 type Notice = { id: number; message: string; kind: Kind };
 let sequence = 0;
 const listeners = new Set<(notice: Notice) => void>();
+export function showToast(message: string, kind: Kind) {
+  if (message) {
+    const notice = { id: ++sequence, message, kind };
+    listeners.forEach((fn) => fn(notice));
+  }
+}
 export function useToast(message: string, kind: Kind) {
   useEffect(() => {
-    if (message) {
-      const notice = { id: ++sequence, message, kind };
-      listeners.forEach((fn) => fn(notice));
-    }
+    showToast(message, kind);
   }, [message, kind]);
 }
 function ToastItem({ notice, remove }: { notice: Notice; remove: (id: number) => void }) {
