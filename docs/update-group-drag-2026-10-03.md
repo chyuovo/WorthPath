@@ -20,7 +20,3 @@
 - 验收临时账号和脚本清理，保留用户原有 Vite 配置改动；仅本地 Git 提交，不 push。
 
 完成时间：2026-10-03 17:04。
-
-![拖拽分组排序](group-drag-preview.png)
-
-![全部账户按分组分行](account-group-rows-preview.png)

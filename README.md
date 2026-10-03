@@ -97,6 +97,10 @@ git config remote.pushDefault github
 ```
 
 
+## 文档维护
+
+文档维护约定：`docs` 目录仅保存文字文档和结构化验收数据，不保存图片。界面验收结果以文字记录，Markdown 不引用已删除的截图；应用使用的图标素材仍保存在 `apps/api/assets/icons`。
+
 ## 第三方接口与外部素材来源
 
 ### 运行时第三方接口
