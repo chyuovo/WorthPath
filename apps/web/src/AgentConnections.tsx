@@ -119,7 +119,10 @@ function codexSetupPrompt(url: string, level: string) {
     '执行 codex mcp login worthpath --scopes ' +
       selected +
       ' --oauth-client-registration dcr 发起网页登录。我会自行登录并确认权限。等待回调时保留登录进程；需要等待我完成网页步骤时，明确告诉我当前状态。',
-    '授权后检查连接配置与真实工具可用性。能调用时先 tools/list，再 connection_info 核对权限；若当前会话不会重新加载工具，请告诉我重启客户端或新建本机会话后继续验证。只有配置、OAuth 成功和工具调用成功都验证后才能说已可用，不把 codex mcp list 或网页登录成功当作工具调用成功。',
+    '实测 Codex CLI 0.160.0 显式执行 --scopes read,draft 时只请求这两项；默认登录会使用 scopes_supported，授权链接列出 read,draft,write,hidden_read,hidden_write。如果实际请求范围较宽，这是客户端请求的候选范围，不是最终授权。WorthPath 网页支持收窄：选择本次指定的权限等级，两个隐藏账户选项保持关闭，页面会明确显示最终授予权限；服务端仅按网页选择发行令牌。不要仅因请求包含全部候选权限就终止登录或让我自行检查页面。你可以打开正确 WorthPath 资源的授权页面供我审阅，最终选择和确认仍由我完成。',
+    '授权后检查连接配置与真实工具可用性。能调用时先 tools/list，再 connection_info；最终 scopes 必须仅为本次指定的 ' +
+      selected +
+      '，且 readHidden/writeHidden 均为 false。若结果不符，停止使用该连接并报告差异，不修改账目。若当前会话不会重新加载工具，请告诉我重启客户端或新建本机会话后继续验证。只有配置、OAuth 成功和工具调用成功都验证后才能说已可用，不把 codex mcp list 或网页登录成功当作工具调用成功。',
     '配置期间不要创建、修改或删除我的账目。后续资产查询、转账和还款优先使用 WorthPath MCP；工具或权限不可用时如实说明。',
     ...instructions(url).split('\n\n').slice(3),
   ].join('\n\n');
@@ -657,7 +660,10 @@ export function AgentConnections() {
         <div className="agent-confirm">
           <h3>审核 OAuth 连接</h3>
           <p>{consent.name}</p>
-          <p>权限：{consent.scopes.join(', ')}</p>
+          <p>客户端请求的候选权限：{consent.scopes.join(', ')}</p>
+          <p className="muted">
+            候选范围不代表已授权。最终仅授予下方选择的权限，隐藏账户权限默认关闭。
+          </p>
           <p>资源：{consent.resource}</p>
           <p>回调地址：{consent.redirectUri}</p>
           <p className="muted">只批准你正在连接的客户端；请核对回调地址。</p>
@@ -678,7 +684,7 @@ export function AgentConnections() {
             </select>
           </label>
           {consent.scopes.includes('hidden_read') && (
-            <label>
+            <label className="check-line">
               <input
                 type="checkbox"
                 checked={consentHiddenRead}
@@ -691,7 +697,7 @@ export function AgentConnections() {
             </label>
           )}
           {consent.scopes.includes('hidden_write') && (
-            <label>
+            <label className="check-line">
               <input
                 type="checkbox"
                 disabled={!consentHiddenRead || consentLevel === 'read'}
@@ -701,6 +707,18 @@ export function AgentConnections() {
               允许修改隐藏账户
             </label>
           )}
+          <p role="status">
+            最终将授予：
+            {consent.scopes
+              .filter(
+                (scope) =>
+                  scope === 'read' ||
+                  scope === consentLevel ||
+                  (scope === 'hidden_read' && consentHiddenRead) ||
+                  (scope === 'hidden_write' && consentHiddenWrite),
+              )
+              .join(', ')}
+          </p>
           {[true, false].map((approve) => (
             <button
               className="secondary"

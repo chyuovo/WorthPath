@@ -120,3 +120,11 @@ cd E:\WorthPath
 ### Windows 执行环境挂起
 
 配置提示词已包含短命令排查：优先无 profile 模式，超过 15 秒仅结束自己启动的检查，受限环境仍挂起时使用执行工具的正常权限申请流程继续。OAuth 等待网页回调不适用短命令超时。2026-10-04 本机通过提升权限、login:false 和官方 CLI 完整路径执行 --version 成功，版本 0.160.0。不能据此保证所有客户端沙箱均允许本机执行；权限申请被拒时必须报告具体原因。本次未修改真实 MCP 配置或发起新的用户授权。
+
+### 客户端请求范围与最终授权
+
+本机 Codex CLI 0.160.0 实测：显式 login --scopes read,draft 只请求两项；不指定 scopes 的默认登录请求全部五项。请求范围是候选权限，不是已经授予的权限。授权页可选择只读、草稿或直接写入；隐藏读写默认关闭。页面分别展示候选和最终范围，服务端验证选择是请求子集，再用所选 scopes 覆盖待处理参数并发行令牌。
+
+申请草稿模式时选择“草稿修改（网页确认）”，不勾选隐藏账户；最终将授予应显示 read,draft。授权后用 connection_info 核对实际 scopes 仅有两项、readHidden/writeHidden 均 false。不要仅因默认请求包含全部候选权限就停止登录，最终批准仍由用户完成。
+
+新增可选真实客户端回归：apps/api/test/codex-oauth.test.ts。设置 CODEX_CLI 为本机官方 Codex 可执行文件路径，然后运行 pnpm --filter @worthpath/api test:mcp:codex。前置为可访问的开发 API/MySQL，支持 TEST_API_URL/MCP_PUBLIC_URL/WEB_ORIGIN。测试使用独立临时 CODEX_HOME 与账号，不使用真实客户端凭据；两个测试分别覆盖显式和默认请求，最终 grant 仅 read,draft、39 工具发现、隐藏权限关闭和普通修改返回 pending 且没有 position 入账。自动清理临时凭据、账号与注册。两项实际通过；没有验证用户真实桌面聊天内工具调用。

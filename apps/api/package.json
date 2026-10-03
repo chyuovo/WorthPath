@@ -13,7 +13,8 @@
     "test:performance": "tsx scripts/performance.ts after",
     "test:mcp": "tsx --test --test-concurrency=1 test/mcp.test.ts",
     "mcp:probe": "tsx scripts/mcp-probe.ts",
-    "icons:seed": "node scripts/seed-icons.cjs"
+    "icons:seed": "node scripts/seed-icons.cjs",
+    "test:mcp:codex": "tsx --test --test-concurrency=1 test/codex-oauth.test.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.31.0",
