@@ -98,8 +98,8 @@ export const positionInput = positionMeta
   })
   .strict()
   .superRefine((p, c) => {
-    if (p.amount.startsWith('-') && (p.kind !== 'account' || p.side !== 'asset'))
-      c.addIssue({ code: 'custom', message: '仅资产账户支持负余额' });
+    if (p.amount.startsWith('-') && p.kind !== 'account')
+      c.addIssue({ code: 'custom', message: '仅账户支持负余额' });
     if (
       (p.kind === 'asset' && p.side !== 'asset') ||
       (p.kind === 'account' &&

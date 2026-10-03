@@ -161,11 +161,8 @@ export function validateBackup(raw: unknown) {
     if (!b.currencies.includes(p.currency)) throw new BadRequestException('币种清单不完整');
   }
   for (const p of b.positions)
-    if (
-      (p.kind !== 'account' || p.side !== 'asset') &&
-      p.revisions.some((r) => r.amount.startsWith('-'))
-    )
-      throw new BadRequestException('仅资产账户支持负余额');
+    if (p.kind !== 'account' && p.revisions.some((r) => r.amount.startsWith('-')))
+      throw new BadRequestException('仅账户支持负余额');
   const planIds = new Set<string>();
   for (const plan of b.schedules || []) {
     const source = ids.get(plan.sourceId),

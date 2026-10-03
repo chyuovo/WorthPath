@@ -103,6 +103,7 @@ model Revision {
   positionId String @db.Char(36)
   position Position @relation(fields:[positionId],references:[id],onDelete:Cascade)
   /// 变更后的原币绝对余额，不是收支增量，禁止对全部历史求和
+  /// 负债账户正数为欠款，负数为溢缴存款；前端显示符号相反
   amount Decimal @db.Decimal(24,8)
   /// 北京时间业务时间对应的 UTC，精确到分钟
   effectiveDate DateTime @db.DateTime(3)

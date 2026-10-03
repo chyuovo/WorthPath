@@ -61,6 +61,12 @@ export function setupOpenApi(app: INestApplication) {
       if (!operation) continue;
       operation.summary = `${method.toUpperCase()} ${path}`;
       if (
+        (path === '/api/positions' && method === 'post') ||
+        (path.startsWith('/api/positions/{id}/revisions') && ['post', 'put'].includes(method))
+      )
+        operation.description =
+          'amount 为数据库原币余额：资产账户正数为存款、负数为透支；负债账户正数为欠款、负数为溢缴存款。网页负债账户输入和显示使用相反符号（负数欠款、正数存款）。独立资产和借入借出债务本金须非负。';
+      if (
         method === 'get' &&
         ['/api/history', '/api/positions/{id}/history', '/api/transfers'].includes(path)
       ) {

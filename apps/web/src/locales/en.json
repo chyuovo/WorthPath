@@ -463,5 +463,9 @@
   "备份下载失败": "Backup download failed.",
   "备份文件格式错误": "Invalid backup file format.",
   "备份文件为空": "The backup file is empty.",
-  "备份已生成，请确认文件已保存": "Backup generated. Please confirm the file has been saved."
+  "备份已生成，请确认文件已保存": "Backup generated. Please confirm the file has been saved.",
+  "溢缴存款": "Credit balance",
+  "信用卡、贷款账户：负数为欠款，正数为溢缴存款；其余账户按实际余额填写。": "Credit cards and loan accounts: negative means debt, positive means credit. Enter the actual balance for other accounts.",
+  "负数表示欠款，正数表示溢缴存款；溢缴部分计入总资产。": "Negative means debt, positive means credit. Credit balances count towards total assets.",
+  "仅账户支持负余额": "Only accounts support negative balances."
 }

@@ -75,6 +75,7 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
     const converted = fx ? amount.mul(fx.value) : null;
     if (converted) {
       if (p.side === 'asset') assets = assets.plus(converted);
+      else if (p.kind === 'account' && converted.isNegative()) assets = assets.minus(converted);
       else liabilities = liabilities.plus(converted);
     }
     return {

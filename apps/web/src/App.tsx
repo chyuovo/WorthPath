@@ -25,6 +25,7 @@ import {
   currencies,
   money,
   positionAmount,
+  accountInputAmount,
   today,
   nowMinute,
   displayTime,
@@ -1157,16 +1158,14 @@ export default function App() {
                         ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
                         : p.side === 'asset'
                           ? tr('资产')
-                          : tr('负债')}
+                          : tr(
+                              p.kind === 'account' && p.amount.startsWith('-')
+                                ? '溢缴存款'
+                                : '负债',
+                            )}
                       {p.archived ? tr(' · 已归档') : ''}
                     </span>
-                    <h2
-                      className={
-                        p.side === 'liability' || p.amount.startsWith('-')
-                          ? 'danger-text'
-                          : undefined
-                      }
-                    >
+                    <h2 className={positionAmount(p).startsWith('-') ? 'danger-text' : undefined}>
                       {money(positionAmount(p), p.currency)}
                     </h2>
                     {p.hidden && <span className="badge">{tr('隐藏项目')}</span>}
@@ -1368,14 +1367,16 @@ export default function App() {
                               ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
                               : p.side === 'asset'
                                 ? tr('资产')
-                                : tr('负债')}
+                                : tr(
+                                    p.kind === 'account' && p.amount.startsWith('-')
+                                      ? '溢缴存款'
+                                      : '负债',
+                                  )}
                             {p.archived ? tr(' · 已归档') : ''}
                           </p>
                           <strong
                             className={
-                              p.side === 'liability' || p.amount.startsWith('-')
-                                ? 'danger-text'
-                                : undefined
+                              positionAmount(p).startsWith('-') ? 'danger-text' : undefined
                             }
                           >
                             {money(positionAmount(p), p.currency)}
@@ -2262,7 +2263,7 @@ export default function App() {
                       api(
                         '/positions/' + mp!.id + '/revisions' + (modal.h ? '/' + modal.h.id : ''),
                         modal.h ? 'PUT' : 'POST',
-                        v,
+                        { ...v, amount: accountInputAmount(mp!, String(v.amount)) },
                       ),
                     tr('金额历史已保存，总览已重新计算'),
                   );
@@ -2292,6 +2293,7 @@ export default function App() {
                         ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
                         kind,
                         side,
+                        amount: accountInputAmount({ kind, side }, String(v.amount)),
                         hidden: f.get('hidden') === 'on',
                       }),
                     tr('项目已添加'),
@@ -2360,7 +2362,7 @@ export default function App() {
                   </Field>
                   {modal.kind === 'account' && (
                     <p className="muted">
-                      {tr('信用卡、贷款账户自动计入负债，其余账户计入资产。')}
+                      {tr('信用卡、贷款账户：负数为欠款，正数为溢缴存款；其余账户按实际余额填写。')}
                     </p>
                   )}
                 </>
@@ -2406,13 +2408,16 @@ export default function App() {
                     inputMode="decimal"
                     required
                     pattern={
-                      (modal.p?.side === 'asset' && modal.p?.kind === 'account') ||
-                      modal.kind === 'account'
+                      modal.p?.kind === 'account' || modal.kind === 'account'
                         ? '-?(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
                         : '(0|[1-9][0-9]{0,15})(\\.[0-9]{1,8})?'
                     }
                     defaultValue={
-                      modal.h?.after || modal.p?.amount || (modal.kind === 'debt' ? '0' : '')
+                      modal.p
+                        ? accountInputAmount(modal.p, modal.h?.after || modal.p.amount)
+                        : modal.kind === 'debt'
+                          ? '0'
+                          : ''
                     }
                     placeholder="0.00"
                   />
@@ -2430,6 +2435,13 @@ export default function App() {
                   />
                 </Field>
               )}
+              {['revision', 'correction'].includes(modal.kind) &&
+                modal.p?.kind === 'account' &&
+                modal.p.side === 'liability' && (
+                  <p className="muted">
+                    {tr('负数表示欠款，正数表示溢缴存款；溢缴部分计入总资产。')}
+                  </p>
+                )}
               {modal.kind === 'revision' && (
                 <>
                   <Field label={tr('变更原因')}>
@@ -2575,42 +2587,19 @@ function HistoryTable({
                 </small>
               </td>
               <td
-                className={h.kind === 'debt' && h.side === 'liability' ? 'danger-text' : undefined}
+                className={positionAmount(h, h.before).startsWith('-') ? 'danger-text' : undefined}
               >
-                {money(
-                  h.kind === 'debt' && h.side === 'liability' && Number(h.before) !== 0
-                    ? '-' + h.before
-                    : h.before,
-                  h.currency,
-                )}
+                {money(positionAmount(h, h.before), h.currency)}
               </td>
               <td
-                className={h.kind === 'debt' && h.side === 'liability' ? 'danger-text' : undefined}
+                className={positionAmount(h, h.after).startsWith('-') ? 'danger-text' : undefined}
               >
-                {money(
-                  h.kind === 'debt' && h.side === 'liability' && Number(h.after) !== 0
-                    ? '-' + h.after
-                    : h.after,
-                  h.currency,
-                )}
+                {money(positionAmount(h, h.after), h.currency)}
               </td>
               <td
-                className={
-                  (h.kind === 'debt' && h.side === 'liability') || h.delta.startsWith('-')
-                    ? 'danger-text'
-                    : undefined
-                }
+                className={positionAmount(h, h.delta).startsWith('-') ? 'danger-text' : undefined}
               >
-                {money(
-                  h.kind === 'debt' && h.side === 'liability'
-                    ? h.delta.startsWith('-')
-                      ? h.delta.slice(1)
-                      : Number(h.delta) !== 0
-                        ? '-' + h.delta
-                        : h.delta
-                    : h.delta,
-                  h.currency,
-                )}
+                {money(positionAmount(h, h.delta), h.currency)}
               </td>
               <td className="notes-cell">{h.notes || '—'}</td>
               {correct && (

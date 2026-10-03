@@ -7,7 +7,7 @@ import { executeMovement } from '../src/transfers';
 import { transferInput, positionInput, revisionInput } from '../src/validation';
 import { scheduleInput, occurrenceId, nextOccurrence, SchedulesController } from '../src/schedules';
 import { trend, totals, type Holding } from '../src/calculation';
-import { positionAmount, money, type Position } from '../../web/src/api';
+import { positionAmount, accountInputAmount, money, type Position } from '../../web/src/api';
 const now = new Date(Date.now() - 60000);
 const date = new Date(+now + 8 * 3600000).toISOString().slice(0, 16);
 function fixture(
@@ -114,7 +114,7 @@ test('transfer into an overdrawn account is allowed; debt overpayment still fail
   assert.equal(debt.balances.get(debt.sourceId), '-11');
   assert.equal(debt.balances.get(debt.targetId), '0');
 });
-test('negative balances are confined to asset accounts; group names and principal remain validated', () => {
+test('negative balances are confined to accounts; group names and debt principal remain validated', () => {
   const data = {
     name: 'test',
     category: 'bank',
@@ -127,7 +127,7 @@ test('negative balances are confined to asset accounts; group names and principa
   };
   assert.equal(positionInput.parse(data).groupName, '日常');
   assert.equal(positionInput.safeParse({ ...data, kind: 'debt' }).success, false);
-  assert.equal(positionInput.safeParse({ ...data, side: 'liability' }).success, false);
+  assert.equal(positionInput.safeParse({ ...data, side: 'liability' }).success, true);
   assert.equal(positionInput.safeParse({ ...data, groupName: 'a'.repeat(61) }).success, false);
   assert.equal(revisionInput.parse({ amount: '-0.00000001', date }).amount, '-0.00000001');
   assert.equal(transferInput.safeParse({ ...fixture().request, amount: '-1' }).success, false);
@@ -342,4 +342,83 @@ test('calendar replays only the range, preserves fractional totals, and hides in
   assert.equal(month.items[1].expense, '2.00');
   assert.equal(month.items[2].complete, false);
   assert.equal(month.items.length, 30);
+});
+
+test('liability account credit balances invert display and input without losing decimal precision', () => {
+  const card = {
+    kind: 'account',
+    side: 'liability',
+    amount: '-9999999999999999.12345678',
+  } as Position;
+  assert.equal(positionAmount(card), '9999999999999999.12345678');
+  assert.equal(positionAmount(card, '12.12345678'), '-12.12345678');
+  assert.equal(positionAmount(card, '-0.00000000'), '0.00000000');
+  assert.equal(accountInputAmount(card, '12.12345678'), '-12.12345678');
+  assert.equal(accountInputAmount(card, '-12.12345678'), '12.12345678');
+  assert.equal(accountInputAmount({ ...card, kind: 'debt' }, '12.12345678'), '12.12345678');
+});
+test('credit balances count as assets across zero, retain FX attribution and do not offset other liabilities', () => {
+  const card: Holding = {
+    id: randomUUID(),
+    name: 'Card',
+    kind: 'account',
+    side: 'liability',
+    currency: 'USD',
+    revisions: [
+      {
+        id: 'a',
+        amount: '100',
+        effectiveDate: new Date('2026-09-01'),
+        reason: 'initial',
+        notes: '',
+      },
+      {
+        id: 'b',
+        amount: '-25',
+        effectiveDate: new Date('2026-09-02'),
+        reason: 'balance',
+        notes: '',
+      },
+    ],
+  };
+  const rates = [
+    {
+      currency: 'USD',
+      baseCurrency: 'CNY',
+      date: new Date('2026-09-01'),
+      rate: '7',
+      source: 'manual',
+    },
+    {
+      currency: 'USD',
+      baseCurrency: 'CNY',
+      date: new Date('2026-09-02'),
+      rate: '8',
+      source: 'manual',
+    },
+  ];
+  const owing = totals([card], rates, 'CNY', '2026-09-01');
+  assert.equal(owing.assets, '0.00');
+  assert.equal(owing.liabilities, '700.00');
+  assert.equal(owing.net, '-700.00');
+  const credit = totals([card], rates, 'CNY', '2026-09-02');
+  assert.equal(credit.assets, '200.00');
+  assert.equal(credit.liabilities, '0.00');
+  assert.equal(credit.net, '200.00');
+  const rows = trend([card], rates, 'CNY', '2026-09-01', '2026-09-02');
+  assert.equal(rows[1].fxChange, '-100.00');
+  assert.equal(rows[1].balanceChange, '1000.00');
+  const debt = {
+    ...card,
+    id: randomUUID(),
+    kind: 'debt',
+    currency: 'CNY',
+    revisions: [{ ...card.revisions[0], amount: '20' }],
+  };
+  const mixed = totals([card, debt], rates, 'CNY', '2026-09-02');
+  assert.equal(mixed.assets, '200.00');
+  assert.equal(mixed.liabilities, '20.00');
+  assert.equal(mixed.net, '180.00');
+  assert.equal(cashflowDelta('liability', 'balance', '100', '-25').toFixed(), '125');
+  assert.equal(cashflowDelta('liability', 'balance', '-25', '10').toFixed(), '-35');
 });

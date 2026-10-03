@@ -55,7 +55,7 @@ export async function captureReplay(tx: Prisma.TransactionClient, userId: string
       const amount = delta
         ? (balances.get(row.positionId) || new Decimal(0)).plus(delta)
         : new Decimal(row.amount.toString());
-      if (amount.isNegative() && (p.kind !== 'account' || p.side !== 'asset'))
+      if (amount.isNegative() && p.kind !== 'account')
         throw new BadRequestException('修改后债务或资产金额不能为负数');
       if (amount.abs().gte('10000000000000000'))
         throw new BadRequestException('重算后的金额超出支持范围');

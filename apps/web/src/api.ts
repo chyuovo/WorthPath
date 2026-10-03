@@ -140,8 +140,15 @@ export function requestUuid() {
 
 export type PageResult<T> = { items: T[]; nextCursor: string | null; revealed: boolean };
 
-export function positionAmount(p: Position, value = p.amount) {
-  return p.kind === 'debt' && p.side === 'liability' && !/^[-]?0(?:\.0+)?$/.test(value)
-    ? '-' + value.replace(/^-/, '')
-    : value;
+// Stored liability balances are amounts owed; negative account balances are credit.
+export function positionAmount(
+  p: Pick<Position, 'side'> & { amount?: string },
+  value = p.amount || '0',
+) {
+  if (p.side !== 'liability' || /^-?0(?:\.0+)?$/.test(value))
+    return value.replace(/^-0(?=\.0+$|$)/, '0');
+  return value.startsWith('-') ? value.slice(1) : '-' + value;
+}
+export function accountInputAmount(p: Pick<Position, 'kind' | 'side'>, value: string) {
+  return p.kind === 'account' ? positionAmount(p, value) : value;
 }
