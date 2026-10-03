@@ -71,9 +71,10 @@ export class CalendarController {
           name: p.name,
           currency: p.currency,
           date: businessDay(v.effectiveDate),
-          delta: hasBefore
-            ? cashflowDelta(p.side, v.reason, before, v.amount.toString())
-            : new Decimal(0),
+          delta:
+            hasBefore || v.reason === 'scheduled_expense'
+              ? cashflowDelta(p.side, v.reason, before, v.amount.toString())
+              : new Decimal(0),
           notes: details ? (v as typeof v & { notes?: string }).notes || '' : '',
         };
       })

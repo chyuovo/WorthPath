@@ -48,6 +48,25 @@ export class TransfersController {
       revealed: r.revealed,
     };
   }
+  @Get('revision/:revisionId') async byRevision(
+    @Req() r: UserRequest,
+    @Param('revisionId') revisionId: string,
+  ) {
+    const row = await this.db.transfer.findFirst({
+      where: {
+        userId: r.userId,
+        OR: [{ sourceRevisionId: revisionId }, { targetRevisionId: revisionId }],
+        ...(r.revealed ? {} : { source: { hidden: false }, target: { hidden: false } }),
+      },
+      include: {
+        source: { select: { name: true, kind: true } },
+        target: { select: { name: true, kind: true } },
+      },
+    });
+    if (!row) throw new NotFoundException('资金往来记录不存在');
+    const { userId, importedFromId, effectiveDate, ...v } = row;
+    return { ...v, date: businessTime(effectiveDate) };
+  }
   @Put(':id') async edit(@Req() r: UserRequest, @Param('id') id: string, @Body() body: unknown) {
     const v = transferInput.parse(body);
     return this.change(r, id, v);
@@ -57,56 +76,59 @@ export class TransfersController {
   }
   private async change(r: UserRequest, id: string, v?: ReturnType<typeof transferInput.parse>) {
     return this.db.serial(async (tx) => {
-      const row = await tx.transfer.findFirst({
-        where: {
-          id,
-          userId: r.userId,
-          ...(r.revealed ? {} : { source: { hidden: false }, target: { hidden: false } }),
-        },
-        include: { source: true, target: true },
-      });
-      if (!row) throw new NotFoundException('资金往来记录不存在');
-      if (row.source.archived || row.target.archived)
-        throw new ConflictException('请先恢复归档项目');
-      const replay = await captureReplay(tx, r.userId, [row.sourceId, row.targetId]);
-      if (v) {
-        if (
-          v.sourceId !== row.sourceId ||
-          v.targetId !== row.targetId ||
-          v.operation !== row.operation
-        )
-          throw new BadRequestException('修改记录不能更换账户或操作类型，请删除后重新创建');
-        if (row.sourceCurrency === row.targetCurrency && !new Decimal(v.amount).eq(v.received))
-          throw new BadRequestException('同币种转出与到账金额必须一致，手续费单独填写');
-        const effectiveDate = toBusinessDate(v.date);
-        await tx.transfer.update({
-          where: { id },
-          data: {
-            amount: v.amount,
-            received: v.received,
-            fee: v.fee,
-            notes: v.notes,
-            effectiveDate,
-          },
-        });
-        await tx.revision.updateMany({
-          where: { id: { in: [row.sourceRevisionId, row.targetRevisionId] } },
-          data: { effectiveDate, notes: v.notes },
-        });
-      } else {
-        await tx.transfer.delete({ where: { id } });
-        await tx.revision.deleteMany({
-          where: { id: { in: [row.sourceRevisionId, row.targetRevisionId] } },
-        });
-      }
-      await replay();
-      return { ok: true };
+      return changeMovement(tx, r, id, v);
     });
   }
   @Post() async create(@Req() r: UserRequest, @Body() body: unknown) {
     const v = transferInput.parse(body);
     return this.db.serial((tx) => executeMovement(tx, r, v));
   }
+}
+export async function changeMovement(
+  tx: Prisma.TransactionClient,
+  r: Pick<UserRequest, 'userId' | 'revealed'>,
+  id: string,
+  v?: ReturnType<typeof transferInput.parse>,
+) {
+  const row = await tx.transfer.findFirst({
+    where: {
+      id,
+      userId: r.userId,
+      ...(r.revealed ? {} : { source: { hidden: false }, target: { hidden: false } }),
+    },
+    include: { source: true, target: true },
+  });
+  if (!row) throw new NotFoundException('资金往来记录不存在');
+  if (row.source.archived || row.target.archived) throw new ConflictException('请先恢复归档项目');
+  const replay = await captureReplay(tx, r.userId, [row.sourceId, row.targetId]);
+  if (v) {
+    if (v.sourceId !== row.sourceId || v.targetId !== row.targetId || v.operation !== row.operation)
+      throw new BadRequestException('修改记录不能更换账户或操作类型，请删除后重新创建');
+    if (row.sourceCurrency === row.targetCurrency && !new Decimal(v.amount).eq(v.received))
+      throw new BadRequestException('同币种转出与到账金额必须一致，手续费单独填写');
+    const effectiveDate = toBusinessDate(v.date);
+    await tx.transfer.update({
+      where: { id },
+      data: {
+        amount: v.amount,
+        received: v.received,
+        fee: v.fee,
+        notes: v.notes,
+        effectiveDate,
+      },
+    });
+    await tx.revision.updateMany({
+      where: { id: { in: [row.sourceRevisionId, row.targetRevisionId] } },
+      data: { effectiveDate, notes: v.notes },
+    });
+  } else {
+    await tx.transfer.delete({ where: { id } });
+    await tx.revision.deleteMany({
+      where: { id: { in: [row.sourceRevisionId, row.targetRevisionId] } },
+    });
+  }
+  await replay();
+  return { ok: true };
 }
 export async function executeMovement(
   tx: Prisma.TransactionClient,
@@ -166,14 +188,14 @@ export async function executeMovement(
         target.side !== (['borrow', 'repay'].includes(v.operation) ? 'liability' : 'asset'))
   )
     throw new BadRequestException('请选择有效的资产账户和对应借入或借出债务');
-  if (accounts.some((p) => !p.revisions[0] || +p.revisions[0].effectiveDate > +when))
+  if (accounts.some((p) => p.revisions[0] && +p.revisions[0].effectiveDate > +when))
     throw new ConflictException('转账时间不能早于任一账户的最新余额记录，请以当前余额转账');
   if (source.currency === target.currency && !new Decimal(v.amount).eq(v.received))
     throw new BadRequestException('同币种转出与到账金额必须一致，手续费单独填写');
   const deltas = movementDeltas(v.operation, v.amount, v.received, v.fee);
-  const before = new Decimal(source.revisions[0].amount.toString());
+  const before = new Decimal(source.revisions[0]?.amount.toString() || '0');
   const sourceAfter = before.plus(deltas.source);
-  const after = new Decimal(target.revisions[0].amount.toString()).plus(deltas.target);
+  const after = new Decimal(target.revisions[0]?.amount.toString() || '0').plus(deltas.target);
   if (target.kind === 'debt' && after.isNegative())
     throw new BadRequestException('收款或还款不能超过剩余债务');
   if (after.abs().gte('10000000000000000') || sourceAfter.abs().gte('10000000000000000'))

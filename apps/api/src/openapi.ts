@@ -4,6 +4,7 @@ import { scheduleInput } from './schedules';
 import { z } from 'zod';
 import {
   credentials,
+  credentialChange,
   positionInput,
   positionMeta,
   revisionInput,
@@ -27,6 +28,7 @@ export function setupOpenApi(app: INestApplication) {
   const bodies: Record<string, z.ZodType> = {
     'POST /api/auth/register': credentials,
     'POST /api/auth/login': credentials,
+    'PATCH /api/auth/credentials': credentialChange,
     'POST /api/auth/reveal': credentials.pick({ password: true }),
     'POST /api/positions': positionInput,
     'PATCH /api/positions/{id}': positionMeta,

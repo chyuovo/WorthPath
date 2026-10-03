@@ -119,7 +119,24 @@ test('record edits replay paired movements, expense deltas, anchors and calendar
     await portfolio.deleteRevision(r, a.id, expense.id);
     assert.equal(await balance(a.id), '190');
     assert.equal((await calendar.day(r, '2026-09-03')).items.length, 0);
-    await assert.rejects(portfolio.deleteRevision(r, a.id, a.revisions[0].id));
+    await portfolio.deleteRevision(r, a.id, a.revisions[0].id);
+    assert.equal(await balance(a.id), '-10');
+    const restoredInitial = await db.revision.create({
+      data: {
+        positionId: a.id,
+        amount: '200',
+        effectiveDate: toBusinessDate('2026-09-01T00:00'),
+        reason: 'initial',
+        notes: '',
+      },
+    });
+    a.revisions[0].id = restoredInitial.id;
+    // Replay after restoring a baseline through the correction API.
+    await portfolio.correct(r, a.id, restoredInitial.id, {
+      amount: '200',
+      date: '2026-09-01T00:00',
+      notes: '',
+    });
     assert.equal(await balance(a.id), '190');
     // An observed absolute balance is an anchor, including after a moved transfer.
     await portfolio.revise(r, a.id, {

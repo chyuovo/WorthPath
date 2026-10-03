@@ -56,16 +56,14 @@ const record = positionMeta
     importedFromId: z.string().uuid().nullable().optional(),
     createdAt: timestamp,
     updatedAt: timestamp,
-    revisions: z
-      .array(
-        revisionInput.extend({
-          id: z.string().uuid(),
-          sequence: z.number().int().positive().max(2147483647).optional(),
-          createdAt: timestamp,
-          updatedAt: timestamp,
-        }),
-      )
-      .min(1),
+    revisions: z.array(
+      revisionInput.extend({
+        id: z.string().uuid(),
+        sequence: z.number().int().positive().max(2147483647).optional(),
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      }),
+    ),
   })
   .strict();
 const backupSchema = z
@@ -151,7 +149,7 @@ export function validateBackup(raw: unknown) {
       archived: p.archived,
       hidden: p.hidden,
       amount: '0',
-      date: p.revisions[0].date,
+      date: p.revisions[0]?.date || '1900-01-01',
     });
     const sequences = new Set<number>();
     for (const r of p.revisions) {
@@ -225,11 +223,11 @@ export function validateBackup(raw: unknown) {
         current = ordered[index];
       if (
         usedRevisions.has(revId) ||
-        index < 1 ||
+        index < 0 ||
         !current ||
         current.reason !== reason ||
         current.date !== t.date ||
-        !new Decimal(current.amount).minus(ordered[index - 1].amount).eq(delta)
+        !new Decimal(current.amount).minus(ordered[index - 1]?.amount || '0').eq(delta)
       )
         throw new BadRequestException('转账历史与双方金额不一致');
       usedRevisions.add(revId);
@@ -296,7 +294,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     }
     return prefix.toString() === 'PK'
       ? readBackupZip(path)
-      : JSON.parse(await readFile(path, 'utf8'));
+      : JSON.parse((await readFile(path, 'utf8')).replace(/^\uFEFF/, ''));
   }
   constructor(private db: Database) {}
   private async data(
@@ -420,7 +418,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         });
         return b;
       },
-      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable },
+      { isolationLevel: Prisma.TransactionIsolationLevel.Serializable, timeout: 300000 },
     );
     res.setHeader(
       'Content-Disposition',
@@ -494,6 +492,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     );
     data.currencies.sort();
     data.transfers?.sort((a, b) => a.id.localeCompare(b.id));
+    data.schedules?.sort((a, b) => a.id.localeCompare(b.id));
     data.icons?.sort((a, b) => a.id.localeCompare(b.id));
     return createHash('sha256').update(JSON.stringify(data)).digest('hex');
   }

@@ -7,6 +7,7 @@ export class Database extends PrismaClient implements OnModuleInit, OnModuleDest
       try {
         return await this.$transaction(work, {
           isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+          timeout: 30000,
         });
       } catch (error) {
         // Serializable deadlock/write conflict; retry the entire atomic operation.

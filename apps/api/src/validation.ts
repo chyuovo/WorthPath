@@ -173,3 +173,12 @@ export const pairedReasons = [
   'loan_collect',
   'loan_repay',
 ];
+
+export const credentialChange = z
+  .object({
+    currentPassword: credentials.shape.password,
+    username: credentials.shape.username.optional(),
+    newPassword: credentials.shape.password.optional(),
+  })
+  .strict()
+  .refine((v) => !!v.username || !!v.newPassword, '请填写新的账号或密码');

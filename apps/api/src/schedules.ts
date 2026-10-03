@@ -222,8 +222,8 @@ export class SchedulesController {
                 revisions: { orderBy: [{ effectiveDate: 'desc' }, { sequence: 'desc' }], take: 1 },
               },
             });
-            if (!account?.revisions[0]) throw new BadRequestException('计划账户已归档或不可用');
-            const after = new Decimal(account.revisions[0].amount.toString()).minus(
+            if (!account) throw new BadRequestException('计划账户已归档或不可用');
+            const after = new Decimal(account.revisions[0]?.amount.toString() || '0').minus(
               plan.amount.toString(),
             );
             if (after.abs().gte('10000000000000000'))

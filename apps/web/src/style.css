@@ -1487,3 +1487,10 @@ textarea,
   font-size: 10px;
   line-height: 1.5;
 }
+
+.record-actions {
+  white-space: nowrap;
+}
+.record-actions button + button {
+  margin-left: 16px;
+}

@@ -51,10 +51,9 @@ export async function captureReplay(tx: Prisma.TransactionClient, userId: string
           : undefined;
       if (pairedReasons.includes(row.reason) && !delta)
         throw new ConflictException('配对记录不完整，无法重算');
-      if (delta && !balances.has(row.positionId))
-        throw new ConflictException('资金操作之前必须保留一条余额记录');
+      // With the initial observation deleted, remaining movements start at zero.
       const amount = delta
-        ? balances.get(row.positionId)!.plus(delta)
+        ? (balances.get(row.positionId) || new Decimal(0)).plus(delta)
         : new Decimal(row.amount.toString());
       if (amount.isNegative() && (p.kind !== 'account' || p.side !== 'asset'))
         throw new BadRequestException('修改后债务或资产金额不能为负数');

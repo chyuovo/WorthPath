@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  BadRequestException,
   Body,
   Req,
   Res,
@@ -18,7 +20,8 @@ import { Request, Response } from 'express';
 import { randomBytes, createHash } from 'node:crypto';
 import { hash, compare } from 'bcryptjs';
 import { Database } from './database';
-import { credentials } from './validation';
+import { credentials, credentialChange } from './validation';
+import { Prisma } from '@prisma/client';
 export type UserRequest = Request & { userId: string; sessionId: string; revealed: boolean };
 const Public = () => SetMetadata('public', true);
 const digest = (s: string) => createHash('sha256').update(s).digest('hex');
@@ -58,6 +61,9 @@ export class AuthService {
     const token = randomBytes(32).toString('hex'),
       expiresAt = new Date(Date.now() + 7 * 86400000);
     await this.db.session.create({ data: { id: digest(token), userId, expiresAt } });
+    this.cookie(token, expiresAt, res);
+  }
+  cookie(token: string, expiresAt: Date, res: Response) {
     res.cookie('wp_session', token, {
       httpOnly: true,
       sameSite: 'strict',
@@ -166,7 +172,44 @@ export class AuthController {
         idleMinutes: true,
       },
     });
-    return { ...user, hiddenMenus: user.hiddenMenus.split(',').filter(Boolean) };
+    const session = await this.db.session.findUniqueOrThrow({ where: { id: req.sessionId } });
+    return {
+      ...user,
+      hiddenMenus: user.hiddenMenus.split(',').filter(Boolean),
+      revealed: req.revealed,
+      revealUntil: session.revealUntil,
+      lastActivity: session.lastActivity,
+    };
+  }
+  @Patch('auth/credentials') async changeCredentials(
+    @Req() r: UserRequest,
+    @Body() body: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.auth.limit(r);
+    const v = credentialChange.parse(body);
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
+    if (!(await compare(v.currentPassword, user.passwordHash)))
+      throw new ForbiddenException('当前密码错误');
+    if ((!v.username || v.username === user.username) && !v.newPassword)
+      throw new BadRequestException('请填写新的账号或密码');
+    const passwordHash = v.newPassword ? await hash(v.newPassword, 12) : user.passwordHash;
+    const token = randomBytes(32).toString('hex'),
+      expiresAt = new Date(Date.now() + 7 * 86400000);
+    await this.db.serial(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id = ${r.userId} FOR UPDATE`);
+      const current = await tx.user.findUniqueOrThrow({ where: { id: r.userId } });
+      if (current.passwordHash !== user.passwordHash || current.username !== user.username)
+        throw new ForbiddenException('账号已变更，请重新登录后操作');
+      await tx.user.update({
+        where: { id: r.userId },
+        data: { username: v.username, passwordHash },
+      });
+      await tx.session.deleteMany({ where: { userId: r.userId } });
+      await tx.session.create({ data: { id: digest(token), userId: r.userId, expiresAt } });
+    });
+    this.auth.cookie(token, expiresAt, res);
+    return { ok: true };
   }
   @Post('auth/activity') async activity(@Req() r: UserRequest) {
     await this.db.session.update({

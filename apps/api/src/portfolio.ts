@@ -30,6 +30,7 @@ import { Prisma } from '@prisma/client';
 import { IconsService } from './icons';
 import { RatesService } from './rates';
 import { captureReplay } from './replay';
+import { changeMovement } from './transfers';
 @Controller('api')
 export class PortfolioController {
   constructor(
@@ -229,7 +230,6 @@ export class PortfolioController {
     @Param('revisionId') revisionId: string,
   ) {
     return this.db.serial(async (tx) => {
-      const replay = await captureReplay(tx, r.userId, [id]);
       const p = await tx.position.findFirst({
         where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
       });
@@ -237,8 +237,17 @@ export class PortfolioController {
       if (p.archived) throw new ConflictException('请先恢复归档项目');
       const row = await tx.revision.findFirst({ where: { id: revisionId, positionId: id } });
       if (!row) throw new NotFoundException('历史记录不存在');
-      if (pairedReasons.includes(row.reason))
-        throw new ConflictException('请在资金往来中删除完整配对记录');
+      if (pairedReasons.includes(row.reason)) {
+        const movement = await tx.transfer.findFirst({
+          where: {
+            userId: r.userId,
+            OR: [{ sourceRevisionId: revisionId }, { targetRevisionId: revisionId }],
+          },
+        });
+        if (!movement) throw new ConflictException('配对记录不完整，无法删除');
+        return changeMovement(tx, r, movement.id);
+      }
+      const replay = await captureReplay(tx, r.userId, [id]);
       await tx.revision.delete({ where: { id: revisionId } });
       await replay();
       return { ok: true };

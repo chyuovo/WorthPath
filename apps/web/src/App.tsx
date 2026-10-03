@@ -258,6 +258,8 @@ export default function App() {
     ),
     [rangeTo, setRangeTo] = useState(today()),
     [grain, setGrain] = useState('day');
+  const [dataVersion, setDataVersion] = useState(0);
+  const previousDataVersion = useRef(0);
   const viewKey = [page, selected, rangeFrom, rangeTo, grain, settingsSection].join('|');
   const viewRef = useRef(viewKey);
   viewRef.current = viewKey;
@@ -296,7 +298,7 @@ export default function App() {
       clearAccount();
     }
   };
-  async function load(refreshUser = false, rangeOnly = false) {
+  async function load(refreshUser = false, rangeOnly = false, runDue = true) {
     const session = sessionGeneration.current,
       request = ++loadGeneration.current,
       view = viewRef.current;
@@ -308,6 +310,8 @@ export default function App() {
     try {
       const s = refreshUser ? await api<User>('/auth/me') : userRef.current;
       if (!active() || !s) return;
+      const visibilityChanged = !!s.revealed !== !!userRef.current?.revealed;
+      if (visibilityChanged) rangeOnly = false;
       if (refreshUser) {
         setUser(s);
         setPage((current) => (s.hiddenMenus.includes(current) ? 'settings' : current));
@@ -315,7 +319,7 @@ export default function App() {
           setPositions((rows) => rows.filter((p) => !p.hidden));
           setHistoryRows([]);
           setTransfers([]);
-          setOverview(null);
+          if (visibilityChanged) setOverview(null);
         }
       }
       if (page === 'overview' && rangeOnly) {
@@ -346,7 +350,7 @@ export default function App() {
         const rows = await api<Position[]>('/positions?kind=account');
         if (active()) setPositions(rows);
       } else if (['account', 'asset', 'debt'].includes(page)) {
-        if (page === 'account' && !rangeOnly) {
+        if (page === 'account' && !rangeOnly && runDue) {
           const result = await api<{
             executed: number;
             errors: { message: string }[];
@@ -489,19 +493,21 @@ export default function App() {
   const previousView = useRef('');
   useEffect(() => {
     if (!user) return;
+    const mutated = previousDataVersion.current !== dataVersion;
+    previousDataVersion.current = dataVersion;
     const rangeOnly =
-      page === 'overview' && previousView.current.startsWith('overview|') && !!overview;
+      !mutated && page === 'overview' && previousView.current.startsWith('overview|') && !!overview;
     previousView.current = viewKey;
     if (!rangeOnly) setOverview(null);
     setHistoryRows([]);
     setHistoryCursor(null);
     setTransfers([]);
     setTransferCursor(null);
-    void load(false, rangeOnly);
+    void load(true, rangeOnly, !mutated);
     return () => {
       loadGeneration.current++;
     };
-  }, [viewKey, !!user]);
+  }, [viewKey, !!user, dataVersion]);
   useEffect(() => {
     const session = sessionGeneration.current;
     authCheck.current ||= api<User>('/auth/me');
@@ -598,7 +604,7 @@ export default function App() {
         setPage(createdKind);
         setSelected(result.id);
       }
-      await load(true);
+      setDataVersion((value) => value + 1);
     } catch (e) {
       if (session === sessionGeneration.current) report(e);
     } finally {
@@ -748,8 +754,15 @@ export default function App() {
     );
   async function correctHistory(h: History) {
     if (h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')) {
-      setSelected(null);
-      setPage('history');
+      const session = sessionGeneration.current,
+        view = viewRef.current;
+      try {
+        const transfer = await api<Transfer>('/transfers/revision/' + h.id);
+        if (session === sessionGeneration.current && view === viewRef.current)
+          setModal({ kind: 'transfer-edit', transfer });
+      } catch (e) {
+        if (session === sessionGeneration.current && view === viewRef.current) report(e);
+      }
       return;
     }
     const session = sessionGeneration.current,
@@ -763,11 +776,40 @@ export default function App() {
     }
   }
   function deleteHistory(h: History) {
-    if (!window.confirm(tr('删除这条余额记录并重算后续余额？'))) return;
-    void act(
-      () => api('/positions/' + h.positionId + '/revisions/' + h.id, 'DELETE'),
-      tr('记录已删除，余额和日历已更新'),
-    );
+    setError('');
+    setModal({ kind: 'delete-record', h });
+  }
+  async function downloadBackup(forClear = false) {
+    const session = sessionGeneration.current;
+    setBusy(true);
+    setError('');
+    setSuccess('');
+    try {
+      const response = await fetch('/api/backup', { credentials: 'same-origin' });
+      if (!response.ok) {
+        const result = await response.json().catch(() => ({}));
+        throw new ApiError(result.message || tr('备份下载失败'), response.status);
+      }
+      if (!response.headers.get('content-type')?.includes('application/zip'))
+        throw new Error(tr('备份文件格式错误'));
+      const blob = await response.blob();
+      if (!blob.size) throw new Error(tr('备份文件为空'));
+      if (session !== sessionGeneration.current) return;
+      const url = URL.createObjectURL(blob),
+        a = document.createElement('a');
+      a.href = url;
+      a.download = 'worthpath-' + today() + '.zip';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 60000);
+      setSuccess(tr('备份已生成，请确认文件已保存'));
+      if (forClear) setClearStep(1);
+    } catch (e) {
+      if (session === sessionGeneration.current) report(e);
+    } finally {
+      if (session === sessionGeneration.current) setBusy(false);
+    }
   }
   const nav = [
     ['overview', LayoutDashboard],
@@ -1241,6 +1283,7 @@ export default function App() {
                     rows={historyRows}
                     correct={p.archived ? undefined : (h) => void correctHistory(h)}
                     remove={p.archived ? undefined : deleteHistory}
+                    busy={busy}
                   />
                   {historyCursor && (
                     <button disabled={loading} onClick={() => void more('history')}>
@@ -1427,11 +1470,8 @@ export default function App() {
                             className="text danger-text"
                             disabled={busy}
                             onClick={() => {
-                              if (window.confirm(tr('删除这笔资金往来并重算双方余额？')))
-                                void act(
-                                  () => api('/transfers/' + t.id, 'DELETE'),
-                                  tr('记录已删除，余额和日历已更新'),
-                                );
+                              setError('');
+                              setModal({ kind: 'delete-record', transfer: t });
                             }}
                           >
                             {tr('删除')}
@@ -1456,6 +1496,7 @@ export default function App() {
                   rows={historyRows}
                   correct={(h) => void correctHistory(h)}
                   remove={deleteHistory}
+                  busy={busy}
                   open={(id) => {
                     setSelected(id);
                     setPage(historyRows.find((h) => h.positionId === id)?.kind || 'account');
@@ -1492,6 +1533,7 @@ export default function App() {
                     onChange={(e) => setSettingsSection(e.target.value)}
                   >
                     <option value="general">{tr('个人与菜单设置')}</option>
+                    <option value="security">{tr('账号与密码')}</option>
                     <option value="icons">{tr('图标库')}</option>
                     <option value="rates">{tr('每日汇率')}</option>
                     <option value="backup">{tr('备份与恢复')}</option>
@@ -1504,6 +1546,77 @@ export default function App() {
               {settingsSection === 'icons' && (
                 <section className="panel">
                   <IconLibrary />
+                </section>
+              )}
+              {settingsSection === 'security' && (
+                <section className="panel">
+                  <h2>{tr('账号与密码')}</h2>
+                  <p className="muted">{tr('修改后其他登录会话将退出，当前会话保持登录。')}</p>
+                  <form
+                    key={user.username}
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      const form = e.currentTarget,
+                        f = new FormData(form);
+                      const username = String(f.get('username')).trim(),
+                        newPassword = String(f.get('newPassword'));
+                      if (newPassword !== String(f.get('confirmPassword'))) {
+                        setError(tr('两次输入的新密码不一致'));
+                        return;
+                      }
+                      void act(async () => {
+                        const result = await api('/auth/credentials', 'PATCH', {
+                          currentPassword: f.get('currentPassword'),
+                          ...(username !== user.username ? { username } : {}),
+                          ...(newPassword ? { newPassword } : {}),
+                        });
+                        form.reset();
+                        return result;
+                      }, tr('账号与密码已更新'));
+                    }}
+                  >
+                    <Field label={tr('账号')}>
+                      <input
+                        name="username"
+                        autoComplete="username"
+                        required
+                        minLength={3}
+                        maxLength={64}
+                        defaultValue={user.username}
+                      />
+                    </Field>
+                    <Field label={tr('当前密码')}>
+                      <input
+                        name="currentPassword"
+                        type="password"
+                        autoComplete="current-password"
+                        required
+                        minLength={10}
+                        maxLength={72}
+                      />
+                    </Field>
+                    <Field label={tr('新密码（不修改请留空）')}>
+                      <input
+                        name="newPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={10}
+                        maxLength={72}
+                      />
+                    </Field>
+                    <Field label={tr('确认新密码')}>
+                      <input
+                        name="confirmPassword"
+                        type="password"
+                        autoComplete="new-password"
+                        minLength={10}
+                        maxLength={72}
+                      />
+                    </Field>
+                    <button className="primary" disabled={busy}>
+                      {tr('保存修改')}
+                    </button>
+                  </form>
                 </section>
               )}
               <div className="settings-grid">
@@ -1707,15 +1820,14 @@ export default function App() {
                   )}
                 </p>
                 {clearStep === 0 ? (
-                  <a
+                  <button
                     className="secondary"
-                    href="/api/backup"
-                    download
-                    onClick={() => setClearStep(1)}
+                    disabled={busy}
+                    onClick={() => void downloadBackup(true)}
                   >
                     <Download size={16} />
                     {tr('第一步：下载备份')}
-                  </a>
+                  </button>
                 ) : clearStep === 1 ? (
                   <button
                     className="secondary"
@@ -1767,15 +1879,14 @@ export default function App() {
                   )}
                 </p>
                 <div className="actions">
-                  <a
+                  <button
                     className="secondary"
-                    href="/api/backup"
-                    download={'worthpath-' + today() + '.zip'}
-                    onClick={() => setSuccess(tr('备份下载请求已发起，请检查浏览器下载列表'))}
+                    disabled={busy}
+                    onClick={() => void downloadBackup()}
                   >
                     <Download size={16} />
                     {tr('下载我的数据备份')}
-                  </a>
+                  </button>{' '}
                   <label className="secondary file-button">
                     <Upload size={16} />
                     {tr('选择备份并验证')}
@@ -1936,6 +2047,59 @@ export default function App() {
           )}
         </Modal>
       )}
+      {modal?.kind === 'delete-record' && (
+        <Modal
+          title={tr('删除记录')}
+          close={() => {
+            if (!busy) setModal(null);
+          }}
+        >
+          <p>
+            {modal.h
+              ? modal.h.name
+              : modal.transfer?.source.name + ' ↔ ' + modal.transfer?.target.name}
+          </p>
+          <p className="muted">{displayTime(modal.h?.time || modal.transfer!.date)}</p>
+          <p>
+            {tr(
+              modal.transfer ||
+                modal.h?.reason.startsWith('transfer_') ||
+                modal.h?.reason.startsWith('loan_')
+                ? '这笔资金往来的双方记录将一起删除，并重算后续余额。'
+                : '这条记录将被删除，并重算后续余额。',
+            )}
+          </p>
+          <p className="danger-text">{tr('删除后无法撤销，请确认已保存所需备份。')}</p>
+          {error && (
+            <p role="alert" className="notice error">
+              {tr(error)}
+            </p>
+          )}
+          <div className="modal-actions clear-confirm-actions">
+            <button autoFocus disabled={busy} onClick={() => setModal(null)}>
+              {tr('取消')}
+            </button>
+            <button
+              className="danger"
+              disabled={busy}
+              onClick={() =>
+                void act(
+                  () =>
+                    api(
+                      modal.h
+                        ? '/positions/' + modal.h.positionId + '/revisions/' + modal.h.id
+                        : '/transfers/' + modal.transfer!.id,
+                      'DELETE',
+                    ),
+                  tr('记录已删除，余额和日历已更新'),
+                )
+              }
+            >
+              {busy ? tr('正在处理…') : tr('确认删除')}
+            </button>
+          </div>
+        </Modal>
+      )}
       {modal?.kind === 'transfer-edit' && modal.transfer && (
         <Modal
           title={tr('修改资金往来')}
@@ -2005,7 +2169,7 @@ export default function App() {
           </form>
         </Modal>
       )}
-      {modal && modal.kind !== 'transfer-edit' && (
+      {modal && !['transfer-edit', 'delete-record'].includes(modal.kind) && (
         <Modal
           title={
             modal.kind === 'debt-payment'
@@ -2356,11 +2520,13 @@ function HistoryTable({
   open,
   correct,
   remove,
+  busy = false,
 }: {
   rows: History[];
   open?: (id: string) => void;
   correct?: (h: History) => void;
   remove?: (h: History) => void;
+  busy?: boolean;
 }) {
   return rows.length ? (
     <div className="table-wrap">
@@ -2448,16 +2614,16 @@ function HistoryTable({
               </td>
               <td className="notes-cell">{h.notes || '—'}</td>
               {correct && (
-                <td>
-                  <button className="text" onClick={() => correct(h)}>
+                <td className="record-actions">
+                  <button className="text" disabled={busy} onClick={() => correct(h)}>
                     {tr(
                       h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')
-                        ? '查看资金往来'
+                        ? '修改资金往来'
                         : '更正',
                     )}
                   </button>
-                  {remove && !h.reason.startsWith('transfer_') && !h.reason.startsWith('loan_') && (
-                    <button className="text danger-text" onClick={() => remove(h)}>
+                  {remove && (
+                    <button className="text danger-text" disabled={busy} onClick={() => remove(h)}>
                       {tr('删除')}
                     </button>
                   )}
