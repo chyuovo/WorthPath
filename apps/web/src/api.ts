@@ -27,6 +27,7 @@ export type User = {
   sessionHours?: number;
   requireHiddenPassword?: boolean;
   overviewCards?: string[];
+  includeIndependentAssets?: boolean;
   sessionExpiresAt?: string;
   revealed?: boolean;
   revealUntil?: string | null;
@@ -50,6 +51,11 @@ export type History = {
   reason: string;
 };
 export type Position = {
+  included?: boolean;
+  metalType?: string | null;
+  metalGrams?: string | null;
+  metalPurity?: string;
+  autoValuation?: boolean;
   groupName?: string;
   iconId?: string | null;
   id: string;
@@ -83,6 +89,7 @@ export type Overview = Total & {
   recent: History[];
   items: {
     id: string;
+    included: boolean;
     kind: string;
     converted: string | null;
     rateDate: string | null;

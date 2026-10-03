@@ -25,6 +25,7 @@ export async function captureReplay(tx: Prisma.TransactionClient, userId: string
   }
   return async () => {
     const transfers = await tx.transfer.findMany({
+      include: { source: true, target: true },
       where: { userId, OR: [{ sourceId: { in: ids } }, { targetId: { in: ids } }] },
     });
     for (const t of transfers) {
@@ -33,6 +34,8 @@ export async function captureReplay(tx: Prisma.TransactionClient, userId: string
         t.amount.toString(),
         t.received.toString(),
         t.fee.toString(),
+        t.source.side,
+        t.target.side,
       );
       deltas.set(t.sourceRevisionId, d.source);
       deltas.set(t.targetRevisionId, d.target);

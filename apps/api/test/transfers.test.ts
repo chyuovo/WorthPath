@@ -141,15 +141,15 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     );
     assert.equal((await call('/settings', a.cookie, 'PATCH', { showNotes: 'false' })).status, 400);
     const debt = await position(a.cookie, '信用卡', '10', 'CNY', 'liability');
+    const creditTransfer = await call('/transfers', a.cookie, 'POST', {
+      ...request,
+      requestId: randomUUID(),
+      targetId: debt,
+    });
+    assert.equal(creditTransfer.status, 201);
     assert.equal(
-      (
-        await call('/transfers', a.cookie, 'POST', {
-          ...request,
-          requestId: randomUUID(),
-          targetId: debt,
-        })
-      ).status,
-      400,
+      (await call('/transfers/' + creditTransfer.data.id, a.cookie, 'DELETE')).status,
+      200,
     );
     assert.equal(
       (

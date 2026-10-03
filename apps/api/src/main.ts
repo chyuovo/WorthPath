@@ -13,6 +13,7 @@ import { TransfersController } from './transfers';
 import { PortfolioController } from './portfolio';
 import { BackupController } from './backup';
 import { IconsController, IconsService } from './icons';
+import { MetalsService, MetalsController } from './metals';
 import { Database } from './database';
 import { RatesService, SettingsController } from './rates';
 import { ZodError } from 'zod';
@@ -50,6 +51,7 @@ class SafeErrors implements ExceptionFilter {
     Database,
     AuthService,
     RatesService,
+    MetalsService,
     IconsService,
     { provide: APP_GUARD, useClass: AuthGuard },
   ],
@@ -60,6 +62,7 @@ class SafeErrors implements ExceptionFilter {
     IconsController,
     AuthController,
     PortfolioController,
+    MetalsController,
     SettingsController,
     BackupController,
   ],

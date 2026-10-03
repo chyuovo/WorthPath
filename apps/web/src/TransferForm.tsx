@@ -27,7 +27,7 @@ export function TransferForm({
     submit(Object.fromEntries(new FormData(e.currentTarget)));
   }
   if (accounts.length < 2)
-    return <p>{tr('请先创建至少两个启用中的资产账户。隐藏账户需验证密码后才能选择。')}</p>;
+    return <p>{tr('请先创建至少两个启用中的账户。隐藏账户需验证密码后才能选择。')}</p>;
   return (
     <form onSubmit={save} className="transfer-form">
       <input type="hidden" name="requestId" value={requestId} />

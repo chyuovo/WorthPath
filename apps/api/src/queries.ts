@@ -274,7 +274,7 @@ export async function trendData(
   const currencies = [...new Set(positions.map((p) => p.currency))];
   const user = await db.user.findUniqueOrThrow({
     where: { id: userId },
-    select: { baseCurrency: true },
+    select: { baseCurrency: true, includeIndependentAssets: true },
   });
   const previousDay = new Date(+new Date(from) - 86400000).toISOString().slice(0, 10);
   const rates = await db.exchangeRate.findMany({
@@ -287,7 +287,11 @@ export async function trendData(
   });
   const priorRates = await currentRates(db, userId, currencies, user.baseCurrency, previousDay);
   return {
-    positions: positions.map((p) => ({ ...p, revisions: byId.get(p.id) || [] })),
+    positions: positions.map((p) => ({
+      ...p,
+      included: p.included && (p.kind !== 'asset' || user.includeIndependentAssets),
+      revisions: byId.get(p.id) || [],
+    })),
     rates: [...priorRates, ...rates],
     base: user.baseCurrency,
   };

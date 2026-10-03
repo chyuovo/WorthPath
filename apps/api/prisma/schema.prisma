@@ -23,6 +23,8 @@ model User {
   requireHiddenPassword Boolean @default(true)
   /// 总览显示的卡片键列表，空值表示默认全部显示
   overviewCards Json?
+  /// 独立资产是否参与资产总览和净资产轨迹
+  includeIndependentAssets Boolean @default(true)
   /// 账户分组显示顺序；空值表示沿用默认顺序
   accountGroupOrder Json?
   /// 是否显示备注
@@ -35,6 +37,7 @@ model User {
   updatedAt DateTime @updatedAt
   positions Position[]
   rates ExchangeRate[]
+  metalPrices MetalPrice[]
   sessions Session[]
   icons Icon[]
   transfers Transfer[]
@@ -86,6 +89,16 @@ model Position {
   archived Boolean @default(false)
   /// 是否隐藏；未解锁时不参与可见范围统计
   hidden Boolean @default(false)
+  /// 是否参与资产负债总额及净资产轨迹
+  included Boolean @default(true)
+  /// 贵金属品种：gold 黄金或 silver 白银
+  metalType String? @db.VarChar(12)
+  /// 贵金属总重量，单位克
+  metalGrams Decimal? @db.Decimal(24,8)
+  /// 贵金属纯度比例，0 至 1
+  metalPurity Decimal @default(1) @db.Decimal(12,8)
+  /// 是否随每日价格更新自动记录估值
+  autoValuation Boolean @default(false)
   /// 记录创建时间，UTC
   createdAt DateTime @default(now())
   /// 记录更新时间，UTC
@@ -256,4 +269,26 @@ model Schedule {
   notes String @db.Text
   @@index([userId,enabled,nextAt])
   @@unique([userId,importedFromId])
+}
+
+/// 用户的贵金属每克参考价历史
+model MetalPrice {
+  /// 唯一标识
+  id String @id @default(uuid()) @db.Char(36)
+  /// 所属用户标识，用于数据隔离
+  userId String @db.Char(36)
+  user User @relation(fields:[userId],references:[id],onDelete:Cascade)
+  /// 品种：gold 黄金或 silver 白银
+  metalType String @db.VarChar(12)
+  /// 价格币种
+  currency String @db.Char(3)
+  /// 纯金属每克价格
+  price Decimal @db.Decimal(24,12)
+  /// 报价日期，UTC+8 自然日
+  date DateTime @db.Date
+  /// 价格来源：manual 或 goldapi
+  source String @db.VarChar(20)
+  /// 报价对应时间，UTC
+  quotedAt DateTime @db.DateTime(3)
+  @@unique([userId, metalType, currency, date])
 }

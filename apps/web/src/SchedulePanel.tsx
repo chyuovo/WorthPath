@@ -47,7 +47,11 @@ export function SchedulePanel({
     [source, setSource] = useState(''),
     [target, setTarget] = useState(''),
     [amount, setAmount] = useState('');
-  const sourceId = accounts.some((p) => p.id === source) ? source : accounts[0]?.id || '';
+  const sourceAccounts =
+    operation === 'expense' ? accounts.filter((p) => p.side === 'asset') : accounts;
+  const sourceId = sourceAccounts.some((p) => p.id === source)
+    ? source
+    : sourceAccounts[0]?.id || '';
   const sourceAccount = accounts.find((p) => p.id === sourceId),
     targetAccount = accounts.find((p) => p.id === target);
   const same = sourceAccount?.currency === targetAccount?.currency;
@@ -173,7 +177,7 @@ export function SchedulePanel({
               {tr('付款账户')}
               <AccountPicker
                 name="sourceId"
-                accounts={accounts}
+                accounts={sourceAccounts}
                 value={sourceId}
                 onChange={(id) => {
                   setSource(id);

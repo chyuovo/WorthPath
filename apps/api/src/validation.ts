@@ -79,6 +79,7 @@ export const revisionInput = z
   .strict();
 export const positionMeta = z
   .object({
+    included: z.boolean().optional(),
     groupName: z.string().trim().max(60).optional(),
     iconId: z.string().uuid().nullable().optional(),
     name: z.string().trim().min(1).max(100),
@@ -212,6 +213,7 @@ export const settingsInput = z
     sessionHours: sessionHours.optional(),
     requireHiddenPassword: z.boolean().optional(),
     overviewCards: overviewCards.optional(),
+    includeIndependentAssets: z.boolean().optional(),
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0);

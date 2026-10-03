@@ -54,6 +54,7 @@ import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
 import { IconPicker } from './IconPicker';
+import { MetalPanel } from './MetalPanel';
 import { QuickTransfer } from './QuickTransfer';
 import { TransferForm } from './TransferForm';
 import { DebtPaymentForm, operationLabel, type DebtOperation } from './DebtPaymentForm';
@@ -259,11 +260,7 @@ export default function App() {
     setQuickTransfer((current) =>
       current &&
       [current.sourceId, current.targetId].some(
-        (id) =>
-          id &&
-          !positions.some(
-            (p) => p.id === id && p.kind === 'account' && p.side === 'asset' && !p.archived,
-          ),
+        (id) => id && !positions.some((p) => p.id === id && p.kind === 'account' && !p.archived),
       )
         ? null
         : current,
@@ -271,8 +268,8 @@ export default function App() {
   }, [positions]);
   function chooseQuickAccount(p: Position) {
     if (busy || loading) return;
-    if (p.kind !== 'account' || p.side !== 'asset' || p.archived) {
-      setError(tr('请选择启用的资产账户'));
+    if (p.kind !== 'account' || p.archived) {
+      setError(tr('请选择启用的账户'));
       return;
     }
     setQuickTransfer((current) => {
@@ -1152,7 +1149,8 @@ export default function App() {
                         <span>
                           {tr(labels[k])}
                           <small>
-                            {overview.items.filter((p) => p.kind === k).length} {tr('个项目')}
+                            {overview.items.filter((p) => p.included && p.kind === k).length}{' '}
+                            {tr('个项目')}
                           </small>
                         </span>
                         <ArrowUpRight size={18} />
@@ -1274,10 +1272,14 @@ export default function App() {
                         : tr('缺少汇率')}
                     </p>
                     <p className="notes-display">{p.notes || tr('暂无备注')}</p>
+                    {(p.included === false ||
+                      (p.kind === 'asset' && user.includeIndependentAssets === false)) && (
+                      <span className="badge">{tr('不计入总览')}</span>
+                    )}
                     <small>{tr('币种和资产负债属性创建后固定。归档项目仍计入总览。')}</small>
                   </div>
                   <div className="actions">
-                    {p.kind === 'account' && p.side === 'asset' && !p.archived && (
+                    {p.kind === 'account' && !p.archived && (
                       <>
                         <button
                           className="primary"
@@ -1286,6 +1288,7 @@ export default function App() {
                           {tr('转账')}
                         </button>
                         <button
+                          hidden={p.side !== 'asset'}
                           className="secondary"
                           onClick={() => setModal({ kind: 'debt-payment', p })}
                         >
@@ -1342,6 +1345,9 @@ export default function App() {
                     </button>
                   </div>
                 </section>
+                {p.kind === 'asset' && p.category === 'gold' && (
+                  <MetalPanel position={p} refresh={() => load(false, true)} />
+                )}
                 {p.kind === 'debt' && (
                   <section className="panel">
                     <div className="panel-title">
@@ -1479,9 +1485,7 @@ export default function App() {
                                 ? quickTransfer.sourceId === p.id || quickTransfer.targetId === p.id
                                 : undefined
                             }
-                            disabled={
-                              busy || (!!quickTransfer && (p.side !== 'asset' || p.archived))
-                            }
+                            disabled={busy || (!!quickTransfer && p.archived)}
                             key={p.id}
                             onClick={() =>
                               quickTransfer !== null && page === 'account' && quickMode
@@ -1507,6 +1511,10 @@ export default function App() {
                             </div>
                             <h3>{p.name}</h3>
                             {p.groupName && <span className="badge">{p.groupName}</span>}
+                            {(p.included === false ||
+                              (p.kind === 'asset' && user.includeIndependentAssets === false)) && (
+                              <span className="badge">{tr('不计入总览')}</span>
+                            )}
                             <p>
                               {categoryLabel(p)} ·{' '}
                               {p.kind === 'debt'
@@ -1555,9 +1563,7 @@ export default function App() {
                   disabled={
                     busy ||
                     loading ||
-                    positions.filter(
-                      (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
-                    ).length < 2
+                    positions.filter((p) => p.kind === 'account' && !p.archived).length < 2
                   }
                   onClick={() => setQuickTransfer({})}
                 >
@@ -1729,9 +1735,7 @@ export default function App() {
           {page === 'schedules' && (
             <section className="panel">
               <SchedulePanel
-                accounts={positions.filter(
-                  (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
-                )}
+                accounts={positions.filter((p) => p.kind === 'account' && !p.archived)}
                 refresh={() => load(false, true)}
               />
             </section>
@@ -1898,12 +1902,26 @@ export default function App() {
                               'schedules',
                             ].filter((key) => !f.has('menu_' + key)),
                             showNotes: f.has('showNotes'),
+                            includeIndependentAssets: f.has('includeIndependentAssets'),
                             overviewCards: allOverviewCards.filter((key) => f.has('card_' + key)),
                           }),
                         tr('设置已保存'),
                       );
                     }}
                   >
+                    <label className="switch-row">
+                      <span>{tr('独立资产计入总览')}</span>
+                      <input
+                        type="checkbox"
+                        role="switch"
+                        name="includeIndependentAssets"
+                        defaultChecked={user.includeIndependentAssets !== false}
+                        key={String(user.includeIndependentAssets)}
+                      />
+                    </label>
+                    <p className="muted">
+                      {tr('关闭后，独立资产不参与总额和净资产轨迹，资料与历史仍保留。')}
+                    </p>
                     <h3>{tr('导航菜单')}</h3>
                     <p className="muted">
                       {tr('选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。')}
@@ -2136,6 +2154,7 @@ export default function App() {
                   />
                 )}
               </section>
+              {settingsSection === 'rates' && <MetalPanel refresh={() => load(false, true)} />}
               <section className="panel" hidden={settingsSection !== 'clear'}>
                 <h2 className="danger-text">{tr('清空本账号数据')}</h2>
                 <p className="muted">
@@ -2546,9 +2565,7 @@ export default function App() {
               <p>{tr('正在刷新数据…')}</p>
             ) : modal.kind === 'transfer' ? (
               <TransferForm
-                accounts={movementPositions.filter(
-                  (p) => p.kind === 'account' && p.side === 'asset' && !p.archived,
-                )}
+                accounts={movementPositions.filter((p) => p.kind === 'account' && !p.archived)}
                 initialSourceId={modal.p?.kind === 'account' ? modal.p.id : undefined}
                 busy={busy}
                 submit={(v) =>
@@ -2621,6 +2638,7 @@ export default function App() {
                         ...(f.has('iconId') ? { iconId: f.get('iconId') || null } : {}),
                         archived: mp!.archived,
                         hidden: f.get('hidden') === 'on',
+                        included: f.get('included') === 'on',
                       }),
                     tr('项目资料已保存'),
                   );
@@ -2641,6 +2659,7 @@ export default function App() {
                         side,
                         amount: accountInputAmount({ kind, side }, String(v.amount)),
                         hidden: f.get('hidden') === 'on',
+                        included: f.get('included') === 'on',
                       }),
                     tr('项目已添加'),
                   );
@@ -2660,6 +2679,17 @@ export default function App() {
               )}
               {['account', 'asset', 'debt', 'edit'].includes(modal.kind) && (
                 <>
+                  <label className="check-line">
+                    <input
+                      name="included"
+                      type="checkbox"
+                      defaultChecked={modal.p?.included !== false}
+                    />
+                    {tr('计入资产总览')}
+                  </label>
+                  <p className="muted">
+                    {tr('取消后不参与资产、负债及净资产轨迹，仍可管理和转账。')}
+                  </p>
                   <label className="check-line">
                     <input name="hidden" type="checkbox" defaultChecked={modal.p?.hidden} />
                     {tr('隐藏此项目（密码验证后可查看和编辑）')}

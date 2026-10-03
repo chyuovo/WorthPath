@@ -28,6 +28,7 @@ import { currentPositions, currentRates, historyPage, trendData, trendInput } fr
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { IconsService } from './icons';
+import { MetalsService } from './metals';
 import { RatesService } from './rates';
 import { captureReplay } from './replay';
 import { changeMovement } from './transfers';
@@ -37,6 +38,7 @@ export class PortfolioController {
     private db: Database,
     private fx: RatesService,
     private icons: IconsService,
+    private metals: MetalsService,
   ) {}
   private async own(userId: string, id: string, revealed = false) {
     const [p] = await this.db.$transaction((tx) => currentPositions(tx, userId, revealed, id));
@@ -49,7 +51,7 @@ export class PortfolioController {
       const rows = await currentPositions(tx, r.userId, r.revealed, undefined, kind);
       const user = await tx.user.findUniqueOrThrow({
         where: { id: r.userId },
-        select: { baseCurrency: true },
+        select: { baseCurrency: true, includeIndependentAssets: true },
       });
       const rates = await currentRates(
         tx,
@@ -140,7 +142,15 @@ export class PortfolioController {
     )
       throw new BadRequestException('信用卡和贷款账户必须为负债');
     await this.icons.requireVisible(r.userId, v.iconId);
-    await this.db.position.update({ where: { id: p.id }, data: v });
+    await this.db.position.update({
+      where: { id: p.id },
+      data: {
+        ...v,
+        ...(p.kind === 'asset' && v.category !== 'gold'
+          ? { metalType: null, metalGrams: null, metalPurity: '1', autoValuation: false }
+          : {}),
+      },
+    });
     return { ok: true };
   }
   @Post('positions/:id/revisions') async revise(
@@ -283,10 +293,11 @@ export class PortfolioController {
   }
   @Get('overview') async overview(@Req() r: UserRequest) {
     void this.fx.daily(r.userId);
+    void this.metals.daily(r.userId);
     return this.db.$transaction(async (tx) => {
       const user = await tx.user.findUniqueOrThrow({
         where: { id: r.userId },
-        select: { baseCurrency: true },
+        select: { baseCurrency: true, includeIndependentAssets: true },
       });
       const positions = await currentPositions(tx, r.userId, r.revealed);
       const rates = await currentRates(
@@ -298,7 +309,15 @@ export class PortfolioController {
       );
       return {
         baseCurrency: user.baseCurrency,
-        ...totals(positions, rates, user.baseCurrency, today()),
+        ...totals(
+          positions.map((p) => ({
+            ...p,
+            included: p.included && (p.kind !== 'asset' || user.includeIndependentAssets),
+          })),
+          rates,
+          user.baseCurrency,
+          today(),
+        ),
         revealed: r.revealed,
       };
     });

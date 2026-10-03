@@ -35,7 +35,7 @@ async function main() {
   sources.push(
     { name: '支付宝', source: 'https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/alipay.svg' },
     { name: '微信', source: 'https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico' },
-    { name: '京东金融', source: 'https://jr.jd.com/logo.png' },
+    { name: '京东金融', source: 'https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7d/74/af/7d74af96-af89-ae14-cbf5-5bbd89859ab7/AppIcon-0-1x_U007epad-0-1-0-85-220-0.png/512x512bb.jpg', preserveWhite: true },
   );
   const manifest = [];
   for (const item of sources) {

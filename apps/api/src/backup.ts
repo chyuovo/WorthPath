@@ -1,3 +1,4 @@
+import { metalConfig, metalPriceInput } from './metals';
 import { scheduleInput } from './schedules';
 import { movementDeltas } from './movement';
 import { pairedReasons } from './validation';
@@ -30,6 +31,7 @@ import { Database } from './database';
 import { UserRequest } from './auth';
 import {
   positionInput,
+  amount,
   positionMeta,
   currency,
   revisionInput,
@@ -53,6 +55,10 @@ const timestamp = z.iso
   );
 const record = positionMeta
   .extend({
+    metalType: z.enum(['gold', 'silver']).nullable().optional(),
+    metalGrams: amount.nullable().optional(),
+    metalPurity: metalConfig.shape.metalPurity.optional(),
+    autoValuation: z.boolean().optional(),
     kind: z.enum(['account', 'asset', 'debt']),
     side: z.enum(['asset', 'liability']),
     currency,
@@ -85,6 +91,7 @@ const backupSchema = z
         sessionHours: sessionHours.optional(),
         requireHiddenPassword: z.boolean().optional(),
         overviewCards: overviewCards.optional(),
+        includeIndependentAssets: z.boolean().optional(),
         showNotes: z.boolean().optional(),
         idleMinutes: z.number().int().min(0).max(1440),
       })
@@ -126,6 +133,14 @@ const backupSchema = z
         }),
       )
       .optional(),
+    metalPrices: z
+      .array(
+        metalPriceInput.extend({
+          source: z.enum(['manual', 'goldapi']),
+          quotedAt: timestamp,
+        }),
+      )
+      .optional(),
     positions: z.array(record),
     links: z.array(z.object({ sourceId: z.string().uuid(), targetId: z.string().uuid() }).strict()),
     rates: z.array(rateInput.safeExtend({ source: z.enum(['manual', 'frankfurter']) })),
@@ -138,6 +153,8 @@ export function validateBackup(raw: unknown) {
   if (ids.size !== b.positions.length) throw new BadRequestException('重复项目 ID');
   const origins = b.positions.map((p) => p.importedFromId || p.id);
   if (new Set(origins).size !== origins.length) throw new BadRequestException('备份内包含重复项目');
+  const quoteKeys = (b.metalPrices || []).map((q) => q.metalType + q.currency + q.date);
+  if (new Set(quoteKeys).size !== quoteKeys.length) throw new BadRequestException('重复贵金属报价');
   const iconIds = new Set((b.icons || []).map((i) => i.id));
   if (
     iconIds.size !== (b.icons || []).length ||
@@ -146,6 +163,16 @@ export function validateBackup(raw: unknown) {
     throw new BadRequestException('图标关联无效');
   const revisionIds = new Set<string>();
   for (const p of b.positions) {
+    if (p.metalType || p.metalGrams || p.autoValuation) {
+      if (p.kind !== 'asset' || p.category !== 'gold')
+        throw new BadRequestException('贵金属估价关联无效');
+      metalConfig.parse({
+        metalType: p.metalType,
+        metalGrams: p.metalGrams,
+        metalPurity: p.metalPurity || '1',
+        autoValuation: p.autoValuation || false,
+      });
+    }
     positionInput.parse({
       name: p.name,
       category: p.category,
@@ -156,6 +183,7 @@ export function validateBackup(raw: unknown) {
       notes: p.notes,
       archived: p.archived,
       hidden: p.hidden,
+      included: p.included,
       amount: '0',
       date: p.revisions[0]?.date || '1900-01-01',
     });
@@ -179,12 +207,11 @@ export function validateBackup(raw: unknown) {
       planIds.has(plan.importedFromId || plan.id) ||
       !source ||
       source.kind !== 'account' ||
-      source.side !== 'asset' ||
+      (plan.operation === 'expense' && source.side !== 'asset') ||
       (plan.operation === 'expense'
         ? !!plan.targetId
         : !target ||
           target.kind !== 'account' ||
-          target.side !== 'asset' ||
           (source.currency === target.currency && !new Decimal(plan.amount).eq(plan.received)))
     )
       throw new BadRequestException('计划账户关联无效');
@@ -201,9 +228,9 @@ export function validateBackup(raw: unknown) {
       !source ||
       !target ||
       source.kind !== 'account' ||
-      source.side !== 'asset' ||
+      (t.operation !== 'transfer' && source.side !== 'asset') ||
       (t.operation === 'transfer'
-        ? target.kind !== 'account' || target.side !== 'asset'
+        ? target.kind !== 'account'
         : target.kind !== 'debt' ||
           target.side !== (['borrow', 'repay'].includes(t.operation) ? 'liability' : 'asset')) ||
       source.currency !== t.sourceCurrency ||
@@ -213,7 +240,14 @@ export function validateBackup(raw: unknown) {
     transferIds.add(origin);
     if (t.sourceCurrency === t.targetCurrency && !new Decimal(t.amount).eq(t.received))
       throw new BadRequestException('同币种转账金额不一致');
-    const deltas = movementDeltas(t.operation, t.amount, t.received, t.fee);
+    const deltas = movementDeltas(
+      t.operation,
+      t.amount,
+      t.received,
+      t.fee,
+      source.side,
+      target.side,
+    );
     for (const [p, revId, reason, delta] of [
       [source, t.sourceRevisionId, deltas.sourceReason, deltas.source],
       [target, t.targetRevisionId, deltas.targetReason, deltas.target],
@@ -318,6 +352,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
           sessionHours: true,
           requireHiddenPassword: true,
           overviewCards: true,
+          includeIndependentAssets: true,
         },
       }),
       client.position.findMany({
@@ -342,6 +377,11 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       notes: p.notes,
       archived: p.archived,
       hidden: p.hidden,
+      included: p.included,
+      metalType: p.metalType,
+      metalGrams: p.metalGrams?.toString() ?? null,
+      metalPurity: p.metalPurity.toString(),
+      autoValuation: p.autoValuation,
       createdAt: p.createdAt.toISOString(),
       updatedAt: p.updatedAt.toISOString(),
       revisions: p.revisions.map((r) => ({
@@ -381,6 +421,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         sessionHours: user.sessionHours,
         requireHiddenPassword: user.requireHiddenPassword,
         overviewCards: overviewCards.parse(user.overviewCards ?? [...defaultOverviewCards]),
+        includeIndependentAssets: user.includeIndependentAssets,
       },
       currencies: [
         ...new Set([
@@ -410,6 +451,14 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         received: v.received.toString(),
         nextAt: businessTime(v.nextAt),
       })),
+      metalPrices: (await client.metalPrice.findMany({ where: { userId } })).map(
+        ({ id, userId, date, quotedAt, price, ...v }) => ({
+          ...v,
+          date: day(date),
+          quotedAt: quotedAt.toISOString(),
+          price: price.toString(),
+        }),
+      ),
       positions,
       links: ps.flatMap((p) =>
         p.outgoing.map((l) => ({ sourceId: l.sourceId, targetId: l.targetId })),
@@ -508,6 +557,9 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
     data.rates.sort((a, b) =>
       (a.currency + a.baseCurrency + a.date).localeCompare(b.currency + b.baseCurrency + b.date),
     );
+    data.metalPrices?.sort((a, b) =>
+      (a.metalType + a.currency + a.date).localeCompare(b.metalType + b.currency + b.date),
+    );
     data.currencies.sort();
     data.transfers?.sort((a, b) => a.id.localeCompare(b.id));
     data.schedules?.sort((a, b) => a.id.localeCompare(b.id));
@@ -524,6 +576,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
       .parse(raw);
     return this.db.$transaction(
       async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id=${r.userId} FOR UPDATE`);
         const s = await tx.session.findUniqueOrThrow({ where: { id: r.sessionId } });
         if (!s.backupDigest || !s.backupExpiresAt || +s.backupExpiresAt <= Date.now())
           throw new BadRequestException('请先下载当前账号备份，再进入下一步（10 分钟内有效）');
@@ -532,6 +585,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
         await tx.schedule.deleteMany({ where: { userId: r.userId } });
         await tx.position.deleteMany({ where: { userId: r.userId } });
         await tx.icon.deleteMany({ where: { ownerId: r.userId, shared: false } });
+        await tx.metalPrice.deleteMany({ where: { userId: r.userId } });
         await tx.exchangeRate.deleteMany({ where: { userId: r.userId } });
         await tx.session.updateMany({
           where: { userId: r.userId },
@@ -636,6 +690,11 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               notes: p.notes,
               archived: p.archived,
               hidden: p.hidden,
+              included: p.included,
+              metalType: p.metalType,
+              metalGrams: p.metalGrams,
+              metalPurity: p.metalPurity,
+              autoValuation: p.autoValuation,
               createdAt: new Date(p.createdAt),
               updatedAt: new Date(p.updatedAt),
               revisions: {
@@ -669,6 +728,23 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
             orderBy: { sequence: 'asc' },
           });
           originals.forEach((v, i) => revisionMapping.set(v.id, restored[i].id));
+        }
+        for (const q of b.metalPrices || []) {
+          const key = {
+            userId: r.userId,
+            metalType: q.metalType,
+            currency: q.currency,
+            date: new Date(q.date),
+          };
+          const existingQuote = await tx.metalPrice.findUnique({
+            where: { userId_metalType_currency_date: key },
+          });
+          if (existingQuote && !new Decimal(existingQuote.price.toString()).eq(q.price))
+            throw new ConflictException('已有同日贵金属价格与备份冲突');
+          if (!existingQuote)
+            await tx.metalPrice.create({
+              data: { ...key, price: q.price, source: q.source, quotedAt: new Date(q.quotedAt) },
+            });
         }
         for (const t of b.transfers || [])
           await tx.transfer.create({
@@ -732,6 +808,7 @@ export class BackupController implements OnModuleDestroy, OnModuleInit {
               sessionHours: b.preferences?.sessionHours,
               requireHiddenPassword: b.preferences?.requireHiddenPassword,
               overviewCards: b.preferences?.overviewCards,
+              includeIndependentAssets: b.preferences?.includeIndependentAssets,
             },
           });
         if (!ps.length && !rs.length && b.preferences?.requireHiddenPassword !== undefined)

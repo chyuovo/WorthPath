@@ -1,6 +1,6 @@
 {
-  "tableCount": 9,
-  "columnCount": 92,
+  "tableCount": 10,
+  "columnCount": 106,
   "tables": [
     {
       "TABLE_NAME": "exchangerate",
@@ -9,6 +9,10 @@
     {
       "TABLE_NAME": "icon",
       "TABLE_COMMENT": "可复用账户图标"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "TABLE_COMMENT": "用户的贵金属每克参考价历史"
     },
     {
       "TABLE_NAME": "position",
@@ -116,6 +120,46 @@
       "COLUMN_COMMENT": "记录创建时间，UTC"
     },
     {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "id",
+      "COLUMN_COMMENT": "唯一标识"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "userId",
+      "COLUMN_COMMENT": "所属用户标识，用于数据隔离"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "metalType",
+      "COLUMN_COMMENT": "品种：gold 黄金或 silver 白银"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "currency",
+      "COLUMN_COMMENT": "价格币种"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "price",
+      "COLUMN_COMMENT": "纯金属每克价格"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "date",
+      "COLUMN_COMMENT": "报价日期，UTC+8 自然日"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "source",
+      "COLUMN_COMMENT": "价格来源：manual 或 goldapi"
+    },
+    {
+      "TABLE_NAME": "metalprice",
+      "COLUMN_NAME": "quotedAt",
+      "COLUMN_COMMENT": "报价对应时间，UTC"
+    },
+    {
       "TABLE_NAME": "position",
       "COLUMN_NAME": "id",
       "COLUMN_COMMENT": "唯一标识"
@@ -189,6 +233,31 @@
       "TABLE_NAME": "position",
       "COLUMN_NAME": "groupName",
       "COLUMN_COMMENT": "自定义账户分组"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "included",
+      "COLUMN_COMMENT": "是否参与资产负债总额及净资产轨迹"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "metalType",
+      "COLUMN_COMMENT": "贵金属品种：gold 黄金或 silver 白银"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "metalGrams",
+      "COLUMN_COMMENT": "贵金属总重量，单位克"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "metalPurity",
+      "COLUMN_COMMENT": "贵金属纯度比例，0 至 1"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "autoValuation",
+      "COLUMN_COMMENT": "是否随每日价格更新自动记录估值"
     },
     {
       "TABLE_NAME": "positionlink",
@@ -499,6 +568,11 @@
       "TABLE_NAME": "user",
       "COLUMN_NAME": "overviewCards",
       "COLUMN_COMMENT": "总览显示的卡片键列表，NULL 表示默认全部显示"
+    },
+    {
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "includeIndependentAssets",
+      "COLUMN_COMMENT": "独立资产是否参与资产总览和净资产轨迹"
     }
   ]
 }

@@ -6,6 +6,7 @@ export type Holding = {
   kind: string;
   side: string;
   currency: string;
+  included?: boolean;
   revisions: {
     id: string;
     sequence?: number;
@@ -71,15 +72,16 @@ export function totals(positions: Holding[], rates: Rate[], base: string, date: 
         .sort((a, b) => compareRevisions(b, a))[0],
       amount = new Decimal(rev?.amount.toString() || '0'),
       fx = rateAt(rates, p.currency, base, date);
-    if (!fx && !amount.isZero()) missing.add(p.currency);
+    if (p.included !== false && !fx && !amount.isZero()) missing.add(p.currency);
     const converted = fx ? amount.mul(fx.value) : null;
-    if (converted) {
+    if (converted && p.included !== false) {
       if (p.side === 'asset') assets = assets.plus(converted);
       else if (p.kind === 'account' && converted.isNegative()) assets = assets.minus(converted);
       else liabilities = liabilities.plus(converted);
     }
     return {
       id: p.id,
+      included: p.included !== false,
       name: p.name,
       kind: p.kind,
       side: p.side,
@@ -117,7 +119,7 @@ export function overview(positions: Holding[], rates: Rate[], base: string, date
       fxChange: string | null = null;
     if (previous?.complete && value.complete) {
       let revalued = new Decimal(0);
-      for (const item of previous.items) {
+      for (const item of previous.items.filter((p) => p.included)) {
         const fx = rateAt(rates, item.currency, base, d);
         if (!fx && !new Decimal(item.amount).isZero()) {
           revalued = new Decimal(NaN);
@@ -155,6 +157,7 @@ export function trend(
   to: string,
   grain: 'day' | 'week' | 'month' = 'day',
 ) {
+  positions = positions.filter((p) => p.included !== false);
   const dates = positions
     .flatMap((p) => p.revisions.map((r) => businessDay(r.effectiveDate)))
     .sort();
@@ -197,7 +200,7 @@ export function trend(
       value = advance(d);
     if (previous.complete && value.complete) {
       let revalued = new Decimal(0);
-      for (const item of previous.items) {
+      for (const item of previous.items.filter((p) => p.included)) {
         const rate = item.currency === base ? new Decimal(1) : fx.get(item.currency)?.rate;
         const v = new Decimal(item.amount).mul(rate?.toString() || '0');
         revalued = revalued.plus(item.side === 'asset' ? v : v.neg());

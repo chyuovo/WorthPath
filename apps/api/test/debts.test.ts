@@ -151,7 +151,7 @@ test('borrow/lend/collect/repay pair balances atomically and survive concurrency
       200,
     );
     const backup = (await call(a.token, '/backup')).data;
-    assert.equal(JSON.parse(packBackup(backup)['manifest.json']).version, 7);
+    assert.equal(JSON.parse(packBackup(backup)['manifest.json']).version, 8);
     assert.equal(backup.transfers.length, 5);
     assert.ok(backup.transfers.some((p: any) => p.operation === 'lend' && p.fee === '-2'));
     assert.equal(

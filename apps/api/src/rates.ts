@@ -190,6 +190,7 @@ export class SettingsController {
         sessionHours: true,
         requireHiddenPassword: true,
         overviewCards: true,
+        includeIndependentAssets: true,
       },
     });
     return {

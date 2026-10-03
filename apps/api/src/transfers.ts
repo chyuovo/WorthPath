@@ -176,14 +176,14 @@ export async function executeMovement(
     revisions: latest.filter((r) => r.positionId === p.id),
   }));
   if (accounts.length !== 2)
-    throw new BadRequestException('只能在自己的启用资产账户之间转账（隐藏账户须先解锁）');
+    throw new BadRequestException('只能在自己的启用账户之间转账（隐藏账户须先解锁）');
   const source = accounts.find((p) => p.id === v.sourceId)!,
     target = accounts.find((p) => p.id === v.targetId)!;
   if (
     source.kind !== 'account' ||
-    source.side !== 'asset' ||
+    (v.operation !== 'transfer' && source.side !== 'asset') ||
     (v.operation === 'transfer'
-      ? target.kind !== 'account' || target.side !== 'asset'
+      ? target.kind !== 'account'
       : target.kind !== 'debt' ||
         target.side !== (['borrow', 'repay'].includes(v.operation) ? 'liability' : 'asset'))
   )
@@ -192,7 +192,7 @@ export async function executeMovement(
     throw new ConflictException('转账时间不能早于任一账户的最新余额记录，请以当前余额转账');
   if (source.currency === target.currency && !new Decimal(v.amount).eq(v.received))
     throw new BadRequestException('同币种转出与到账金额必须一致，手续费单独填写');
-  const deltas = movementDeltas(v.operation, v.amount, v.received, v.fee);
+  const deltas = movementDeltas(v.operation, v.amount, v.received, v.fee, source.side, target.side);
   const before = new Decimal(source.revisions[0]?.amount.toString() || '0');
   const sourceAfter = before.plus(deltas.source);
   const after = new Decimal(target.revisions[0]?.amount.toString() || '0').plus(deltas.target);

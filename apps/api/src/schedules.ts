@@ -65,7 +65,6 @@ export class SchedulesController {
         where: {
           userId: r.userId,
           kind: 'account',
-          side: 'asset',
           ...(r.revealed ? {} : { hidden: false }),
         },
         select: { id: true },
@@ -108,12 +107,13 @@ export class SchedulesController {
         userId: r.userId,
         id: { in: ids },
         kind: 'account',
-        side: 'asset',
+        ...(v.operation === 'expense' ? { side: 'asset' } : {}),
         archived: false,
         ...(r.revealed ? {} : { hidden: false }),
       },
     });
-    if (accounts.length !== ids.length) throw new BadRequestException('请选择启用的资产账户');
+    if (accounts.length !== ids.length)
+      throw new BadRequestException('请选择启用的账户（支出计划使用资产账户）');
     if (v.operation === 'expense' && v.targetId)
       throw new BadRequestException('支出计划无需转入账户');
     if (

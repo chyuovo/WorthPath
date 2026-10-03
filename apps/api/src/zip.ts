@@ -24,7 +24,11 @@ const sha = (s: Buffer | string) => createHash('sha256').update(s).digest('hex')
 export function packBackup(b: Backup) {
   const metadata = b.positions.map(({ revisions, ...p }) => p);
   const data: Record<string, unknown> = {
-    'settings.json': { baseCurrency: b.baseCurrency, preferences: b.preferences },
+    'settings.json': {
+      baseCurrency: b.baseCurrency,
+      preferences: b.preferences,
+      metalPrices: b.metalPrices,
+    },
     'currencies.json': b.currencies,
     'accounts.json': metadata.filter((p) => p.kind === 'account'),
     'assets.json': metadata.filter((p) => p.kind === 'asset'),
@@ -44,7 +48,7 @@ export function packBackup(b: Backup) {
   contents['manifest.json'] = JSON.stringify(
     {
       format: 'worthpath',
-      version: 7,
+      version: 8,
       exportedAt: b.exportedAt,
       files: files.map((name) => ({ name, sha256: sha(contents[name]) })),
     },
@@ -119,7 +123,14 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const manifest = z
       .object({
         format: z.literal('worthpath'),
-        version: z.union([z.literal(3), z.literal(4), z.literal(5), z.literal(6), z.literal(7)]),
+        version: z.union([
+          z.literal(3),
+          z.literal(4),
+          z.literal(5),
+          z.literal(6),
+          z.literal(7),
+          z.literal(8),
+        ]),
         exportedAt: z.iso.datetime(),
         files: z
           .array(
@@ -146,6 +157,7 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
     const settings = z
       .object({
         baseCurrency: z.string(),
+        metalPrices: z.array(z.record(z.string(), z.unknown())).optional(),
         preferences: z
           .object({
             showSidebar: z.boolean().optional(),
@@ -154,6 +166,7 @@ export async function readBackupZip(input: string | Buffer): Promise<unknown> {
             sessionHours: sessionHours.optional(),
             requireHiddenPassword: z.boolean().optional(),
             overviewCards: overviewCards.optional(),
+            includeIndependentAssets: z.boolean().optional(),
             showNotes: z.boolean().optional(),
             idleMinutes: z.number().int().min(0).max(1440),
           })

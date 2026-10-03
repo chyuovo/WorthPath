@@ -175,6 +175,7 @@ export class AuthController {
         sessionHours: true,
         requireHiddenPassword: true,
         overviewCards: true,
+        includeIndependentAssets: true,
       },
     });
     const session = await this.db.session.findUniqueOrThrow({ where: { id: req.sessionId } });
@@ -182,6 +183,7 @@ export class AuthController {
       ...user,
       accountGroupOrder: user.accountGroupOrder || [],
       overviewCards: user.overviewCards ?? [...defaultOverviewCards],
+      includeIndependentAssets: user.includeIndependentAssets,
       sessionExpiresAt: session.expiresAt,
       hiddenMenus: user.hiddenMenus.split(',').filter(Boolean),
       revealed: req.revealed,

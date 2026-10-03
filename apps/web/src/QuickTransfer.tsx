@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { money, nowMinute, requestUuid, type Position } from './api';
+import { money, positionAmount, nowMinute, requestUuid, type Position } from './api';
 import { t as tr } from './i18n';
 export function QuickTransfer({
   source,
@@ -40,7 +40,7 @@ export function QuickTransfer({
         <div>
           <small>{tr('转出账户')}</small>
           <strong>{source.name}</strong>
-          <span>{money(source.amount, source.currency)}</span>
+          <span>{money(positionAmount(source), source.currency)}</span>
           <button type="button" className="text" disabled={busy} onClick={changeSource}>
             {tr('重选')}
           </button>
@@ -49,7 +49,7 @@ export function QuickTransfer({
         <div>
           <small>{tr('转入账户')}</small>
           <strong>{target.name}</strong>
-          <span>{money(target.amount, target.currency)}</span>
+          <span>{money(positionAmount(target), target.currency)}</span>
           <button type="button" className="text" disabled={busy} onClick={changeTarget}>
             {tr('重选')}
           </button>

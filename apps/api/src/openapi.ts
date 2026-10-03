@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import { metalConfig, metalPriceInput } from './metals';
 import { scheduleInput } from './schedules';
 import { z } from 'zod';
 import {
@@ -45,6 +46,8 @@ export function setupOpenApi(app: INestApplication) {
     'PUT /api/schedules/{id}': scheduleInput,
     'PATCH /api/schedules/{id}': z.object({ enabled: z.boolean() }).strict(),
     'PATCH /api/settings': settingsInput,
+    'PUT /api/metals/{id}': metalConfig,
+    'POST /api/metals/prices': metalPriceInput,
     'POST /api/backup/clear': z.object({ confirmation: z.literal('确定清空') }),
     'POST /api/backup/import-file': z.object({
       token: z.string().uuid(),
