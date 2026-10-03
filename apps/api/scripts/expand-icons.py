@@ -5,6 +5,7 @@ from PIL import Image
 folder = Path(__file__).resolve().parent.parent / 'assets' / 'icons'
 catalog = json.loads((folder / 'sources.json').read_text(encoding='utf-8'))
 brands = [('汇丰香港', 'https://www.hsbc.com.hk'), ('恒生银行', 'https://www.hangseng.com'), ('中银香港', 'https://www.bochk.com/en'), ('渣打香港', 'https://www.sc.com/hk'), ('东亚银行', 'https://www.hkbea.com'), ('星展香港', 'https://www.dbs.com.hk'), ('花旗香港', 'https://www.citibank.com.hk'), ('币安 Binance', 'https://www.binance.com'), ('Gate', 'https://www.gate.com'), ('Bybit', 'https://www.bybit.com'), ('Bitget', 'https://www.bitget.com')]
+brands += [('抖音月付', 'https://www.douyinpay.com'), ('东方财富', 'https://about.eastmoney.com/about/product')]
 brands += [('ZA BANK 众安银行', 'https://bank.za.group'), ('大象银行 EleBank', 'https://www.elebank.com'), ('微众银行 WeBank', 'https://www.webank.com')]
 if len(sys.argv) > 1:
     brands = [item for item in brands if item[0] in sys.argv[1:]]
@@ -14,7 +15,7 @@ def get(url):
 failed = []
 for name, site in brands:
     if any(v['name'] == name for v in catalog): continue
-    urls = {'币安 Binance': ['https://bin.bnbstatic.com/static/images/common/favicon.ico', 'https://bin.bnbstatic.com/static/images/common/favicon.png'], '中银香港': ['https://www.bochk.com/dam/bochk/desktop/top/favicon.ico', 'https://www.bochk.com/favicon.ico'], '大象银行 EleBank': ['https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d4/bc/60/d4bc6004-3898-c9c3-3571-f3ffe4b46b48/Bank-Airstar-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg']}.get(name, [])
+    urls = {'抖音月付': ['https://p26-infras.byteimg.com/static-assets/be18bb89d2ceeec6407aae38dc5e894c.png~tplv-49obo7mizy-png75.png'], '东方财富': ['https://g1.dfcfw.com/g4/202307/20230731180250.png'], '币安 Binance': ['https://bin.bnbstatic.com/static/images/common/favicon.ico', 'https://bin.bnbstatic.com/static/images/common/favicon.png'], '中银香港': ['https://www.bochk.com/dam/bochk/desktop/top/favicon.ico', 'https://www.bochk.com/favicon.ico'], '大象银行 EleBank': ['https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d4/bc/60/d4bc6004-3898-c9c3-3571-f3ffe4b46b48/Bank-Airstar-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg']}.get(name, [])
     if name == '微众银行 WeBank':
         try:
             script = get('https://tctp.tctpwebankcdn.net/owb-res/owb-res/assets/mainGenerator.811f2078.js').decode('utf-8')
@@ -32,6 +33,10 @@ for name, site in brands:
         try:
             raw = get(url)
             im = Image.open(io.BytesIO(raw)).convert('RGBA')
+            if name == '东方财富':
+                # Official horizontal logo: retain its standalone symbol for square account cards.
+                im = im.crop((int(im.width * 40 / 256), 0, int(im.width * 80 / 256), im.height))
+                if im.getbbox(): im = im.crop(im.getbbox())
             im.thumbnail((256,256))
             out = io.BytesIO(); im.save(out, 'PNG'); png = out.getvalue()
             file = str(len(catalog) + 1).zfill(2) + '.png'

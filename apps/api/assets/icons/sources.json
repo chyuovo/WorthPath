@@ -202,5 +202,17 @@
     "file": "34.png",
     "source": "https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d4/bc/60/d4bc6004-3898-c9c3-3571-f3ffe4b46b48/Bank-Airstar-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg",
     "sha256": "fa7306514308f0a8cc73fa3847002d768094cec25aceeca324da440fbbee2934"
+  },
+  {
+    "name": "抖音月付",
+    "source": "https://p26-infras.byteimg.com/static-assets/be18bb89d2ceeec6407aae38dc5e894c.png~tplv-49obo7mizy-png75.png",
+    "file": "35.png",
+    "sha256": "78e612542243c1b72d9ad6e3793efd2702295c7dafdcac7427389b7cafd81dea"
+  },
+  {
+    "name": "东方财富",
+    "source": "https://g1.dfcfw.com/g4/202307/20230731180250.png",
+    "file": "36.png",
+    "sha256": "f4076632019946fc25db345308ca360eea1faf0d3009f0908e98605c97ed0a5d"
   }
 ]
