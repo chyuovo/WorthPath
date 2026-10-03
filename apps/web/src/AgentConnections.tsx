@@ -100,6 +100,28 @@ function instructions(url: string) {
   ].join('\n\n');
 }
 
+function codexSetupPrompt(url: string, level: string) {
+  const selected = level === 'read' ? 'read' : 'read,' + level;
+  return [
+    '请直接在这台电脑上为我配置 WorthPath MCP，不要只给我命令或方案。我授权你新增或更新名为 worthpath 的 MCP 连接，使用 Streamable HTTP 与 OAuth；仅修改这条连接，保留其他 MCP 和 Codex 配置。',
+    '服务地址：' +
+      url +
+      '。申请权限：' +
+      selected +
+      '。不申请隐藏账户权限；最终授权由我在 WorthPath 网页审核完成。不要让我把密码或个人令牌发送到聊天里，也不要替我点击授权确认。',
+    '先检查本机 codex 命令是否可用，并核对 mcp add/login 的帮助。只检查 WorthPath 相关配置，不输出凭据、Authorization 头或其他秘密。如果你运行在云端或另一台电脑，无法访问此 localhost 地址，请如实说明，不要声称已连接。',
+    '使用 codex mcp add worthpath --url ' +
+      url +
+      ' 添加连接；已有同名、同地址且启用的 OAuth 连接时跳过添加。若同名连接指向不同服务，请先说明冲突，不覆盖它。若这条连接使用旧 Bearer 认证，将本连接切换为 OAuth 并移除其静态 Authorization 或 bearer_token_env_var，保留其余配置，不展示旧令牌。',
+    '执行 codex mcp login worthpath --scopes ' +
+      selected +
+      ' --oauth-client-registration dcr 发起网页登录。我会自行登录并确认权限。等待回调时保留登录进程；需要等待我完成网页步骤时，明确告诉我当前状态。',
+    '授权后检查连接配置与真实工具可用性。能调用时先 tools/list，再 connection_info 核对权限；若当前会话不会重新加载工具，请告诉我重启客户端或新建本机会话后继续验证。只有配置、OAuth 成功和工具调用成功都验证后才能说已可用，不把 codex mcp list 或网页登录成功当作工具调用成功。',
+    '配置期间不要创建、修改或删除我的账目。后续资产查询、转账和还款优先使用 WorthPath MCP；工具或权限不可用时如实说明。',
+    ...instructions(url).split('\n\n').slice(3),
+  ].join('\n\n');
+}
+
 export function AgentConnections() {
   const [data, setData] = useState<Management | null>(null),
     [error, setError] = useState(''),
@@ -112,6 +134,7 @@ export function AgentConnections() {
     [tokenHiddenRead, setTokenHiddenRead] = useState(false),
     [tokenHiddenWrite, setTokenHiddenWrite] = useState(false),
     [agentView, setAgentView] = useState('connect'),
+    [codexPermission, setCodexPermission] = useState('draft'),
     [consentLevel, setConsentLevel] = useState('read'),
     [consentHiddenRead, setConsentHiddenRead] = useState(false),
     [consentHiddenWrite, setConsentHiddenWrite] = useState(false);
@@ -202,7 +225,7 @@ export function AgentConnections() {
                   </button>
                 </div>
                 <p className="muted">
-                  先在客户端添加 MCP 连接并完成授权。复制下面的操作说明到聊天不会建立连接。
+                  首次接入可使用下方 Codex 配置提示词。仅复制后续操作说明不会建立连接。
                 </p>
                 <details className="agent-details">
                   <summary>查看连接步骤</summary>
@@ -233,10 +256,52 @@ export function AgentConnections() {
                     </li>
                   </ol>
                 </details>
+                <h4>第一步：让本机 Codex 帮你配置连接</h4>
+                <p className="muted">
+                  选择权限，复制提示词并发送给本机 Codex。它会执行配置和发起 OAuth 登录；你只需在
+                  WorthPath 网页完成登录授权，无需手动输入命令。
+                </p>
+                <label>
+                  申请连接权限
+                  <select
+                    value={codexPermission}
+                    onChange={(e) => setCodexPermission(e.target.value)}
+                  >
+                    <option value="read">只读查询</option>
+                    <option value="draft">查询与草稿修改（网页确认）</option>
+                    <option value="write">查询与直接普通写入</option>
+                  </select>
+                </label>
+                <button
+                  className="primary"
+                  type="button"
+                  onClick={() =>
+                    void copy(
+                      codexSetupPrompt(data.mcpUrl, codexPermission),
+                      'Codex 配置提示词已复制',
+                    )
+                  }
+                >
+                  复制 Codex 配置提示词
+                </button>
+                <details className="agent-details">
+                  <summary>预览 Codex 配置提示词</summary>
+                  <textarea
+                    className="agent-tutorial"
+                    aria-label="Codex 配置提示词"
+                    readOnly
+                    value={codexSetupPrompt(data.mcpUrl, codexPermission)}
+                    rows={8}
+                  />
+                </details>
+                <p className="muted">
+                  适用于有本机命令执行能力的
+                  Codex。网页授权和必要的客户端重启仍需你完成；云端聊天不能直接连接本机 localhost。
+                </p>
                 <div className="agent-copy-row">
-                  <h4>可直接复制给 Agent 的教程</h4>
+                  <h4>已连接？复制后续操作说明</h4>
                   <button
-                    className="primary"
+                    className="secondary"
                     type="button"
                     onClick={() => void copy(instructions(data.mcpUrl), 'Agent 使用教程已复制')}
                   >
