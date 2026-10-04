@@ -91,9 +91,11 @@ Invoke-RestMethod http://localhost:5173/api/openapi.json
 ```shell
 git remote add github https://github.com/chyuovo/WorthPath.git
 git remote add wyh https://git.mashiroart.xyz/chyuovo/WorthPath.git
-
+git remote add gitee https://gitee.com/REMOTE_CY/worth-path.git
 # 将 github 设置为当前项目的默认推送仓库
 git config remote.pushDefault github
+
+'github','gitee','wyh' | ForEach-Object { git push $_ main }
 ```
 
 
@@ -111,55 +113,3 @@ git config remote.pushDefault github
 | [Gold API](https://gold-api.com/docs) | [黄金 XAU](https://api.gold-api.com/price/XAU)、[白银 XAG](https://api.gold-api.com/price/XAG) | 美元/金衡盎司参考价；以 31.1034768 克/金衡盎司换算为每克价格。已配置贵金属每日尝试更新，可手动刷新或录价。 | 无需密钥；请求固定 XAU/XAG 品种，不发送个人数据和持仓。 | 12 秒超时；格式、时间或汇率异常时保留之前的报价与估值；同日手动价格优先。 |
 
 上述接口由后端访问，浏览器业务请求使用本站 `/api`，第三方不会收到本应用登录 Cookie。Gold API 返回的参考价只用于持仓估值，不包含饰品工费、买卖价差或回收折价。外币价格使用最新可用公共日汇率，休市时两类报价时间可能不同；报价日期会显示在界面并随备份保存。自动估价为可选项，开启后新增估值历史，不改写历史记录。
-
-### 图标获取接口与素材来源（仅维护脚本使用）
-
-- [GitHub Contents API：bank-icon-cn 图标目录](https://api.github.com/repos/cellier/bank-icon-cn/contents/png/72)：`apps/api/scripts/download-icons.cjs` 查询公开目录，再下载 `raw.githubusercontent.com` 上的银行 PNG。公开访问无需令牌，受 GitHub 匿名访问限额约束。
-- [Simple Icons 支付宝 SVG](https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/alipay.svg)、[微信官方图标](https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico)：静态素材地址，无需密钥。
-- `apps/api/scripts/expand-icons.py` 从下表品牌官网与官方 CDN 获取 favicon 或品牌图标；微众银行脚本还读取 [官网公开资源](https://tctp.tctpwebankcdn.net/owb-res/owb-res/assets/mainGenerator.811f2078.js)。京东金融和大象银行素材使用 Apple App Store 的 `is1-ssl.mzstatic.com` 图标 CDN。脚本的官网备用地址与尝试逻辑可在对应源文件查看。
-- 图标已随项目保存在本地并写入数据库；浏览器通过本站 `/api/icons/:id/image` 读取，正常使用不会向上述素材站点请求图片。维护脚本只请求公开素材，不发送财务数据。
-
-以下为当前全部内置图标的来源；原始 URL、文件名和 SHA-256 同时保存在 [素材清单](apps/api/assets/icons/sources.json)。
-
-| 图标 | 来源 |
-| --- | --- |
-| 中国工商银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国工商银行@3x.png) |
-| 中国农业银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国农业银行@3x.png) |
-| 中国建设银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国建设银行@3x.png) |
-| 中国银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国银行@3x.png) |
-| 交通银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/交通银行@3x.png) |
-| 招商银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/招商银行@3x.png) |
-| 中信银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中信银行@3x.png) |
-| 中国光大银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国光大银行@3x.png) |
-| 中国民生银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/中国民生银行@3x.png) |
-| 兴业银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/兴业银行@3x.png) |
-| 平安银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/平安银行@3x.png) |
-| 上海浦东发展银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/上海浦东发展银行@3x.png) |
-| 广发银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/广发银行@3x.png) |
-| 华夏银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/华夏银行@3x.png) |
-| 北京银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/北京银行@3x.png) |
-| 上海银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/上海银行@3x.png) |
-| 浙商银行 | [原始素材](https://raw.githubusercontent.com/cellier/bank-icon-cn/master/png/72/浙商银行@3x.png) |
-| 支付宝 | [原始素材](https://raw.githubusercontent.com/simple-icons/simple-icons/develop/icons/alipay.svg) |
-| 微信 | [原始素材](https://res.wx.qq.com/a/wx_fed/assets/res/NTI4MWU5.ico) |
-| 京东金融 | [原始素材](https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/7d/74/af/7d74af96-af89-ae14-cbf5-5bbd89859ab7/AppIcon-0-1x_U007epad-0-1-0-85-220-0.png/512x512bb.jpg) |
-| 汇丰香港 | [原始素材](https://www.hsbc.com.hk/etc.clientlibs/dpws/clientlibs-public/clientlib-site/resources/favicons/apple-touch-icon.png) |
-| 恒生银行 | [原始素材](https://www.hangseng.com/etc.clientlibs/hase/clientlibs/clientlib-header/resources/favicon.ico) |
-| 渣打香港 | [原始素材](https://av.sc.com/hk/content/images/content/images/cropped-512x512-1-150x150.png) |
-| 东亚银行 | [原始素材](https://www.hkbea.com/images/favicon.ico) |
-| 星展香港 | [原始素材](https://www.dbs.com.hk/_next/public/favicon.ico?q=fa411ced-9fa6-4c3e-b208-d878769c84c9) |
-| 花旗香港 | [原始素材](https://www.citibank.com.hk/views/images/favicon.ico) |
-| Gate | [原始素材](https://www.gate.com/favicon.ico) |
-| Bybit | [原始素材](https://www.bybit.com/favicon.ico) |
-| Bitget | [原始素材](https://www.bitget.com/baseasset/favicon4.png) |
-| 中银香港 | [原始素材](https://www.bochk.com/etc/designs/bochk_web/images/icon/boc-icon-32.ico) |
-| 币安 Binance | [原始素材](https://bin.bnbstatic.com/static/images/common/favicon.ico) |
-| ZA BANK 众安银行 | [原始素材](https://cdn.za.group/if/za-group-portal-web/assets/images/share-logo.png) |
-| 微众银行 WeBank | [原始素材](https://tctp.tctpwebankcdn.net/owb-res/owb-res/assets/mainGenerator.811f2078.js) |
-| 大象银行 EleBank | [原始素材](https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d4/bc/60/d4bc6004-3898-c9c3-3571-f3ffe4b46b48/Bank-Airstar-0-0-1x_U007epad-0-1-sRGB-85-220.png/512x512bb.jpg) |
-| 抖音月付 | [原始素材](https://p26-infras.byteimg.com/static-assets/be18bb89d2ceeec6407aae38dc5e894c.png~tplv-49obo7mizy-png75.png) |
-| 东方财富 | [原始素材](https://g1.dfcfw.com/g4/202307/20230731180250.png) |
-
-当前未接入银行账户 API、交易所交易 API、AI API、Apple 查询 API 或外部备份云服务。Git 远程仓库为代码托管地址；本应用业务运行不调用它们。
-
-2026-10-03 补充更新：全部启用账户支持转账，可按全局独立资产设置和逐项目开关控制资产负债总额；贵金属支持黄金/白银参考价与自动估值历史。备份导出为 ZIP v8，旧格式仍可导入。详见 [更新说明](docs/update-inclusion-metals-2026-10-03.md)。
