@@ -18,6 +18,9 @@ import { Database } from './database';
 import { UserRequest } from './auth';
 import {
   positionInput,
+  repaymentMarkInput,
+  bookedMarkInput,
+  inclusionInput,
   positionMeta,
   revisionInput,
   today,
@@ -157,6 +160,68 @@ export class PortfolioBusinessService {
       },
     });
     return { ok: true };
+  }
+
+  async quickMeta(r: UserRequest, id: string, raw: unknown, operation: 'booked' | 'included') {
+    const v = operation === 'booked' ? bookedMarkInput.parse(raw) : inclusionInput.parse(raw);
+    return this.db.serial(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM Position WHERE id = ${id} AND userId = ${r.userId} FOR UPDATE`,
+      );
+      const p = await tx.position.findFirst({
+        where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
+      });
+      if (!p) throw new NotFoundException('项目不存在');
+      if (operation === 'booked' && (p.kind !== 'account' || p.archived))
+        throw new BadRequestException('仅启用账户支持当天记账标记');
+      if (operation === 'included' && p.kind !== 'asset')
+        throw new BadRequestException('仅独立资产支持此快速统计开关');
+      if (v.expectedUpdatedAt && p.updatedAt.toISOString() !== v.expectedUpdatedAt)
+        throw new ConflictException('项目已变化，请刷新后重试');
+      if (
+        ('expectedDate' in v && p.lastBookedDate !== v.expectedDate) ||
+        ('expectedIncluded' in v && p.included !== v.expectedIncluded)
+      )
+        throw new ConflictException('标记已变化，请刷新后重试');
+      const updated = await tx.position.update({
+        where: { id },
+        data: 'date' in v ? { lastBookedDate: v.date } : { included: v.included },
+      });
+      return {
+        lastBookedDate: updated.lastBookedDate,
+        included: updated.included,
+        updatedAt: updated.updatedAt,
+      };
+    });
+  }
+  async repaymentMark(r: UserRequest, id: string, raw: unknown) {
+    const input = repaymentMarkInput.parse(raw);
+    return this.db.serial(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM Position WHERE id = ${id} AND userId = ${r.userId} FOR UPDATE`,
+      );
+      const p = await tx.position.findFirst({
+        where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
+      });
+      if (!p) throw new NotFoundException('账户不存在');
+      if (p.kind !== 'account' || p.side !== 'liability')
+        throw new BadRequestException('仅欠款账户支持还款月份标记');
+      if (p.archived) throw new ConflictException('请先恢复归档账户');
+      if (
+        p.lastRepaymentMonth !== input.expectedMonth ||
+        (input.expectedUpdatedAt && p.updatedAt.toISOString() !== input.expectedUpdatedAt)
+      )
+        throw new ConflictException('还款标记已变化，请刷新后重试');
+      const updated = await tx.position.update({
+        where: { id },
+        data: { lastRepaymentMonth: input.month },
+      });
+      return {
+        lastRepaymentMonth: input.month,
+        previousMonth: p.lastRepaymentMonth,
+        updatedAt: updated.updatedAt.toISOString(),
+      };
+    });
   }
   async deletion(r: UserRequest, id: string) {
     const p = await this.own(r.userId, id, r.revealed);
@@ -407,6 +472,27 @@ export class PortfolioController {
     @Body() b: unknown,
   ) {
     return this.service.edit(r, id, b);
+  }
+  @Patch('positions/:id/booked-mark') async bookedMark(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.quickMeta(r, id, b, 'booked');
+  }
+  @Patch('positions/:id/inclusion') async inclusion(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.quickMeta(r, id, b, 'included');
+  }
+  @Patch('positions/:id/repayment-mark') async repaymentMark(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.repaymentMark(r, id, b);
   }
   @Get('positions/:id/deletion') async deletion(@Req() r: UserRequest, @Param('id') id: string) {
     return this.service.deletion(r, id);

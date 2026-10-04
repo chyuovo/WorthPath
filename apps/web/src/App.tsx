@@ -59,6 +59,15 @@ import { PositionDeletion, deletionLabel } from './PositionDeletion';
 import { IconPicker } from './IconPicker';
 import { MetalPanel } from './MetalPanel';
 import { QuickTransfer } from './QuickTransfer';
+import {
+  QuickJournal,
+  QuickRepayment,
+  isPaidForMonth,
+  isBookedToday,
+  quickAccountVisible,
+  canQuickRepay,
+  type QuickEntry,
+} from './QuickJournal';
 import { TransferForm } from './TransferForm';
 import { DebtPaymentForm, operationLabel, type DebtOperation } from './DebtPaymentForm';
 import type { Transfer } from './api';
@@ -86,6 +95,8 @@ const categories: Record<string, [string, string][]> = {
     ['property', '房产'],
     ['vehicle', '车辆'],
     ['gold', '贵金属'],
+    ['commemorative_coin', '纪念币'],
+    ['commemorative_note', '纪念钞'],
     ['other', '其他资产'],
   ],
   debt: [
@@ -248,6 +259,7 @@ export default function App() {
       h?: History;
       transfer?: Transfer;
       operation?: DebtOperation;
+      quick?: boolean;
       groups?: string[];
     } | null>(null),
     [busy, setBusy] = useState(false),
@@ -263,6 +275,36 @@ export default function App() {
     sourceId?: string;
     targetId?: string;
   } | null>(null);
+  const [quickEntries, setQuickEntries] = useState<QuickEntry[]>([]);
+  const [quickMarkMode, setQuickMarkMode] = useState(false);
+  const [quickBookedMode, setQuickBookedMode] = useState(false);
+  const [hideBooked, setHideBooked] = useState(false);
+  const [unpaidOnly, setUnpaidOnly] = useState(false);
+  const [assetQuickMode, setAssetQuickMode] = useState(false);
+  const [businessDay, setBusinessDay] = useState(today());
+  const [repaymentMonth, setRepaymentMonth] = useState(today().slice(0, 7));
+  const quickGeneration = useRef(0);
+  useEffect(() => {
+    const updateDay = () => {
+      setBusinessDay(today());
+      setRepaymentMonth(today().slice(0, 7));
+    };
+    const timer = setInterval(updateDay, 60000);
+    window.addEventListener('focus', updateDay);
+    return () => {
+      clearInterval(timer);
+      window.removeEventListener('focus', updateDay);
+    };
+  }, []);
+  useEffect(() => {
+    quickGeneration.current++;
+    setQuickEntries([]);
+    setQuickMarkMode(false);
+    setQuickBookedMode(false);
+    setHideBooked(false);
+    setUnpaidOnly(false);
+    setAssetQuickMode(false);
+  }, [user?.username, user?.revealed]);
   const [quickMode, setQuickMode] = useState(false),
     [accountGroup, setAccountGroup] = useState<string | null>(null);
   useEffect(() => {
@@ -278,6 +320,166 @@ export default function App() {
         : current,
     );
   }, [positions]);
+  function toggleQuickMode() {
+    quickGeneration.current++;
+    if (!quickMode) setQuickEntries([]);
+    setQuickMode(!quickMode);
+    setQuickMarkMode(false);
+    setQuickBookedMode(false);
+    setHideBooked(false);
+    setUnpaidOnly(false);
+    setQuickTransfer(null);
+  }
+  function rememberQuick(entry: QuickEntry, generation: number, session: number) {
+    if (generation === quickGeneration.current && session === sessionGeneration.current)
+      setQuickEntries((rows) => [entry, ...rows]);
+  }
+  async function saveQuickBalance(
+    position: Position,
+    data: Record<string, unknown>,
+    track: boolean,
+  ) {
+    const generation = quickGeneration.current,
+      session = sessionGeneration.current;
+    const result = await api<{ id: string }>(
+      '/positions/' + position.id + '/revisions',
+      'POST',
+      data,
+    );
+    if (track)
+      rememberQuick(
+        {
+          key: 'balance:' + result.id,
+          kind: 'balance',
+          id: result.id,
+          positionId: position.id,
+          title: position.name,
+          currency: position.currency,
+          before: positionAmount(position),
+          after: positionAmount(position, String(data.amount)),
+          date: String(data.date),
+        },
+        generation,
+        session,
+      );
+    return result;
+  }
+  async function saveQuickMovement(data: unknown, label: string) {
+    const value = data as Record<string, string>,
+      generation = quickGeneration.current,
+      session = sessionGeneration.current;
+    const result = await api<{ id: string }>('/transfers', 'POST', data);
+    const source = positions.find((p) => p.id === value.sourceId),
+      target = positions.find((p) => p.id === value.targetId);
+    rememberQuick(
+      {
+        key: 'transfer:' + result.id,
+        kind: 'transfer',
+        id: result.id,
+        positionId: value.sourceId,
+        title: label + ' · ' + (source?.name || '') + ' → ' + (target?.name || ''),
+        currency: source?.currency || '',
+        amount: value.amount,
+        received: value.received,
+        targetCurrency: target?.currency,
+        date: value.date,
+      },
+      generation,
+      session,
+    );
+    return result;
+  }
+  async function markQuickRepayment(position: Position) {
+    const month = today().slice(0, 7),
+      previousMonth = position.lastRepaymentMonth ?? null;
+    const nextMonth = isPaidForMonth(position, month) ? null : month;
+    const generation = quickGeneration.current,
+      session = sessionGeneration.current;
+    const result = await api<{ updatedAt: string }>(
+      '/positions/' + position.id + '/repayment-mark',
+      'PATCH',
+      { month: nextMonth, expectedMonth: previousMonth, expectedUpdatedAt: position.updatedAt },
+    );
+    rememberQuick(
+      {
+        key: 'mark:' + position.id + ':' + Date.now(),
+        kind: 'mark',
+        id: position.id,
+        positionId: position.id,
+        title: position.name,
+        currency: position.currency,
+        date: nowMinute(),
+        previousMonth,
+        month: nextMonth,
+        markUpdatedAt: result.updatedAt,
+      },
+      generation,
+      session,
+    );
+    return result;
+  }
+  async function markQuickBooked(position: Position) {
+    const previousDate = position.lastBookedDate ?? null,
+      day = today();
+    const nextDate = isBookedToday(position, day) ? null : day;
+    const generation = quickGeneration.current,
+      session = sessionGeneration.current;
+    const result = await api<{ updatedAt: string }>(
+      '/positions/' + position.id + '/booked-mark',
+      'PATCH',
+      {
+        date: nextDate,
+        expectedDate: previousDate,
+        expectedUpdatedAt: position.updatedAt,
+      },
+    );
+    rememberQuick(
+      {
+        key: 'booked:' + position.id + ':' + Date.now(),
+        kind: 'booked',
+        id: position.id,
+        positionId: position.id,
+        title: position.name,
+        currency: position.currency,
+        date: nowMinute(),
+        previousDate,
+        bookedDate: nextDate,
+        markUpdatedAt: result.updatedAt,
+      },
+      generation,
+      session,
+    );
+    return result;
+  }
+  async function toggleAssetInclusion(position: Position) {
+    return api('/positions/' + position.id + '/inclusion', 'PATCH', {
+      included: position.included === false,
+      expectedIncluded: position.included !== false,
+      expectedUpdatedAt: position.updatedAt,
+    });
+  }
+  function undoQuick(entry: QuickEntry) {
+    void act(async () => {
+      if (entry.kind === 'balance')
+        await api('/positions/' + entry.positionId + '/revisions/' + entry.id, 'DELETE');
+      else if (entry.kind === 'transfer') await api('/transfers/' + entry.id, 'DELETE');
+      else if (entry.kind === 'booked')
+        await api('/positions/' + entry.positionId + '/booked-mark', 'PATCH', {
+          date: entry.previousDate ?? null,
+          expectedDate: entry.bookedDate ?? null,
+          expectedUpdatedAt: entry.markUpdatedAt,
+        });
+      else
+        await api('/positions/' + entry.positionId + '/repayment-mark', 'PATCH', {
+          month: entry.previousMonth ?? null,
+          expectedMonth: entry.month ?? null,
+          expectedUpdatedAt: entry.markUpdatedAt,
+        });
+      setQuickEntries((rows) =>
+        rows.map((row) => (row.key === entry.key ? { ...row, undone: true } : row)),
+      );
+    }, tr('记录已撤回，相关余额已更新'));
+  }
   function chooseQuickAccount(p: Position) {
     if (busy || loading) return;
     if (p.kind !== 'account' || p.archived) {
@@ -335,6 +537,9 @@ export default function App() {
   const activityAt = useRef(0);
   function clearAccount() {
     setQuickMode(false);
+    quickGeneration.current++;
+    setQuickEntries([]);
+    setQuickMarkMode(false);
     setAccountGroup('');
     setClearStep(0);
     setClearConfirmation(0);
@@ -987,7 +1192,11 @@ export default function App() {
             </button>
           </div>
         </header>
-        <div className="content">
+        <div
+          className={
+            page === 'account' && quickMode && !selected ? 'content quick-content' : 'content'
+          }
+        >
           <div className="privacy-toolbar">
             <span>
               {user.revealed
@@ -1030,12 +1239,15 @@ export default function App() {
               </p>
             </div>
             <div className="actions">
-              {page === 'account' && !p && (
+              {page === 'account' && !p && !quickMode && (
                 <button className="secondary" onClick={() => setModal({ kind: 'transfer' })}>
                   {tr('转账')}
                 </button>
               )}
-              {['overview', 'account', 'asset', 'debt'].includes(page) && !p && newAction}
+              {['overview', 'account', 'asset', 'debt'].includes(page) &&
+                !p &&
+                !(page === 'account' && quickMode) &&
+                newAction}
             </div>
           </div>
 
@@ -1458,17 +1670,90 @@ export default function App() {
                 </section>
               </>
             ) : (
-              <section className="panel">
+              <section
+                className={page === 'account' && quickMode ? 'panel quick-account-panel' : 'panel'}
+              >
                 {page === 'account' && (
                   <>
                     <div className="actions account-tools">
                       <button
                         className={quickMode ? 'primary' : 'secondary'}
                         aria-pressed={quickMode}
-                        onClick={() => setQuickMode(!quickMode)}
+                        disabled={busy}
+                        onClick={toggleQuickMode}
                       >
                         {tr(quickMode ? '退出快速记账' : '快速记账')}
                       </button>
+                      {quickMode && (
+                        <button
+                          className={quickMarkMode ? 'primary' : 'secondary'}
+                          disabled={busy}
+                          aria-pressed={quickMarkMode}
+                          onClick={() => {
+                            setQuickMarkMode(!quickMarkMode);
+                            setQuickBookedMode(false);
+                            setQuickTransfer(null);
+                          }}
+                        >
+                          {tr(quickMarkMode ? '结束还款标记' : '标记本月还款')}
+                        </button>
+                      )}
+                      {quickMode && (
+                        <>
+                          <button
+                            type="button"
+                            className="secondary"
+                            disabled={
+                              busy ||
+                              positions.filter((p) => p.kind === 'account' && !p.archived).length <
+                                2
+                            }
+                            onClick={() => {
+                              setQuickMarkMode(false);
+                              setQuickBookedMode(false);
+                              setHideBooked(false);
+                              setUnpaidOnly(false);
+                              setQuickTransfer({});
+                            }}
+                          >
+                            {tr('转账')}
+                          </button>
+                          <button
+                            className={quickBookedMode ? 'primary' : 'secondary'}
+                            disabled={busy}
+                            aria-pressed={quickBookedMode}
+                            onClick={() => {
+                              setQuickBookedMode(!quickBookedMode);
+                              setQuickMarkMode(false);
+                              setQuickTransfer(null);
+                            }}
+                          >
+                            {tr(quickBookedMode ? '结束记账标记' : '标记当天已记账')}
+                          </button>
+                          <button
+                            className="secondary"
+                            aria-pressed={unpaidOnly}
+                            disabled={busy}
+                            onClick={() => {
+                              setUnpaidOnly(!unpaidOnly);
+                              setQuickTransfer(null);
+                            }}
+                          >
+                            {tr(unpaidOnly ? '显示全部账户' : '仅看本月未还款')}
+                          </button>
+                          <button
+                            className="secondary"
+                            aria-pressed={hideBooked}
+                            disabled={busy}
+                            onClick={() => {
+                              setHideBooked(!hideBooked);
+                              setQuickTransfer(null);
+                            }}
+                          >
+                            {tr(hideBooked ? '显示当天已记账' : '隐藏当天已记账')}
+                          </button>
+                        </>
+                      )}
                       <select
                         aria-label={tr('账户分组')}
                         value={accountGroup === null ? 'all' : JSON.stringify(accountGroup)}
@@ -1487,6 +1772,7 @@ export default function App() {
                       </select>
                       <button
                         className="secondary"
+                        hidden={quickMode}
                         disabled={busy || groups.length < 2}
                         onClick={() => setModal({ kind: 'group-order', groups: [...groups] })}
                       >
@@ -1496,18 +1782,58 @@ export default function App() {
                     {quickMode && (
                       <p className="muted">
                         {tr(
-                          quickTransfer !== null
-                            ? '快速转账中：依次点击转出和转入账户卡片。'
-                            : '点击账户卡片，直接填写当前余额。',
+                          quickBookedMode
+                            ? '点击账户卡片，标记或取消当天已记账。'
+                            : quickMarkMode
+                              ? '点击欠款账户卡片，标记或取消本月已还款。'
+                              : quickTransfer !== null
+                                ? '快速转账中：依次点击转出和转入账户卡片。'
+                                : '点击账户卡片，直接填写当前余额。',
                         )}
                       </p>
                     )}
                   </>
                 )}
+                {page === 'asset' && (
+                  <>
+                    <div className="actions account-tools">
+                      <button
+                        className={assetQuickMode ? 'primary' : 'secondary'}
+                        disabled={busy}
+                        aria-pressed={assetQuickMode}
+                        onClick={() => setAssetQuickMode(!assetQuickMode)}
+                      >
+                        {tr(assetQuickMode ? '结束统计设置' : '快速设置计入总资产')}
+                      </button>
+                    </div>
+                    {assetQuickMode && (
+                      <p className="muted">{tr('点击资产卡片，切换是否计入总资产。')}</p>
+                    )}
+                    {assetQuickMode && user.includeIndependentAssets === false && (
+                      <p className="muted">
+                        {tr('独立资产总开关已关闭；单项设置已保存，开启总开关后生效。')}
+                      </p>
+                    )}
+                  </>
+                )}
+                {page === 'account' &&
+                  quickMode &&
+                  positions.some((p) => p.kind === 'account') &&
+                  !positions.some(
+                    (p) =>
+                      p.kind === 'account' &&
+                      (accountGroup === null || (p.groupName || '') === accountGroup) &&
+                      quickAccountVisible(p, repaymentMonth, businessDay, unpaidOnly, hideBooked),
+                  ) && (
+                    <p className="muted" role="status">
+                      {tr('当前筛选下没有账户，可切换筛选查看其他账户。')}
+                    </p>
+                  )}
                 {positions.some((p) => p.kind === page) ? (
                   <div
                     className={
                       'position-grid' +
+                      (page === 'account' && quickMode ? ' quick-dense-grid' : '') +
                       (quickTransfer !== null && page === 'account' ? ' quick-transfer-select' : '')
                     }
                   >
@@ -1517,7 +1843,16 @@ export default function App() {
                           p.kind === page &&
                           (page !== 'account' ||
                             accountGroup === null ||
-                            (p.groupName || '') === accountGroup),
+                            (p.groupName || '') === accountGroup) &&
+                          (page !== 'account' ||
+                            !quickMode ||
+                            quickAccountVisible(
+                              p,
+                              repaymentMonth,
+                              businessDay,
+                              unpaidOnly,
+                              hideBooked,
+                            )),
                       )
                       .sort((a, b) =>
                         page === 'account'
@@ -1547,14 +1882,29 @@ export default function App() {
                                 ? quickTransfer.sourceId === p.id || quickTransfer.targetId === p.id
                                 : undefined
                             }
-                            disabled={busy || (!!quickTransfer && p.archived)}
+                            disabled={
+                              busy ||
+                              (!!quickTransfer && p.archived) ||
+                              (quickMode &&
+                                quickMarkMode &&
+                                (p.side !== 'liability' || p.archived)) ||
+                              (quickMode && quickBookedMode && p.archived)
+                            }
                             key={p.id}
                             onClick={() =>
-                              quickTransfer !== null && page === 'account' && quickMode
-                                ? chooseQuickAccount(p)
-                                : page === 'account' && quickMode && !p.archived
-                                  ? setModal({ kind: 'revision', p })
-                                  : setSelected(p.id)
+                              page === 'asset' && assetQuickMode
+                                ? void act(() => toggleAssetInclusion(p), tr('统计设置已保存'))
+                                : quickMode && quickBookedMode && page === 'account'
+                                  ? void act(() => markQuickBooked(p), tr('记账标记已保存'))
+                                  : quickMode && quickMarkMode && page === 'account'
+                                    ? p.kind === 'account' && p.side === 'liability' && !p.archived
+                                      ? void act(() => markQuickRepayment(p), tr('还款标记已保存'))
+                                      : undefined
+                                    : quickTransfer !== null && page === 'account' && quickMode
+                                      ? chooseQuickAccount(p)
+                                      : page === 'account' && quickMode && !p.archived
+                                        ? setModal({ kind: 'revision', p, quick: true })
+                                        : setSelected(p.id)
                             }
                           >
                             <div>
@@ -1572,11 +1922,20 @@ export default function App() {
                               <ArrowUpRight size={18} />
                             </div>
                             <h3>{p.name}</h3>
+                            {isPaidForMonth(p, repaymentMonth) && (
+                              <span className="badge repayment-paid">{tr('本月已还款')}</span>
+                            )}
+                            {quickMode && page === 'account' && isBookedToday(p, businessDay) && (
+                              <span className="badge repayment-paid">{tr('当天已记账')}</span>
+                            )}
+                            {assetQuickMode && page === 'asset' && p.included !== false && (
+                              <span className="badge repayment-paid">{tr('计入总资产')}</span>
+                            )}
                             {(p.included === false ||
                               (p.kind === 'asset' && user.includeIndependentAssets === false)) && (
                               <span className="badge">{tr('不计入总览')}</span>
                             )}
-                            <p>
+                            <p className="position-secondary">
                               {categoryLabel(p)} ·{' '}
                               {p.kind === 'debt'
                                 ? tr(p.side === 'asset' ? '借款（待收）' : '欠款（待还）')
@@ -1599,7 +1958,10 @@ export default function App() {
                                 : money(positionAmount(p), p.currency)}
                               {p.metalGrams && <small> · {p.metalGrams} g</small>}
                             </strong>
-                            <small hidden={p.currency === user.baseCurrency}>
+                            <small
+                              className="position-secondary"
+                              hidden={p.currency === user.baseCurrency}
+                            >
                               {tr('折合')}{' '}
                               {p.converted === null
                                 ? tr(p.valuationAvailable === false ? '待估值' : '缺少汇率')
@@ -1619,21 +1981,8 @@ export default function App() {
               </section>
             ))}
           {page === 'account' && quickMode && !selected && (
-            <aside className="quick-transfer-widget" aria-label={tr('快速转账')}>
-              {quickTransfer === null ? (
-                <button
-                  type="button"
-                  className="primary quick-transfer-toggle"
-                  disabled={
-                    busy ||
-                    loading ||
-                    positions.filter((p) => p.kind === 'account' && !p.archived).length < 2
-                  }
-                  onClick={() => setQuickTransfer({})}
-                >
-                  {tr('转账')}
-                </button>
-              ) : (
+            <aside className="quick-session-panel panel" aria-label={tr('快速记账操作')}>
+              {quickTransfer !== null && (
                 <section className="quick-transfer-card">
                   <div className="panel-title">
                     <h2>{tr('快速转账')}</h2>
@@ -1672,7 +2021,7 @@ export default function App() {
                         changeTarget={() => setQuickTransfer({ sourceId: quickTransfer.sourceId })}
                         submit={(data) =>
                           void act(async () => {
-                            const result = await api('/transfers', 'POST', data);
+                            const result = await saveQuickMovement(data, tr('转账'));
                             setQuickTransfer(null);
                             return result;
                           }, tr('转账已完成'))
@@ -1682,6 +2031,7 @@ export default function App() {
                   )}
                 </section>
               )}
+              <QuickJournal entries={quickEntries} busy={busy} undo={undoQuick} />
             </aside>
           )}
           {page === 'history' && (
@@ -2605,21 +2955,23 @@ export default function App() {
               ? modal.p?.kind === 'debt'
                 ? operationLabel(modal.p.side === 'asset' ? 'collect' : 'repay')
                 : tr('收款 / 还款')
-              : modal.kind === 'delete-position'
-                ? '删除' + deletionLabel(modal.p!)
-                : modal.kind === 'transfer'
-                  ? tr('转账')
-                  : modal.kind === 'reveal'
-                    ? tr('验证密码以显示隐藏资产')
-                    : modal.kind === 'edit'
-                      ? tr('编辑项目')
-                      : modal.kind === 'revision'
-                        ? tr('更新余额 / 估值')
-                        : modal.kind === 'correction'
-                          ? tr('更正历史记录')
-                          : modal.kind === 'links'
-                            ? tr('管理债务关联')
-                            : tr('新增') + tr(labels[modal.kind])
+              : modal.kind === 'quick-repayment'
+                ? tr('账户还款')
+                : modal.kind === 'delete-position'
+                  ? '删除' + deletionLabel(modal.p!)
+                  : modal.kind === 'transfer'
+                    ? tr('转账')
+                    : modal.kind === 'reveal'
+                      ? tr('验证密码以显示隐藏资产')
+                      : modal.kind === 'edit'
+                        ? tr('编辑项目')
+                        : modal.kind === 'revision'
+                          ? tr('更新余额 / 估值')
+                          : modal.kind === 'correction'
+                            ? tr('更正历史记录')
+                            : modal.kind === 'links'
+                              ? tr('管理债务关联')
+                              : tr('新增') + tr(labels[modal.kind])
           }
           close={() => {
             if (!busy) setModal(null);
@@ -2637,6 +2989,18 @@ export default function App() {
                     setSelected(null);
                   },
                   deletionLabel(modal.p!) + '已删除',
+                )
+              }
+            />
+          ) : modal.kind === 'quick-repayment' && modal.p ? (
+            <QuickRepayment
+              target={modal.p}
+              accounts={positions}
+              busy={busy}
+              submit={(data) =>
+                void act(
+                  () => saveQuickMovement(data, tr('还款')),
+                  tr('还款已保存，双方余额已更新'),
                 )
               }
             />
@@ -2703,11 +3067,16 @@ export default function App() {
                 } else if (kind === 'revision' || kind === 'correction') {
                   void act(
                     () =>
-                      api(
-                        '/positions/' + mp!.id + '/revisions' + (modal.h ? '/' + modal.h.id : ''),
-                        modal.h ? 'PUT' : 'POST',
-                        { ...v, amount: accountInputAmount(mp!, String(v.amount)) },
-                      ),
+                      modal.h
+                        ? api('/positions/' + mp!.id + '/revisions/' + modal.h.id, 'PUT', {
+                            ...v,
+                            amount: accountInputAmount(mp!, String(v.amount)),
+                          })
+                        : saveQuickBalance(
+                            mp!,
+                            { ...v, amount: accountInputAmount(mp!, String(v.amount)) },
+                            !!modal.quick,
+                          ),
                     tr('金额历史已保存，总览已重新计算'),
                   );
                 } else if (kind === 'edit') {
@@ -2943,6 +3312,41 @@ export default function App() {
                     {tr('负数表示欠款，正数表示溢缴存款；溢缴部分计入总资产。')}
                   </p>
                 )}
+              {modal.kind === 'revision' && modal.quick && modal.p?.side === 'liability' && (
+                <>
+                  <div className="actions quick-repayment-actions">
+                    {canQuickRepay(modal.p) && (
+                      <button
+                        type="button"
+                        className="primary"
+                        disabled={busy}
+                        onClick={() =>
+                          setModal({ kind: 'quick-repayment', p: modal.p, quick: true })
+                        }
+                      >
+                        {tr('还款')}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void act(() => markQuickRepayment(modal.p!), tr('还款标记已保存'))
+                      }
+                    >
+                      {tr(
+                        isPaidForMonth(modal.p, repaymentMonth)
+                          ? '取消本月已还款'
+                          : '标记本月已还款',
+                      )}
+                    </button>
+                  </div>
+                  <p className="muted">
+                    {tr('还款会更新双方余额；月份标记只记录本月已处理，不改变金额。')}
+                  </p>
+                </>
+              )}
               {modal.kind === 'revision' && (
                 <>
                   <Field label={tr('变更原因')}>

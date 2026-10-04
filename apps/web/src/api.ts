@@ -51,6 +51,9 @@ export type History = {
   reason: string;
 };
 export type Position = {
+  lastRepaymentMonth?: string | null;
+  lastBookedDate?: string | null;
+  updatedAt?: string;
   included?: boolean;
   metalType?: string | null;
   metalCostPerGram?: string | null;

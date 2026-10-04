@@ -217,3 +217,31 @@ export const settingsInput = z
   })
   .strict()
   .refine((v) => Object.keys(v).length > 0);
+
+export const repaymentMonth = z
+  .string()
+  .regex(/^(19|[2-9]\d)\d{2}-(0[1-9]|1[0-2])$/)
+  .refine((v) => v <= today().slice(0, 7), '不能标记未来还款月份')
+  .nullable();
+export const repaymentMarkInput = z
+  .object({
+    month: repaymentMonth,
+    expectedMonth: repaymentMonth,
+    expectedUpdatedAt: z.iso.datetime().optional(),
+  })
+  .strict();
+
+export const bookedMarkInput = z
+  .object({
+    date: date.nullable(),
+    expectedDate: date.nullable(),
+    expectedUpdatedAt: z.iso.datetime().optional(),
+  })
+  .strict();
+export const inclusionInput = z
+  .object({
+    included: z.boolean(),
+    expectedIncluded: z.boolean(),
+    expectedUpdatedAt: z.iso.datetime().optional(),
+  })
+  .strict();

@@ -1,6 +1,6 @@
 {
   "tableCount": 17,
-  "columnCount": 159,
+  "columnCount": 161,
   "tables": [
     {
       "TABLE_NAME": "_prisma_migrations",
@@ -866,6 +866,16 @@
       "TABLE_NAME": "user",
       "COLUMN_NAME": "includeIndependentAssets",
       "COLUMN_COMMENT": "独立资产是否参与资产总览和净资产轨迹"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "lastRepaymentMonth",
+      "COLUMN_COMMENT": "最后手动标记已完成还款的业务月份，UTC+8 YYYY-MM；空表示未标记"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "lastBookedDate",
+      "COLUMN_COMMENT": "最后手动标记已完成记账的业务日期，UTC+8 YYYY-MM-DD；空表示未标记"
     }
   ]
 }

@@ -218,6 +218,10 @@ model Position {
   hidden Boolean @default(false)
   /// 是否参与资产负债总额及净资产轨迹
   included Boolean @default(true)
+  /// 最后手动标记已完成还款的业务月份，UTC+8 YYYY-MM；空表示未标记
+  lastRepaymentMonth String? @db.Char(7)
+  /// 最后手动标记已完成记账的业务日期，UTC+8 YYYY-MM-DD；空表示未标记
+  lastBookedDate String? @db.Char(10)
   /// 贵金属品种：gold 黄金或 silver 白银
   metalType String? @db.VarChar(12)
   /// 贵金属总重量，单位克

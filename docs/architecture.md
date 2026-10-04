@@ -51,3 +51,7 @@ User.hiddenMenus 保存受枚举校验的菜单键，settings 不可隐藏；Use
 2026-10-03 分组排序：User.accountGroupOrder 保存每个用户的账户分组顺序，空值沿用当前默认顺序。前端共享排序上下文，账户卡片、筛选及所有 AccountPicker 使用同一顺序；只显示当前可见分组，保存保留未出现在当前视图的既有偏好。settings 与备份使用相同分组名称和唯一性验证。新增可选 JSON 字段通过带中文注释的增量迁移应用；JSON/ZIP 空空间恢复偏好，已有空间保留当前设置。见 [更新说明](update-group-order-2026-10-03.md)。
 
 2026-10-03 设置与交互：User.sessionHours 控制 1 至 720 小时的绝对会话有效期，requireHiddenPassword 控制隐藏项目再次验证，overviewCards 保存总览卡片键。设置、JSON/ZIP 备份和带注释的迁移同步；PUT schedules/:id 在计划锁内验证权限并更新未来安排。前端将设置分类、计划原生弹窗、可访问的右上角提示及账户卡片点选快捷转账集中提供。详见 [更新说明](update-settings-interaction-2026-10-03.md)。
+
+## 快速记账标记与统计开关（2026-10-04）
+
+Position.lastRepaymentMonth 和 lastBookedDate 分别记录 UTC+8 最后已还款月份与已记账日期，可空且仅保存最后一次人工标记。页面根据当前业务年月/日期显示状态，不通过定时任务删除旧值。标记接口使用用户归属、隐藏可见性、行锁及期望状态检查；网页使用 updatedAt 防止覆盖新操作。资产快速统计开关仅修改 included，不覆盖其他项目元数据。ZIP v9 保存新字段，金额历史不受标记影响。详细操作、接口和验收见 [快速记账更新](update-quick-entry-2026-10-04.md)。

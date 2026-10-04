@@ -1,3 +1,4 @@
+import { repaymentMonth, date } from './validation';
 import { BACKUP_ZIP_VERSION } from './backup-format';
 import { Injectable } from '@nestjs/common';
 import { metalConfig, metalPriceInput, storedMetalPurity } from './metals';
@@ -63,6 +64,8 @@ const record = positionMeta
     notes: z.string().max(2000),
     archived: z.boolean(),
     hidden: z.boolean(),
+    lastRepaymentMonth: repaymentMonth.optional(),
+    lastBookedDate: date.nullable().optional(),
     metalType: z.enum(['gold', 'silver']).nullable(),
     metalGrams: amount.nullable(),
     metalCostPerGram: metalConfig.shape.metalCostPerGram.nonoptional(),
@@ -172,6 +175,10 @@ export function validateBackup(raw: unknown) {
     throw new BadRequestException('图标关联无效');
   const revisionIds = new Set<string>();
   for (const p of b.positions) {
+    if (p.lastBookedDate && p.kind !== 'account')
+      throw new BadRequestException('仅账户支持当天记账标记');
+    if (p.lastRepaymentMonth && (p.kind !== 'account' || p.side !== 'liability'))
+      throw new BadRequestException('还款月份仅适用于欠款账户');
     if (p.metalType || p.metalGrams || p.autoValuation || p.metalCostPerGram != null) {
       if (p.kind !== 'asset' || p.category !== 'gold')
         throw new BadRequestException('贵金属估价关联无效');
@@ -393,6 +400,8 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
       archived: p.archived,
       hidden: p.hidden,
       included: p.included,
+      lastRepaymentMonth: p.lastRepaymentMonth,
+      lastBookedDate: p.lastBookedDate,
       metalType: p.metalType,
       metalGrams: p.metalGrams?.toString() ?? null,
       metalCostPerGram: p.metalCostPerGram?.toString() ?? null,
@@ -700,6 +709,8 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
               archived: p.archived,
               hidden: p.hidden,
               included: p.included,
+              lastRepaymentMonth: p.lastRepaymentMonth ?? null,
+              lastBookedDate: p.lastBookedDate ?? null,
               metalType: p.metalType,
               metalGrams: p.metalGrams,
               metalCostPerGram: p.metalCostPerGram,

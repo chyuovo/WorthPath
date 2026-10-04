@@ -8,6 +8,8 @@ export function QuickTransfer({
   changeSource,
   changeTarget,
   submit,
+  actionLabel,
+  fixedTarget,
 }: {
   source: Position;
   target: Position;
@@ -15,6 +17,8 @@ export function QuickTransfer({
   changeSource: () => void;
   changeTarget: () => void;
   submit: (data: unknown) => void;
+  actionLabel?: string;
+  fixedTarget?: boolean;
 }) {
   const [amount, setAmount] = useState('');
   const [requestId] = useState(requestUuid);
@@ -50,9 +54,11 @@ export function QuickTransfer({
           <small>{tr('转入账户')}</small>
           <strong>{target.name}</strong>
           <span>{money(positionAmount(target), target.currency)}</span>
-          <button type="button" className="text" disabled={busy} onClick={changeTarget}>
-            {tr('重选')}
-          </button>
+          {!fixedTarget && (
+            <button type="button" className="text" disabled={busy} onClick={changeTarget}>
+              {tr('重选')}
+            </button>
+          )}
         </div>
       </div>
       <label>
@@ -84,7 +90,7 @@ export function QuickTransfer({
       )}
       <p className="muted">{tr('按当前时间记录，手续费为 0。跨币种请填写实际到账金额。')}</p>
       <button className="primary" disabled={busy}>
-        {tr(busy ? '正在转账…' : '确认转账')}
+        {busy ? tr('正在保存…') : actionLabel || tr('确认转账')}
       </button>
     </form>
   );
