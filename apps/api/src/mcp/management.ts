@@ -15,7 +15,7 @@ import { Response } from 'express';
 import { z } from 'zod';
 import { Database } from '../database';
 import { AuthService, UserRequest } from '../auth';
-import { AgentOAuth, urls, scopeInput } from './oauth';
+import { AgentOAuth, urls, scopeInput, oauthDays } from './oauth';
 import { AgentOperations } from './operations';
 import { protocolTools, tokenDays } from './information';
 @Controller('api/agent')
@@ -34,6 +34,7 @@ export class AgentManagementController {
         name: true,
         scopes: true,
         expiresAt: true,
+        refreshExpiresAt: true,
         createdAt: true,
         revokedAt: true,
         clientId: true,
@@ -110,11 +111,11 @@ export class AgentManagementController {
     @Param('id') id: string,
     @Body() raw: unknown,
   ) {
-    const { approve, scopes } = z
-      .object({ approve: z.boolean(), scopes: scopeInput.optional() })
+    const { approve, scopes, days } = z
+      .object({ approve: z.boolean(), scopes: scopeInput.optional(), days: oauthDays.default(30) })
       .strict()
       .parse(raw);
-    return this.oauth.consent(r.userId, z.string().uuid().parse(id), approve, scopes);
+    return this.oauth.consent(r.userId, z.string().uuid().parse(id), approve, scopes, days);
   }
   @Get('operations/:id') preview(@Req() r: UserRequest, @Param('id') id: string) {
     return this.operations.preview(r.userId, z.string().uuid().parse(id));

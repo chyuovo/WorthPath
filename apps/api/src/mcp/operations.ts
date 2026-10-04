@@ -219,10 +219,94 @@ export class AgentOperations {
     if (!row) throw new NotFoundException('操作不存在');
     const t = this.get(row.tool),
       grant = await this.oauth.grant(row.grantId, userId);
-    let impact: unknown = { parameters: row.parameters, message: t.description };
+    const selected = grant.scopes as string[];
+    const ids = new Set<string>();
+    const collect = (value: unknown) => {
+      if (typeof value === 'string' && /^[a-f0-9-]{36}$/i.test(value)) ids.add(value);
+      else if (Array.isArray(value)) value.forEach(collect);
+      else if (value && typeof value === 'object') Object.values(value).forEach(collect);
+    };
+    collect(row.parameters);
+    const visible = { userId, ...(selected.includes('hidden_read') ? {} : { hidden: false }) };
+    const positions = await this.db.position.findMany({
+      where: { ...visible, id: { in: [...ids] } },
+      select: { id: true, name: true, currency: true, side: true, kind: true },
+    });
+    const schedules = await this.db.schedule.findMany({
+      where: { userId, id: { in: [...ids] } },
+      select: { id: true, name: true, sourceId: true, targetId: true },
+    });
+    const visibleScheduleIds = new Set(
+      (
+        await this.db.position.findMany({
+          where: {
+            ...visible,
+            id: { in: schedules.flatMap((s) => [s.sourceId, ...(s.targetId ? [s.targetId] : [])]) },
+          },
+          select: { id: true },
+        })
+      ).map((p) => p.id),
+    );
+    const references = Object.fromEntries([
+      ...positions.map((p) => [p.id, p]),
+      ...schedules
+        .filter(
+          (s) =>
+            visibleScheduleIds.has(s.sourceId) &&
+            (!s.targetId || visibleScheduleIds.has(s.targetId)),
+        )
+        .map((s) => [s.id, { name: s.name, kind: 'schedule' }]),
+    ]);
+    const p = row.parameters as Record<string, any>;
+    let current: Record<string, unknown> | undefined;
+    if (['movement_update', 'movement_delete'].includes(row.tool)) {
+      const movement = await this.db.transfer.findFirst({
+        where: { id: p.id, userId, source: visible, target: visible },
+        include: { source: true, target: true },
+      });
+      if (movement) {
+        references[movement.sourceId] = {
+          name: movement.source.name,
+          currency: movement.source.currency,
+        };
+        references[movement.targetId] = {
+          name: movement.target.name,
+          currency: movement.target.currency,
+        };
+        current = {
+          operation: movement.operation,
+          sourceId: movement.sourceId,
+          targetId: movement.targetId,
+          amount: movement.amount.toString(),
+          received: movement.received.toString(),
+          fee: movement.fee.toString(),
+          date: new Date(+movement.effectiveDate + 8 * 3600000).toISOString().slice(0, 16),
+          notes: movement.notes,
+        };
+      }
+    } else if (['history_update', 'history_delete', 'balance_record'].includes(row.tool)) {
+      const revision = await this.db.revision.findFirst({
+        where: {
+          positionId: p.id,
+          position: visible,
+          ...(p.revisionId ? { id: p.revisionId } : {}),
+        },
+        orderBy: [{ effectiveDate: 'desc' }, { sequence: 'desc' }],
+      });
+      if (revision)
+        current = {
+          id: p.id,
+          amount: revision.amount.toString(),
+          date: new Date(+revision.effectiveDate + 8 * 3600000).toISOString().slice(0, 16),
+          notes: revision.notes,
+        };
+    }
+    const impact = { parameters: row.parameters, references, current };
     return {
       ...this.view(row),
       impact,
+      connectionName: grant.name,
+      destructive: !!t.destructive,
       description: t.description,
     };
   }

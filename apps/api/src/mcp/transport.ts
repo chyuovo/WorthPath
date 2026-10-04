@@ -209,6 +209,7 @@ export class AgentTransport {
               name: g.name,
               scopes: g.scopes,
               expiresAt: g.expiresAt,
+              authorizationExpiresAt: g.clientId ? g.refreshExpiresAt : g.expiresAt,
               resource: g.resource,
               permission: (g.scopes as string[]).includes('write')
                 ? 'write'

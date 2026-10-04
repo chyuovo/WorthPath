@@ -54,6 +54,8 @@ import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
 import { AgentConnections } from './AgentConnections';
+import { AgentAuthorization, AgentOperation } from './AgentReview';
+import { AccountDeletion } from './AccountDeletion';
 import { IconPicker } from './IconPicker';
 import { MetalPanel } from './MetalPanel';
 import { QuickTransfer } from './QuickTransfer';
@@ -233,7 +235,7 @@ export default function App() {
     [page, setPage] = useState(
       new URLSearchParams(location.search).has('agent_authorization') ||
         new URLSearchParams(location.search).has('agent_operation')
-        ? 'settings'
+        ? 'agent-review'
         : 'overview',
     ),
     [positions, setPositions] = useState<Position[]>([]),
@@ -693,7 +695,7 @@ export default function App() {
       const agentReturn =
         new URLSearchParams(location.search).has('agent_authorization') ||
         new URLSearchParams(location.search).has('agent_operation');
-      setPage(agentReturn ? 'settings' : 'overview');
+      setPage(agentReturn ? 'agent-review' : 'overview');
       if (agentReturn) setSettingsSection('agent');
       setSelected(null);
       setModal(null);
@@ -877,6 +879,30 @@ export default function App() {
     } finally {
       if (session === sessionGeneration.current) setBusy(false);
     }
+  }
+  const agentParams = new URLSearchParams(location.search);
+  if (
+    agentParams.has('agent_authorization') ||
+    agentParams.has('agent_operation') ||
+    location.pathname === '/agent/authorize' ||
+    location.pathname === '/agent/operation'
+  ) {
+    return (
+      <main className="agent-review-page">
+        <header className="agent-review-header">
+          <a href="/">WorthPath</a>
+          <span>{user.username}</span>
+          <button className="text" disabled={busy} onClick={() => void logout()}>
+            退出登录
+          </button>
+        </header>
+        {agentParams.has('agent_authorization') || location.pathname === '/agent/authorize' ? (
+          <AgentAuthorization id={agentParams.get('agent_authorization')} />
+        ) : (
+          <AgentOperation id={agentParams.get('agent_operation')} />
+        )}
+      </main>
+    );
   }
   const nav = [
     ['overview', LayoutDashboard],
@@ -1340,6 +1366,15 @@ export default function App() {
                           {operationLabel(p.side === 'asset' ? 'collect' : 'repay')}
                         </button>
                       </>
+                    )}
+                    {p.kind === 'account' && (
+                      <button
+                        className="secondary danger-text"
+                        disabled={busy}
+                        onClick={() => setModal({ kind: 'delete-account', p })}
+                      >
+                        删除账户
+                      </button>
                     )}
                     <button className="secondary" onClick={() => setModal({ kind: 'edit', p })}>
                       {tr('编辑资料')}
@@ -2572,25 +2607,39 @@ export default function App() {
               ? modal.p?.kind === 'debt'
                 ? operationLabel(modal.p.side === 'asset' ? 'collect' : 'repay')
                 : tr('收款 / 还款')
-              : modal.kind === 'transfer'
-                ? tr('转账')
-                : modal.kind === 'reveal'
-                  ? tr('验证密码以显示隐藏资产')
-                  : modal.kind === 'edit'
-                    ? tr('编辑项目')
-                    : modal.kind === 'revision'
-                      ? tr('更新余额 / 估值')
-                      : modal.kind === 'correction'
-                        ? tr('更正历史记录')
-                        : modal.kind === 'links'
-                          ? tr('管理债务关联')
-                          : tr('新增') + tr(labels[modal.kind])
+              : modal.kind === 'delete-account'
+                ? '删除账户'
+                : modal.kind === 'transfer'
+                  ? tr('转账')
+                  : modal.kind === 'reveal'
+                    ? tr('验证密码以显示隐藏资产')
+                    : modal.kind === 'edit'
+                      ? tr('编辑项目')
+                      : modal.kind === 'revision'
+                        ? tr('更新余额 / 估值')
+                        : modal.kind === 'correction'
+                          ? tr('更正历史记录')
+                          : modal.kind === 'links'
+                            ? tr('管理债务关联')
+                            : tr('新增') + tr(labels[modal.kind])
           }
           close={() => {
             if (!busy) setModal(null);
           }}
         >
-          {['transfer', 'debt-payment'].includes(modal.kind) ? (
+          {modal.kind === 'delete-account' && modal.p ? (
+            <AccountDeletion
+              position={modal.p}
+              busy={busy}
+              cancel={() => setModal(null)}
+              remove={(confirmation) =>
+                void act(async () => {
+                  await api('/positions/' + modal.p!.id, 'DELETE', { confirmation });
+                  setSelected(null);
+                }, '账户已删除')
+              }
+            />
+          ) : ['transfer', 'debt-payment'].includes(modal.kind) ? (
             movementLoading ? (
               <p>{tr('正在刷新数据…')}</p>
             ) : modal.kind === 'transfer' ? (

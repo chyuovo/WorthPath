@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import { toolLabel, statusLabel, permissionLabel } from './agent-display';
 import { showToast, useToast } from './Toast';
 
 type Connection = {
@@ -7,6 +8,7 @@ type Connection = {
   name: string;
   scopes: string[];
   expiresAt: string | null;
+  refreshExpiresAt: string | null;
   revokedAt: string | null;
   clientId: string | null;
 };
@@ -17,21 +19,6 @@ type Management = {
   grants: Connection[];
   operations: Operation[];
   calls: { id: string; tool: string; status: string; createdAt: string }[];
-};
-type Preview = {
-  operationId: string;
-  tool: string;
-  status: string;
-  description: string;
-  impact: unknown;
-  result?: unknown;
-};
-type Consent = {
-  id: string;
-  name: string;
-  scopes: string[];
-  redirectUri: string;
-  resource: string;
 };
 const scopeDetails = [
   {
@@ -64,28 +51,6 @@ const durationOptions = [
   ['365', '1 年（365 天）'],
   ['permanent', '永久（可撤销）'],
 ];
-const capabilityGroups = [
-  {
-    title: '账户、资产与债务',
-    pattern: /^(positions_|position_|balance_|metal_holding|metal_configure|metal_value)/,
-    summary: '创建和管理持仓、分组、图标、归档与计入开关；贵金属按克数管理。',
-  },
-  {
-    title: '资金变化与历史',
-    pattern: /^(transfer|loan|debt|history|revision)/,
-    summary: '转账、借入借出、收款还款、记录更正、删除与撤销，沿用金额重算规则。',
-  },
-  {
-    title: '统计、汇率与计划',
-    pattern: /^(overview|trend|calendar|schedule|rates|metals_)/,
-    summary: '净资产与趋势、日历筛选、定时计划及执行记录、汇率和参考报价。',
-  },
-  {
-    title: '设置与私有图标',
-    pattern: /^(settings|icons|icon_|backup|import|data_|credentials|hidden|file_)/,
-    summary: '非安全类用户设置、私有图库上传与读取；敏感操作仅在网站执行。',
-  },
-];
 function instructions(url: string) {
   return [
     '以下是配置 MCP 连接后的操作说明，不会自动添加连接或授予工具。若本会话没有 WorthPath 工具，请先告知我，并指导我在客户端配置连接；不要仅凭网址或聊天中的令牌声称已连接。',
@@ -100,15 +65,24 @@ function instructions(url: string) {
   ].join('\n\n');
 }
 
-function codexSetupPrompt(url: string, level: string) {
-  const selected = level === 'read' ? 'read' : 'read,' + level;
+function codexSetupPrompt(url: string, level: string, hiddenRead = false, hiddenWrite = false) {
+  const selected = [
+    'read',
+    ...(level !== 'read' ? [level] : []),
+    ...(hiddenRead ? ['hidden_read'] : []),
+    ...(hiddenRead && hiddenWrite && level !== 'read' ? ['hidden_write'] : []),
+  ].join(',');
   return [
     '请直接在这台电脑上为我配置 WorthPath MCP，不要只给我命令或方案。我授权你新增或更新名为 worthpath 的 MCP 连接，使用 Streamable HTTP 与 OAuth；仅修改这条连接，保留其他 MCP 和 Codex 配置。',
     '服务地址：' +
       url +
       '。申请权限：' +
       selected +
-      '。不申请隐藏账户权限；最终授权由我在 WorthPath 网页审核完成。不要让我把密码或个人令牌发送到聊天里，也不要替我点击授权确认。',
+      '。隐藏账户读取：' +
+      (hiddenRead ? '允许' : '不允许') +
+      '；隐藏账户修改：' +
+      (hiddenRead && hiddenWrite && level !== 'read' ? '允许' : '不允许') +
+      '。最终权限和授权期限由我在 WorthPath 网页审核完成。不要让我把密码或个人令牌发送到聊天里，也不要替我点击授权确认。',
     '先检查本机 codex 命令是否可用，并核对 mcp add/login 的帮助。只检查 WorthPath 相关配置，不输出凭据、Authorization 头或其他秘密。如果你运行在云端或另一台电脑，无法访问此 localhost 地址，请如实说明，不要声称已连接。',
     'Windows 命令执行排查也请由你完成，不要一遇到 PowerShell 挂起就让我自行确认 CLI。版本和帮助检查是短命令：执行工具支持时先设置 login:false（或等效 -NoProfile），避免启动配置文件。若短命令超过 15 秒无输出，结束你自己启动的这一条检查，不要停止 WorthPath 服务或其他进程；不要反复原样重试。',
     '若受限执行环境中的短命令仍挂起，使用执行工具提供的正常权限申请流程，申请 sandbox_permissions=require_escalated 或等效本机执行权限，说明用途是核对 Codex CLI 并配置 WorthPath OAuth。我授权这项必要的本机检查和 WorthPath 连接配置。获得工具批准后继续执行；若被拒绝，报告具体拒绝原因和受影响步骤。不要绕过权限限制，也不要仅因普通沙箱命令挂起就认定 CLI 不可用。',
@@ -119,39 +93,39 @@ function codexSetupPrompt(url: string, level: string) {
     '执行 codex mcp login worthpath --scopes ' +
       selected +
       ' --oauth-client-registration dcr 发起网页登录。我会自行登录并确认权限。等待回调时保留登录进程；需要等待我完成网页步骤时，明确告诉我当前状态。',
-    '实测 Codex CLI 0.160.0 显式执行 --scopes read,draft 时只请求这两项；默认登录会使用 scopes_supported，授权链接列出 read,draft,write,hidden_read,hidden_write。如果实际请求范围较宽，这是客户端请求的候选范围，不是最终授权。WorthPath 网页支持收窄：选择本次指定的权限等级，两个隐藏账户选项保持关闭，页面会明确显示最终授予权限；服务端仅按网页选择发行令牌。不要仅因请求包含全部候选权限就终止登录或让我自行检查页面。你可以打开正确 WorthPath 资源的授权页面供我审阅，最终选择和确认仍由我完成。',
+    '实测 Codex CLI 0.160.0 显式执行 --scopes read,draft 时只请求这两项；默认登录会使用 scopes_supported，授权链接列出 read,draft,write,hidden_read,hidden_write。如果实际请求范围较宽，这是客户端请求的候选范围，不是最终授权。WorthPath 网页支持收窄：选择本次指定的权限等级，隐藏账户选项严格按本提示词指定的读写范围选择，页面会明确显示最终授予权限；服务端仅按网页选择发行令牌。不要仅因请求包含全部候选权限就终止登录或让我自行检查页面。你可以打开正确 WorthPath 资源的授权页面供我审阅，最终选择和确认仍由我完成。',
     '授权后检查连接配置与真实工具可用性。能调用时先 tools/list，再 connection_info；最终 scopes 必须仅为本次指定的 ' +
       selected +
-      '，且 readHidden/writeHidden 均为 false。若结果不符，停止使用该连接并报告差异，不修改账目。若当前会话不会重新加载工具，请告诉我重启客户端或新建本机会话后继续验证。只有配置、OAuth 成功和工具调用成功都验证后才能说已可用，不把 codex mcp list 或网页登录成功当作工具调用成功。',
+      '，且 readHidden=' +
+      hiddenRead +
+      '、writeHidden=' +
+      (hiddenRead && hiddenWrite && level !== 'read') +
+      '。若结果不符，停止使用该连接并报告差异，不修改账目。若当前会话不会重新加载工具，请告诉我重启客户端或新建本机会话后继续验证。只有配置、OAuth 成功和工具调用成功都验证后才能说已可用，不把 codex mcp list 或网页登录成功当作工具调用成功。',
     '配置期间不要创建、修改或删除我的账目。后续资产查询、转账和还款优先使用 WorthPath MCP；工具或权限不可用时如实说明。',
     ...instructions(url).split('\n\n').slice(3),
   ].join('\n\n');
 }
 
+const connectionExpiry = (g: Connection) => (g.clientId ? g.refreshExpiresAt : g.expiresAt);
 export function AgentConnections() {
   const [data, setData] = useState<Management | null>(null),
-    [error, setError] = useState(''),
-    [message, setMessage] = useState(''),
-    [token, setToken] = useState(''),
-    [preview, setPreview] = useState<Preview | null>(null),
-    [consent, setConsent] = useState<Consent | null>(null),
+    [view, setView] = useState('connect'),
     [busy, setBusy] = useState(false),
+    [error, setError] = useState(''),
+    [permission, setPermission] = useState('draft'),
+    [codexHiddenRead, setCodexHiddenRead] = useState(false),
+    [codexHiddenWrite, setCodexHiddenWrite] = useState(false),
+    [token, setToken] = useState(''),
     [tokenPermission, setTokenPermission] = useState('read'),
-    [tokenHiddenRead, setTokenHiddenRead] = useState(false),
-    [tokenHiddenWrite, setTokenHiddenWrite] = useState(false),
-    [agentView, setAgentView] = useState('connect'),
-    [codexPermission, setCodexPermission] = useState('draft'),
-    [consentLevel, setConsentLevel] = useState('read'),
-    [consentHiddenRead, setConsentHiddenRead] = useState(false),
-    [consentHiddenWrite, setConsentHiddenWrite] = useState(false);
+    [hiddenRead, setHiddenRead] = useState(false),
+    [hiddenWrite, setHiddenWrite] = useState(false),
+    [search, setSearch] = useState('');
   useToast(error, 'error');
-  useToast(message, 'success');
   const load = async () => setData(await api<Management>('/agent'));
-  const act = async (work: () => Promise<unknown>) => {
+  async function act(work: () => Promise<unknown>) {
     if (busy) return;
     setBusy(true);
     setError('');
-    setMessage('');
     try {
       await work();
       await load();
@@ -160,640 +134,446 @@ export function AgentConnections() {
     } finally {
       setBusy(false);
     }
-  };
-  const show = async (id: string) => setPreview(await api<Preview>('/agent/operations/' + id));
+  }
   useEffect(() => {
-    void act(async () => {
-      await load();
-      const params = new URLSearchParams(location.search);
-      const authorization = params.get('agent_authorization'),
-        operation = params.get('agent_operation');
-      if (authorization) setConsent(await api<Consent>('/agent/authorizations/' + authorization));
-      if (operation) await show(operation);
-    });
+    void act(load);
   }, []);
-  const copy = async (text: string, label: string) => {
+  async function copy(text: string, label: string) {
     try {
       await navigator.clipboard.writeText(text);
       showToast(label, 'success');
     } catch {
-      showToast('复制失败，请从下方可选中文本手动复制', 'error');
+      showToast('复制失败，请展开文本后手动复制', 'error');
     }
-  };
+  }
+  const pending =
+    data?.operations.filter((o) => o.status === 'pending' && new Date(o.expiresAt) > new Date()) ||
+    [];
+  const active =
+    data?.grants.filter(
+      (g) => !g.revokedAt && (!connectionExpiry(g) || new Date(connectionExpiry(g)!) > new Date()),
+    ) || [];
   return (
     <section className="panel agent-panel">
       <div className="agent-heading">
         <div>
-          <h2>连接 Agent</h2>
-          <p className="muted">管理接入、操作权限和需要你确认的修改。</p>
+          <p className="eyebrow">AGENT CONNECTIONS</p>
+          <h2>让助手连接你的资产空间</h2>
+          <p className="muted">选择权限、连接助手，随时查看和管理它提出的修改。</p>
         </div>
-        {data && <span className="badge">{data.capabilities.length} 个工具 · 按连接授权</span>}
+        <button className="secondary" disabled={busy} onClick={() => void act(load)}>
+          刷新
+        </button>
       </div>
-      {data && (
-        <div className="agent-layout">
-          <nav className="agent-tabs agent-wide" aria-label="Agent 功能分区">
-            {[
-              ['connect', '开始连接'],
-              ['tools', '权限与工具'],
-              ['connections', '连接管理'],
-              ['operations', '操作记录'],
-            ].map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                className={agentView === value ? 'primary' : 'secondary'}
-                aria-pressed={agentView === value}
-                onClick={() => setAgentView(value)}
-              >
-                {label}
-                {value === 'operations' &&
-                data.operations.some(
-                  (o) => o.status === 'pending' && new Date(o.expiresAt) > new Date(),
-                )
-                  ? ' · 待确认'
-                  : ''}
-              </button>
-            ))}
-          </nav>
-          {agentView === 'connect' && (
-            <>
-              <section className="agent-card agent-wide">
-                <h3>开始连接</h3>
-                <p>远程 MCP 地址</p>
-                <div className="agent-copy-row">
-                  <code className="agent-address">{data.mcpUrl}</code>
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => void copy(data.mcpUrl, 'MCP 地址已复制')}
-                  >
-                    复制地址
-                  </button>
-                </div>
-                <p className="muted">
-                  首次接入可使用下方 Codex 配置提示词。仅复制后续操作说明不会建立连接。
-                </p>
-                <details className="agent-details">
-                  <summary>查看连接步骤</summary>
-                  <p>
-                    localhost 只适用于本机执行 MCP 请求的客户端；云端客户端需要可访问的 HTTPS 地址。
-                  </p>
-                  <ol className="agent-steps">
-                    <li>
-                      <strong>配置连接</strong>：在支持远程 MCP OAuth 的客户端中填写地址，选择
-                      Streamable HTTP；在 WorthPath 网页登录后审核名称、回调和权限。
-                    </li>
-                    <li>
-                      <strong>选择连接权限</strong>：先从 read
-                      或草稿模式开始，根据需要增加权限。OAuth 访问令牌 1 小时，刷新授权最多 30
-                      天并轮换。
-                    </li>
-                    <li>
-                      <strong>检查工具已加载</strong>：客户端须能列出 WorthPath 工具并成功调用
-                      connection_info。只有网址、网页预览或“明白”回复不能证明已连接。
-                    </li>
-                    <li>
-                      <strong>把操作说明交给 Agent</strong>
-                      ：复制下方教程，不包含任何密码或令牌，再描述具体任务。
-                    </li>
-                    <li>
-                      <strong>确认并查看结果</strong>：草稿在网页确认，Agent
-                      可查询完成状态。随时在“已授权连接”撤销。
-                    </li>
-                  </ol>
-                </details>
-                <h4>第一步：让本机 Codex 帮你配置连接</h4>
-                <p className="muted">
-                  选择权限，复制提示词并发送给本机 Codex。它会执行配置和发起 OAuth 登录；你只需在
-                  WorthPath 网页完成登录授权，无需手动输入命令。
-                </p>
-                <label>
-                  申请连接权限
-                  <select
-                    value={codexPermission}
-                    onChange={(e) => setCodexPermission(e.target.value)}
-                  >
-                    <option value="read">只读查询</option>
-                    <option value="draft">查询与草稿修改（网页确认）</option>
-                    <option value="write">查询与直接普通写入</option>
-                  </select>
-                </label>
+      <nav className="agent-tabs" aria-label="Agent 功能分区">
+        {[
+          ['connect', '连接助手'],
+          ['connections', '我的连接'],
+          ['operations', '草稿与记录'],
+          ['tools', '能力与权限'],
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            className={view === key ? 'primary' : 'secondary'}
+            aria-pressed={view === key}
+            onClick={() => setView(key)}
+          >
+            {label}
+            {key === 'connections'
+              ? ' · ' + active.length
+              : key === 'operations' && pending.length
+                ? ' · ' + pending.length
+                : ''}
+          </button>
+        ))}
+      </nav>
+      {!data && <p>{error ? '连接信息加载失败，请点击刷新重试。' : '正在读取连接信息…'}</p>}
+      {data && view === 'connect' && (
+        <div className="agent-connect-layout">
+          <section className="agent-card agent-setup">
+            <span className="agent-step-number">1</span>
+            <h3>选择助手能做什么</h3>
+            <div className="agent-permission-choices">
+              {[
+                ['read', '只读查询', '只查看账户、余额和统计。'],
+                ['draft', '草稿修改', '每次修改先由你确认，建议从这里开始。'],
+                ['write', '直接写入', '普通修改立即执行，适合你信任的助手。'],
+              ].map(([key, title, detail]) => (
                 <button
-                  className="primary"
-                  type="button"
-                  onClick={() =>
-                    void copy(
-                      codexSetupPrompt(data.mcpUrl, codexPermission),
-                      'Codex 配置提示词已复制',
-                    )
+                  key={key}
+                  className={
+                    permission === key ? 'permission-choice selected' : 'permission-choice'
                   }
+                  aria-pressed={permission === key}
+                  onClick={() => {
+                    setPermission(key);
+                    if (key === 'read') setCodexHiddenWrite(false);
+                  }}
                 >
-                  复制 Codex 配置提示词
+                  <strong>{title}</strong>
+                  <span>{detail}</span>
                 </button>
-                <details className="agent-details">
-                  <summary>预览 Codex 配置提示词</summary>
-                  <textarea
-                    className="agent-tutorial"
-                    aria-label="Codex 配置提示词"
-                    readOnly
-                    value={codexSetupPrompt(data.mcpUrl, codexPermission)}
-                    rows={8}
-                  />
-                </details>
-                <p className="muted">
-                  适用于有本机命令执行能力的
-                  Codex。网页授权和必要的客户端重启仍需你完成；云端聊天不能直接连接本机 localhost。
-                </p>
-                <div className="agent-copy-row">
-                  <h4>已连接？复制后续操作说明</h4>
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() => void copy(instructions(data.mcpUrl), 'Agent 使用教程已复制')}
-                  >
-                    复制 Agent 使用教程
-                  </button>
-                </div>
-                <details className="agent-details">
-                  <summary>预览 Agent 使用教程</summary>
-                  <textarea
-                    className="agent-tutorial"
-                    aria-label="Agent 使用教程"
-                    readOnly
-                    value={instructions(data.mcpUrl)}
-                    rows={8}
-                  />
-                </details>
-                <details className="agent-details">
-                  <summary>本机 Codex：使用 OAuth，无需填写个人令牌</summary>
+              ))}
+            </div>
+            <fieldset className="agent-scope-options">
+              <legend>申请隐藏账户权限（默认关闭）</legend>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={codexHiddenRead}
+                  onChange={(e) => {
+                    setCodexHiddenRead(e.target.checked);
+                    if (!e.target.checked) setCodexHiddenWrite(false);
+                  }}
+                />
+                允许读取隐藏账户
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={codexHiddenWrite}
+                  disabled={!codexHiddenRead || permission === 'read'}
+                  onChange={(e) => setCodexHiddenWrite(e.target.checked)}
+                />
+                允许修改隐藏账户
+              </label>
+            </fieldset>
+            <span className="agent-step-number">2</span>
+            <h3>把配置提示词发送给 Codex</h3>
+            <p>本机 Codex 会配置连接并打开独立授权页。你只需登录并核对权限。</p>
+            <button
+              className="primary"
+              onClick={() =>
+                void copy(
+                  codexSetupPrompt(data.mcpUrl, permission, codexHiddenRead, codexHiddenWrite),
+                  'Codex 配置提示词已复制',
+                )
+              }
+            >
+              复制 Codex 配置提示词
+            </button>
+            <details className="agent-details">
+              <summary>预览配置提示词</summary>
+              <textarea
+                className="agent-tutorial"
+                readOnly
+                rows={6}
+                aria-label="Codex 配置提示词"
+                value={codexSetupPrompt(data.mcpUrl, permission, codexHiddenRead, codexHiddenWrite)}
+              />
+            </details>
+            <span className="agent-step-number">3</span>
+            <h3>确认连接后，开始交代任务</h3>
+            <p>先让助手核对连接权限。草稿会出现在“草稿与记录”，确认后才会写入。</p>
+            <button
+              className="secondary"
+              onClick={() => void copy(instructions(data.mcpUrl), 'Agent 使用教程已复制')}
+            >
+              复制后续操作说明
+            </button>
+            <details className="agent-details">
+              <summary>预览操作说明</summary>
+              <textarea
+                className="agent-tutorial"
+                readOnly
+                rows={6}
+                aria-label="Agent 使用教程"
+                value={instructions(data.mcpUrl)}
+              />
+            </details>
+          </section>
+          <aside className="agent-card agent-help">
+            <h3>其他客户端</h3>
+            <p className="muted">使用支持 Streamable HTTP 和 OAuth 的 MCP 客户端。</p>
+            <div className="agent-copy-row">
+              <code className="agent-address">{data.mcpUrl}</code>
+              <button
+                className="secondary"
+                onClick={() => void copy(data.mcpUrl, 'MCP 地址已复制')}
+              >
+                复制地址
+              </button>
+            </div>
+            <p>localhost 适用于本机助手；云端助手需要能访问的 HTTPS 服务地址。</p>
+            <details className="agent-details">
+              <summary>接入与有效期</summary>
+              <p>
+                OAuth 访问令牌 1 小时；授权期限可选 1、3、7、30 天、1
+                年或永久，刷新不会延长有限授权期限。配置连接后，客户端需要成功列出工具并调用
+                connection_info。
+              </p>
+              <p>需要 Bearer 令牌的客户端，可在“我的连接”中创建个人令牌。</p>
+            </details>
+          </aside>
+        </div>
+      )}
+      {data && view === 'connections' && (
+        <>
+          <section className="agent-card">
+            <h3>已授权连接</h3>
+            <p className="muted">最近 100 条 · 撤销后助手将无法继续访问。</p>
+            {!data.grants.length && (
+              <div className="agent-empty">
+                <h4>还没有连接</h4>
+                <p>先复制配置提示词，让助手发起连接。</p>
+                <button className="primary" onClick={() => setView('connect')}>
+                  连接助手
+                </button>
+              </div>
+            )}
+            {data.grants.map((g) => (
+              <div className="agent-row" key={g.id}>
+                <div>
+                  <strong>{g.name}</strong>
                   <p>
-                    在运行 WorthPath 的电脑上打开 PowerShell。未添加连接时先运行第一行；已有
-                    worthpath 连接时直接运行登录命令，在 WorthPath 网页登录并选择权限。
+                    {permissionLabel(g.scopes)} · {g.clientId ? 'OAuth' : '个人令牌'} ·{' '}
+                    {g.revokedAt
+                      ? '已撤销'
+                      : connectionExpiry(g) && new Date(connectionExpiry(g)!) <= new Date()
+                        ? '已过期'
+                        : '有效'}
                   </p>
-                  <pre>{`codex mcp add worthpath --url ${data.mcpUrl}\ncodex mcp login worthpath --scopes read --oauth-client-registration dcr\ncodex mcp list`}</pre>
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() =>
-                      void copy(
-                        `codex mcp login worthpath --scopes read --oauth-client-registration dcr`,
-                        'OAuth 登录命令已复制',
-                      )
-                    }
-                  >
-                    复制 OAuth 登录命令
-                  </button>
-                  <p className="muted">
-                    read 为只读；草稿使用 read,draft，直接普通写入使用
-                    read,write。登录后重启客户端或新建会话，并检查 WorthPath 工具已加载。
-                  </p>
-                  <p className="muted">
-                    已验证 Codex CLI 0.160.0 的 OAuth/DCR 登录及其凭据通过官方 SDK
-                    的初始化、工具发现和 connection_info。尚未验证 Codex
-                    桌面会话内调用；云端聊天无法直接使用本机 localhost。
-                  </p>
-                </details>
-                <details className="agent-details">
-                  <summary>支持 Bearer 头的客户端与已验证 SDK 配置</summary>
-                  <p>
-                    仅在客户端明确支持 Bearer
-                    认证时创建个人令牌，按其文档配置环境变量或凭据存储；不要放入聊天、URL
-                    或教程。请求头为 Authorization: Bearer
-                    &lt;令牌&gt;。个人令牌只显示一次，不能作为通用 OAuth 的替代。
-                  </p>
-                  <pre>{`new StreamableHTTPClientTransport(new URL(${JSON.stringify(data.mcpUrl)}), {\n  requestInit: { headers: { Authorization: 'Bearer ' + process.env.MCP_ACCESS_TOKEN } }\n});`}</pre>
-                  <button
-                    className="secondary"
-                    type="button"
-                    onClick={() =>
-                      void copy(
-                        `$env:MCP_SERVER_URL=${JSON.stringify(data.mcpUrl)}\npnpm --filter @worthpath/api mcp:probe`,
-                        '诊断命令已复制',
-                      )
-                    }
-                  >
-                    复制诊断客户端命令
-                  </button>
-                  <p className="muted">
-                    先安全设置 MCP_ACCESS_TOKEN。实际验证客户端：官方 TypeScript SDK 1.31.0（OAuth /
-                    Bearer）；其他 Agent 尚未验证，不提供未经验证的产品配置格式。
-                  </p>
-                </details>
-              </section>
-            </>
-          )}
-          {agentView === 'tools' && (
-            <>
-              <section className="agent-card agent-wide">
-                <h3>Agent 可以做什么</h3>
-                <p className="muted">
-                  这里列出服务实际提供的工具。能否执行还取决于连接权限、隐藏账户授权、项目归属和草稿确认。
-                </p>
-                <div className="agent-capabilities">
-                  {capabilityGroups.map((g) => (
-                    <details className="agent-details" key={g.title}>
-                      <summary>{g.title}</summary>
-                      <p>{g.summary}</p>
-                      <ul>
-                        {data.capabilities
-                          .filter((t) => g.pattern.test(t.name))
-                          .map((t) => (
-                            <li key={t.name}>
-                              <code>{t.name}</code> · {t.scope}
-                              {t.destructive ? ' · 会删除数据' : ''}
-                              <p>{t.description}</p>
-                            </li>
-                          ))}
-                      </ul>
-                    </details>
-                  ))}
+                  <small>
+                    {g.scopes.includes('hidden_read')
+                      ? g.scopes.includes('hidden_write')
+                        ? '可读取和修改隐藏账户'
+                        : '可读取隐藏账户'
+                      : '不可访问隐藏账户'}{' '}
+                    ·{' '}
+                    {connectionExpiry(g)
+                      ? '授权到期 ' + new Date(connectionExpiry(g)!).toLocaleString()
+                      : '永久有效'}
+                  </small>
                 </div>
-                <details className="agent-details">
-                  <summary>查看全部 {data.capabilities.length} 个工具（含连接与状态工具）</summary>
-                  <ul>
-                    {data.capabilities.map((t) => (
-                      <li key={t.name}>
-                        <code>{t.name}</code> · {t.scope}
-                        <p>{t.description}</p>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              </section>
-              <section className="agent-card agent-wide">
-                <details className="agent-details">
-                  <summary>权限说明：read / draft / write</summary>
-                  <p>选择一种连接权限：只读、草稿修改或直接写入。隐藏账户可单独授权读取和修改。</p>
-                  <div className="agent-scope-grid">
-                    {scopeDetails.map((s) => (
-                      <article key={s.id}>
-                        <h4>
-                          {s.id} · {s.title}
-                        </h4>
-                        <strong>{s.summary}</strong>
-                        <p>{s.detail}</p>
-                      </article>
-                    ))}
-                  </div>
-                </details>
-              </section>
-            </>
-          )}
-          {agentView === 'connections' && (
-            <>
-              <section className="agent-card">
-                <details className="agent-details">
-                  <summary>创建个人访问令牌（可选）</summary>
-                  <p className="muted">
-                    适用于支持 Bearer
-                    头的客户端。固定期限到期后新建并撤销旧令牌；永久令牌不会自动过期，仍可撤销。
-                  </p>
-                  <form
-                    className="agent-form"
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const form = e.currentTarget,
-                        f = new FormData(form);
-                      void act(async () => {
-                        const v = await api<{ token: string }>('/agent/tokens', 'POST', {
-                          name: f.get('name'),
-                          days: f.get('days') === 'permanent' ? null : Number(f.get('days')),
-                          password: f.get('password'),
-                          scopes: [
-                            'read',
-                            ...(f.get('permission') !== 'read'
-                              ? [String(f.get('permission'))]
-                              : []),
-                            ...(f.get('hiddenRead') ? ['hidden_read'] : []),
-                            ...(f.get('hiddenWrite') ? ['hidden_write'] : []),
-                          ],
-                        });
-                        setToken(v.token);
-                        form.reset();
-                        setTokenPermission('read');
-                        setTokenHiddenRead(false);
-                        setTokenHiddenWrite(false);
-                      });
-                    }}
-                  >
-                    <label>
-                      连接名称
-                      <input name="name" required maxLength={100} placeholder="例如：桌面助手" />
-                    </label>
-                    <label>
-                      令牌有效期
-                      <select name="days" defaultValue="30">
-                        {durationOptions.map(([v, label]) => (
-                          <option key={v} value={v}>
-                            {label}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      连接权限
-                      <select
-                        name="permission"
-                        value={tokenPermission}
-                        onChange={(e) => {
-                          setTokenPermission(e.target.value);
-                          if (e.target.value === 'read') setTokenHiddenWrite(false);
-                        }}
-                      >
-                        <option value="read">只读</option>
-                        <option value="draft">草稿修改（网页确认）</option>
-                        <option value="write">直接写入</option>
-                      </select>
-                    </label>
-                    <fieldset className="agent-scope-options">
-                      <legend>隐藏账户权限（默认关闭）</legend>
-                      <label>
-                        <input
-                          type="checkbox"
-                          name="hiddenRead"
-                          checked={tokenHiddenRead}
-                          onChange={(e) => {
-                            setTokenHiddenRead(e.target.checked);
-                            if (!e.target.checked) setTokenHiddenWrite(false);
-                          }}
-                        />
-                        允许读取隐藏账户
-                      </label>
-                      <label>
-                        <input
-                          type="checkbox"
-                          name="hiddenWrite"
-                          disabled={!tokenHiddenRead || tokenPermission === 'read'}
-                          checked={tokenHiddenWrite}
-                          onChange={(e) => setTokenHiddenWrite(e.target.checked)}
-                        />
-                        允许修改隐藏账户（同时勾选读取，且选择草稿或直接写入）
-                      </label>
-                    </fieldset>
-                    <label>
-                      验证当前密码
-                      <input
-                        name="password"
-                        type="password"
-                        required
-                        autoComplete="current-password"
-                      />
-                    </label>
-                    <button className="secondary" disabled={busy}>
-                      创建个人令牌
-                    </button>
-                  </form>
-                  {token && (
-                    <div role="status" className="agent-secret">
-                      <p>完整令牌仅显示这一次，请妥善保存到客户端凭据设置。</p>
-                      <code className="agent-address">{token}</code>
-                      <div className="actions">
-                        <button
-                          className="secondary"
-                          type="button"
-                          onClick={() => void copy(token, '令牌已复制')}
-                        >
-                          复制令牌
-                        </button>
-                        <button className="secondary" type="button" onClick={() => setToken('')}>
-                          隐藏令牌
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </details>
-              </section>
-              <section className="agent-card agent-wide">
-                <div className="agent-copy-row">
-                  <h3>已授权连接（最近 100 条）</h3>
+                {!g.revokedAt && (
                   <button
                     className="secondary"
                     disabled={busy}
-                    type="button"
-                    onClick={() => void act(load)}
+                    onClick={() =>
+                      void act(async () => {
+                        await api('/agent/connections/' + g.id, 'DELETE');
+                        showToast('连接已撤销', 'success');
+                      })
+                    }
                   >
-                    刷新状态
+                    撤销连接
                   </button>
-                </div>
-                {!data.grants.length && (
-                  <p className="muted">尚未授权连接。通过 OAuth 接入，或创建个人令牌。</p>
                 )}
-                {data.grants.map((g) => (
-                  <div key={g.id} className="agent-row">
-                    <div>
-                      <strong>{g.name}</strong>
-                      <p>
-                        {g.clientId ? 'OAuth' : '个人令牌'} · {g.scopes.join(', ')} ·{' '}
-                        {g.revokedAt
-                          ? '已撤销'
-                          : g.expiresAt && new Date(g.expiresAt) <= new Date()
-                            ? '已过期'
-                            : '有效'}
-                      </p>
-                      <small>
-                        {g.expiresAt
-                          ? '到期：' + new Date(g.expiresAt).toLocaleString()
-                          : '永久 · 不会自动过期'}
-                      </small>
-                    </div>
-                    {!g.revokedAt && (
-                      <button
-                        className="secondary"
-                        disabled={busy}
-                        type="button"
-                        onClick={() =>
-                          void act(async () => {
-                            await api('/agent/connections/' + g.id, 'DELETE');
-                            setMessage('连接已撤销');
-                          })
-                        }
-                      >
-                        撤销
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </section>
-            </>
-          )}
-          {agentView === 'operations' && (
-            <>
-              <section className="agent-card agent-wide">
-                <h3>待确认及最近操作</h3>
-                {!data.operations.length && (
-                  <p className="muted">暂无操作。Agent 发起的草稿会出现在这里。</p>
-                )}
-                {data.operations.map((o) => (
-                  <div key={o.id} className="agent-row">
-                    <span>
-                      {o.tool} ·{' '}
-                      {o.status === 'pending' && new Date(o.expiresAt) < new Date()
-                        ? 'expired'
-                        : o.status}{' '}
-                      · {new Date(o.createdAt).toLocaleString()}
-                    </span>
-                    <button
-                      className="secondary"
-                      type="button"
-                      disabled={busy}
-                      onClick={() => void act(() => show(o.id))}
-                    >
-                      查看影响和结果
-                    </button>
-                  </div>
-                ))}
-                <details className="agent-details">
-                  <summary>最近调用 · 不保存参数、密码或令牌</summary>
-                  {!data.calls.length && <p className="muted">暂无调用记录。</p>}
-                  {data.calls.map((c) => (
-                    <div key={c.id} className="agent-row">
-                      {c.tool} · {c.status} · {new Date(c.createdAt).toLocaleString()}
-                    </div>
-                  ))}
-                </details>
-              </section>
-            </>
-          )}
-        </div>
-      )}
-      {consent && (
-        <div className="agent-confirm">
-          <h3>审核 OAuth 连接</h3>
-          <p>{consent.name}</p>
-          <p>客户端请求的候选权限：{consent.scopes.join(', ')}</p>
-          <p className="muted">
-            候选范围不代表已授权。最终仅授予下方选择的权限，隐藏账户权限默认关闭。
-          </p>
-          <p>资源：{consent.resource}</p>
-          <p>回调地址：{consent.redirectUri}</p>
-          <p className="muted">只批准你正在连接的客户端；请核对回调地址。</p>
-          <label>
-            授予此连接的权限
-            <select
-              value={consentLevel}
-              onChange={(e) => {
-                setConsentLevel(e.target.value);
-                if (e.target.value === 'read') setConsentHiddenWrite(false);
-              }}
-            >
-              <option value="read">只读</option>
-              {consent.scopes.includes('draft') && (
-                <option value="draft">草稿修改（网页确认）</option>
-              )}
-              {consent.scopes.includes('write') && <option value="write">直接写入</option>}
-            </select>
-          </label>
-          {consent.scopes.includes('hidden_read') && (
-            <label className="check-line">
-              <input
-                type="checkbox"
-                checked={consentHiddenRead}
-                onChange={(e) => {
-                  setConsentHiddenRead(e.target.checked);
-                  if (!e.target.checked) setConsentHiddenWrite(false);
-                }}
-              />
-              允许读取隐藏账户
-            </label>
-          )}
-          {consent.scopes.includes('hidden_write') && (
-            <label className="check-line">
-              <input
-                type="checkbox"
-                disabled={!consentHiddenRead || consentLevel === 'read'}
-                checked={consentHiddenWrite}
-                onChange={(e) => setConsentHiddenWrite(e.target.checked)}
-              />
-              允许修改隐藏账户
-            </label>
-          )}
-          <p role="status">
-            最终将授予：
-            {consent.scopes
-              .filter(
-                (scope) =>
-                  scope === 'read' ||
-                  scope === consentLevel ||
-                  (scope === 'hidden_read' && consentHiddenRead) ||
-                  (scope === 'hidden_write' && consentHiddenWrite),
-              )
-              .join(', ')}
-          </p>
-          {[true, false].map((approve) => (
-            <button
-              className="secondary"
-              disabled={busy}
-              type="button"
-              key={String(approve)}
-              onClick={() =>
-                void act(async () => {
-                  const v = await api<{ redirect: string }>(
-                    '/agent/authorizations/' + consent.id,
-                    'POST',
-                    {
-                      approve,
-                      scopes: consent.scopes.filter(
-                        (s) =>
-                          s === 'read' ||
-                          s === consentLevel ||
-                          (s === 'hidden_read' && consentHiddenRead) ||
-                          (s === 'hidden_write' && consentHiddenWrite),
-                      ),
-                    },
-                  );
-                  location.assign(v.redirect);
-                })
-              }
-            >
-              {approve ? '授权此连接' : '拒绝授权'}
-            </button>
-          ))}
-        </div>
-      )}
-      {preview && (
-        <div className="agent-confirm">
-          <h3>
-            {preview.tool} · {preview.status}
-          </h3>
-          <p>{preview.description}</p>
-          <pre>{JSON.stringify(preview.impact, null, 2)}</pre>
-          {preview.result !== undefined && <pre>{JSON.stringify(preview.result, null, 2)}</pre>}
-          {preview.status === 'pending' && (
+              </div>
+            ))}
+          </section>
+          <details className="agent-card agent-details">
+            <summary>高级接入：创建个人令牌</summary>
+            <p className="muted">仅供支持 Bearer 认证的客户端使用。完整令牌只显示一次。</p>
             <form
+              className="agent-form"
               onSubmit={(e) => {
                 e.preventDefault();
-                const form = e.currentTarget;
+                const form = e.currentTarget,
+                  f = new FormData(form);
                 void act(async () => {
-                  await api('/agent/operations/' + preview.operationId, 'POST', {
-                    approve: true,
+                  const v = await api<{ token: string }>('/agent/tokens', 'POST', {
+                    name: f.get('name'),
+                    password: f.get('password'),
+                    days: f.get('days') === 'permanent' ? null : Number(f.get('days')),
+                    scopes: [
+                      'read',
+                      ...(tokenPermission !== 'read' ? [tokenPermission] : []),
+                      ...(hiddenRead ? ['hidden_read'] : []),
+                      ...(hiddenWrite ? ['hidden_write'] : []),
+                    ],
                   });
+                  setToken(v.token);
                   form.reset();
-                  await show(preview.operationId);
-                  setMessage('操作已提交，Agent 可以查询最终结果');
+                  setTokenPermission('read');
+                  setHiddenRead(false);
+                  setHiddenWrite(false);
                 });
               }}
             >
-              <button className="secondary" disabled={busy}>
-                确认执行上述操作
-              </button>
-              <button
-                className="secondary"
-                disabled={busy}
-                type="button"
-                onClick={() =>
-                  void act(async () => {
-                    await api('/agent/operations/' + preview.operationId, 'POST', {
-                      approve: false,
-                    });
-                    await show(preview.operationId);
-                  })
-                }
-              >
-                取消
+              <label>
+                连接名称
+                <input name="name" required maxLength={100} placeholder="例如：桌面助手" />
+              </label>
+              <label>
+                令牌有效期
+                <select name="days" defaultValue="30">
+                  {durationOptions.map(([v, label]) => (
+                    <option key={v} value={v}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                连接权限
+                <select
+                  value={tokenPermission}
+                  onChange={(e) => {
+                    setTokenPermission(e.target.value);
+                    if (e.target.value === 'read') setHiddenWrite(false);
+                  }}
+                >
+                  <option value="read">只读查询</option>
+                  <option value="draft">草稿修改</option>
+                  <option value="write">直接写入</option>
+                </select>
+              </label>
+              <fieldset className="agent-scope-options">
+                <legend>隐藏账户权限（默认关闭）</legend>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={hiddenRead}
+                    onChange={(e) => {
+                      setHiddenRead(e.target.checked);
+                      if (!e.target.checked) setHiddenWrite(false);
+                    }}
+                  />
+                  允许读取隐藏账户
+                </label>
+                <label className="check-line">
+                  <input
+                    type="checkbox"
+                    checked={hiddenWrite}
+                    disabled={!hiddenRead || tokenPermission === 'read'}
+                    onChange={(e) => setHiddenWrite(e.target.checked)}
+                  />
+                  允许修改隐藏账户
+                </label>
+              </fieldset>
+              <label>
+                验证当前密码
+                <input name="password" type="password" required autoComplete="current-password" />
+              </label>
+              <button className="primary" disabled={busy}>
+                创建个人令牌
               </button>
             </form>
-          )}
-        </div>
+            {token && (
+              <div className="agent-secret" role="status">
+                <p>请将令牌保存到客户端凭据设置。</p>
+                <code className="agent-address">{token}</code>
+                <div className="actions">
+                  <button className="secondary" onClick={() => void copy(token, '令牌已复制')}>
+                    复制令牌
+                  </button>
+                  <button className="secondary" onClick={() => setToken('')}>
+                    隐藏令牌
+                  </button>
+                </div>
+              </div>
+            )}
+          </details>
+        </>
+      )}
+      {data && view === 'operations' && (
+        <section className="agent-card">
+          <h3>待确认草稿</h3>
+          {!pending.length && <p className="agent-empty">没有等待确认的修改。</p>}
+          {pending.map((o) => (
+            <div className="agent-row" key={o.id}>
+              <div>
+                <strong>{toolLabel(o.tool)}</strong>
+                <p className="muted">有效至 {new Date(o.expiresAt).toLocaleTimeString()}</p>
+              </div>
+              <a className="agent-review-link" href={'/agent/operation?agent_operation=' + o.id}>
+                审阅草稿
+              </a>
+            </div>
+          ))}
+          <details className="agent-details">
+            <summary>最近操作（{data.operations.length}）</summary>
+            {!data.operations.length && <p>暂无操作记录</p>}
+            {data.operations.map((o) => (
+              <div className="agent-row" key={o.id}>
+                <div>
+                  <strong>{toolLabel(o.tool)}</strong>
+                  <p>
+                    {statusLabel(
+                      o.status === 'pending' && new Date(o.expiresAt) < new Date()
+                        ? 'expired'
+                        : o.status,
+                    )}{' '}
+                    · {new Date(o.createdAt).toLocaleString()}
+                  </p>
+                </div>
+                <a href={'/agent/operation?agent_operation=' + o.id}>查看详情</a>
+              </div>
+            ))}
+          </details>
+          <details className="agent-details">
+            <summary>调用日志</summary>
+            <p className="muted">仅保存工具名称和状态，不保存参数、密码或令牌。</p>
+            {!data.calls.length && <p>暂无调用记录</p>}
+            {data.calls.map((c) => (
+              <div className="agent-row" key={c.id}>
+                <span>
+                  {toolLabel(c.tool)} <small>({c.tool})</small> · {statusLabel(c.status)}
+                </span>
+                <small>{new Date(c.createdAt).toLocaleString()}</small>
+              </div>
+            ))}
+          </details>
+        </section>
+      )}
+      {data && view === 'tools' && (
+        <>
+          <div className="agent-scope-grid">
+            {scopeDetails.map((s) => (
+              <article className="agent-card" key={s.id}>
+                <h3>{s.title}</h3>
+                <p>{s.summary}</p>
+                <details className="agent-details">
+                  <summary>详细范围</summary>
+                  <p>{s.detail}</p>
+                </details>
+              </article>
+            ))}
+          </div>
+          <section className="agent-card">
+            <h3>助手的能力</h3>
+            <p className="muted">
+              查询与修改受连接权限约束；账户密码、清空数据、备份恢复等仍由你在网站操作。
+            </p>
+            <label>
+              搜索能力
+              <input
+                type="search"
+                placeholder="例如：转账、余额、计划"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
+            </label>
+            <div className="agent-tool-grid">
+              {data.capabilities
+                .filter((t) =>
+                  (toolLabel(t.name) + ' ' + t.name + ' ' + t.description)
+                    .toLowerCase()
+                    .includes(search.toLowerCase()),
+                )
+                .map((t) => (
+                  <article className="agent-tool-card" key={t.name}>
+                    <h4>{toolLabel(t.name)}</h4>
+                    <span className="badge">
+                      {t.scope === 'read' ? '查询' : '草稿 / 写入'}
+                      {t.destructive ? ' · 删除操作' : ''}
+                    </span>
+                    <details className="agent-details">
+                      <summary>查看说明</summary>
+                      <p>{t.description}</p>
+                      <code>{t.name}</code>
+                    </details>
+                  </article>
+                ))}
+            </div>
+            {!data.capabilities.some((t) =>
+              (toolLabel(t.name) + ' ' + t.name + ' ' + t.description)
+                .toLowerCase()
+                .includes(search.toLowerCase()),
+            ) && <p>没有匹配的能力。</p>}
+          </section>
+        </>
       )}
     </section>
   );

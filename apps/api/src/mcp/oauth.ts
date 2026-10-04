@@ -33,6 +33,14 @@ export const scopeInput = z
       (!v.includes('hidden_write') ||
         (v.includes('hidden_read') && (v.includes('draft') || v.includes('write')))),
   );
+export const oauthDays = z.union([
+  z.literal(1),
+  z.literal(3),
+  z.literal(7),
+  z.literal(30),
+  z.literal(365),
+  z.literal(null),
+]);
 export const digest = (s: string) => createHash('sha256').update(s).digest('hex');
 const secret = () => randomBytes(32).toString('base64url');
 export function urls() {
@@ -63,6 +71,9 @@ export function urls() {
 }
 export function webLink(key: string, id: string) {
   const u = new URL(urls().web);
+  u.pathname =
+    u.pathname.replace(/\/$/, '') +
+    (key === 'agent_authorization' ? '/agent/authorize' : '/agent/operation');
   u.searchParams.set(key, id);
   return u.toString();
 }
@@ -156,11 +167,18 @@ export class AgentOAuth implements OAuthServerProvider {
       resource: p.resource,
     };
   }
-  async consent(userId: string, id: string, approved: boolean, selected?: string[]) {
+  async consent(
+    userId: string,
+    id: string,
+    approved: boolean,
+    selected?: string[],
+    days: number | null = 30,
+  ) {
     return this.db.atomic(async () => {
       await this.pending(id);
       const row = await this.db.agentAuthorization.findUniqueOrThrow({ where: { id } });
       const parameters = row.parameters as any;
+      const authorizationDays = oauthDays.parse(days);
       const allowed = selected || ['read'];
       scopeInput.parse(allowed);
       if (allowed.some((scope: string) => !parameters.scopes.includes(scope)))
@@ -172,7 +190,7 @@ export class AgentOAuth implements OAuthServerProvider {
           userId,
           status: approved ? 'approved' : 'denied',
           codeDigest: approved ? digest(code) : null,
-          parameters: { ...parameters, scopes: allowed },
+          parameters: { ...parameters, scopes: allowed, authorizationDays },
         },
       });
       if (!changed.count) throw new BadRequestException('授权请求已处理');
@@ -202,18 +220,23 @@ export class AgentOAuth implements OAuthServerProvider {
     selected: string[],
     days: number | null,
     clientId?: string,
+    authorizationDays: number | null = 30,
   ) {
     if (clientId && days === null) throw new BadRequestException('OAuth 连接必须有期限');
     const access = secret(),
       refresh = clientId ? secret() : undefined,
       sessionId = digest(secret());
-    const expiresAt = days === null ? null : new Date(Date.now() + days * 86400000),
-      refreshExpiresAt = clientId ? new Date(Date.now() + 30 * 86400000) : null;
+    const expiresAt = days === null ? null : new Date(Date.now() + days * 86400000);
+    const lifetime = oauthDays.parse(authorizationDays);
+    const refreshExpiresAt =
+      clientId && lifetime !== null ? new Date(Date.now() + lifetime * 86400000) : null;
     await this.db.session.create({
       data: {
         id: sessionId,
         userId,
-        expiresAt: refreshExpiresAt || expiresAt || new Date(Date.now() + 86400000),
+        expiresAt: clientId
+          ? refreshExpiresAt || new Date(Date.now() + 30 * 86400000)
+          : expiresAt || new Date(Date.now() + 86400000),
       },
     });
     const grant = await this.db.agentGrant.create({
@@ -274,6 +297,7 @@ export class AgentOAuth implements OAuthServerProvider {
           p.scopes,
           1 / 24,
           client.client_id,
+          p.authorizationDays === undefined ? 30 : p.authorizationDays,
         )
       ).tokens;
     });
@@ -291,8 +315,7 @@ export class AgentOAuth implements OAuthServerProvider {
         !row ||
         row.clientId !== client.client_id ||
         row.revokedAt ||
-        !row.refreshExpiresAt ||
-        row.refreshExpiresAt <= new Date()
+        (row.refreshExpiresAt && row.refreshExpiresAt <= new Date())
       )
         throw new InvalidGrantError('Invalid refresh token');
       const current = row.scopes as string[];
@@ -303,21 +326,36 @@ export class AgentOAuth implements OAuthServerProvider {
         throw new InvalidScopeError('Scope escalation rejected');
       const access = secret(),
         refresh = secret();
+      const accessExpiresAt = new Date(
+        Math.min(Date.now() + 3600000, row.refreshExpiresAt ? +row.refreshExpiresAt : Infinity),
+      );
       const changed = await this.db.agentGrant.updateMany({
         where: { id: row.id, refreshDigest: digest(token), revokedAt: null },
         data: {
           accessDigest: digest(access),
           refreshDigest: digest(refresh),
-          expiresAt: new Date(Date.now() + 3600000),
+          expiresAt: accessExpiresAt,
           scopes: selected || current,
         },
       });
       if (!changed.count) throw new InvalidGrantError('Refresh token already used');
+      // Permanent OAuth keeps a bounded business session, renewed only after a valid refresh.
+      const sessionExpiresAt = row.refreshExpiresAt || new Date(Date.now() + 30 * 86400000);
+      await this.db.session.upsert({
+        where: { id: row.sessionId },
+        create: { id: row.sessionId, userId: row.userId, expiresAt: sessionExpiresAt },
+        update: {
+          expiresAt: sessionExpiresAt,
+          revealUntil: null,
+          backupDigest: null,
+          backupExpiresAt: null,
+        },
+      });
       return {
         access_token: access,
         refresh_token: refresh,
         token_type: 'Bearer',
-        expires_in: 3600,
+        expires_in: Math.max(0, Math.floor((+accessExpiresAt - Date.now()) / 1000)),
         scope: (selected || current).join(' '),
       };
     });
@@ -328,6 +366,7 @@ export class AgentOAuth implements OAuthServerProvider {
     if (
       !row ||
       row.revokedAt ||
+      (row.clientId && row.refreshExpiresAt && row.refreshExpiresAt <= new Date()) ||
       (row.expiresAt ? row.expiresAt <= new Date() : !!row.clientId) ||
       row.resource !== urls().resource.toString()
     )
@@ -358,6 +397,15 @@ export class AgentOAuth implements OAuthServerProvider {
         id,
         ...(userId ? { userId } : {}),
         revokedAt: null,
+        AND: [
+          {
+            OR: [
+              { clientId: null },
+              { refreshExpiresAt: null },
+              { refreshExpiresAt: { gt: new Date() } },
+            ],
+          },
+        ],
         OR: [{ expiresAt: { gt: new Date() } }, { expiresAt: null, clientId: null }],
       },
     });

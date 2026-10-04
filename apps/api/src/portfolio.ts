@@ -158,6 +158,63 @@ export class PortfolioBusinessService {
     });
     return { ok: true };
   }
+  async deletion(r: UserRequest, id: string) {
+    const p = await this.own(r.userId, id, r.revealed);
+    if (p.kind !== 'account') throw new BadRequestException('此功能仅用于删除账户');
+    const [historyCount, movementCount, scheduleCount, linkCount] = await Promise.all([
+      this.db.revision.count({ where: { positionId: id } }),
+      this.db.transfer.count({
+        where: { userId: r.userId, OR: [{ sourceId: id }, { targetId: id }] },
+      }),
+      this.db.schedule.count({
+        where: { userId: r.userId, OR: [{ sourceId: id }, { targetId: id }] },
+      }),
+      this.db.positionLink.count({ where: { OR: [{ sourceId: id }, { targetId: id }] } }),
+    ]);
+    return {
+      name: p.name,
+      historyCount,
+      movementCount,
+      scheduleCount,
+      linkCount,
+      canDelete: movementCount === 0 && scheduleCount === 0,
+    };
+  }
+  async remove(r: UserRequest, id: string, raw: unknown) {
+    const input = z
+      .object({ confirmation: z.string().min(1).max(100) })
+      .strict()
+      .parse(raw);
+    const result = await this.db.serial(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT id FROM Position WHERE id = ${id} AND userId = ${r.userId} FOR UPDATE`,
+      );
+      const p = await tx.position.findFirst({
+        where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
+      });
+      if (!p) throw new NotFoundException('账户不存在');
+      if (p.kind !== 'account') throw new BadRequestException('此功能仅用于删除账户');
+      if (input.confirmation !== p.name)
+        throw new BadRequestException('请输入完整账户名称确认删除');
+      // Paired movements must be removed through replay, never via cascade.
+      if (
+        await tx.transfer.count({
+          where: { userId: r.userId, OR: [{ sourceId: id }, { targetId: id }] },
+        })
+      )
+        throw new ConflictException('账户存在资金往来，请先撤销相关记录，或选择归档保留历史');
+      if (
+        await tx.schedule.count({
+          where: { userId: r.userId, OR: [{ sourceId: id }, { targetId: id }] },
+        })
+      )
+        throw new ConflictException('账户被定时计划使用，请先删除相关计划，或选择归档');
+      await tx.position.delete({ where: { id } });
+      return { ok: true };
+    });
+    this.fx.invalidate(r.userId);
+    return result;
+  }
   async revise(r: UserRequest, id: string, b: unknown) {
     const v = revisionInput.parse(b);
     if (pairedReasons.includes(v.reason)) throw new BadRequestException('请使用账户转账接口');
@@ -350,6 +407,16 @@ export class PortfolioController {
     @Body() b: unknown,
   ) {
     return this.service.edit(r, id, b);
+  }
+  @Get('positions/:id/deletion') async deletion(@Req() r: UserRequest, @Param('id') id: string) {
+    return this.service.deletion(r, id);
+  }
+  @Delete('positions/:id') async remove(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() b: unknown,
+  ) {
+    return this.service.remove(r, id, b);
   }
   @Post('positions/:id/revisions') async revise(
     @Req() r: UserRequest,
