@@ -337,6 +337,22 @@ export class AgentOperations {
       if ((await this.state(r.userId)) !== row.snapshot)
         throw new ConflictException('账目已变化，请取消并重新创建操作');
       const result = await this.execute(t, grant, p);
+      if (row.tool === 'position_create') {
+        // Advance only sibling additions reviewed against the same snapshot.
+        // The user lock and transaction keep edits and other grants stale.
+        await this.db.agentOperation.updateMany({
+          where: {
+            userId: r.userId,
+            grantId: row.grantId,
+            tool: 'position_create',
+            status: 'pending',
+            snapshot: row.snapshot,
+            id: { not: row.id },
+            expiresAt: { gt: new Date() },
+          },
+          data: { snapshot: await this.state(r.userId) },
+        });
+      }
       return this.view(
         await this.db.agentOperation.update({
           where: { id },

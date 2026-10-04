@@ -198,6 +198,79 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
     const applied = await confirm(d, draft);
     assert.ok(applied.result.id);
     assert.equal((await call(d, 'positions_list')).total, 1);
+    // Only independent creates from the same connection and snapshot may advance.
+    const batchState = (await call(d, 'state_get')).state;
+    const batchArgs = [0, 1, 2].map((i) => ({
+      ...position,
+      name: 'batch account ' + i,
+      amount: '8.86420975',
+      expectedState: batchState,
+      idempotencyKey: randomUUID(),
+    }));
+    const batch = await Promise.all(batchArgs.map((args) => call(d, 'position_create', args)));
+    const edit = await call(d, 'balance_record', {
+      id: applied.result.id,
+      data: { amount: '2', date: day },
+      expectedState: batchState,
+      idempotencyKey: randomUUID(),
+    });
+    const otherToken = await web(d.cookie, '/agent/tokens', 'POST', {
+      name: 'separate draft connection',
+      days: 1,
+      scopes: ['read', 'draft'],
+      password: d.password,
+    });
+    assert.equal(otherToken.status, 201);
+    const otherClient = new Client({ name: 'other draft connection', version: '1.31.0' });
+    clients.push(otherClient);
+    await otherClient.connect(
+      new StreamableHTTPClientTransport(new URL(resource), {
+        requestInit: { headers: { Authorization: 'Bearer ' + otherToken.data.token } },
+      }),
+    );
+    const otherDraft = await call({ client: otherClient }, 'position_create', {
+      ...position,
+      name: 'other grant create',
+      expectedState: batchState,
+      idempotencyKey: randomUUID(),
+    });
+    const firstBatch = await confirm(d, batch[0]);
+    assert.equal(
+      (await call(d, 'position_create', batchArgs[0])).operationId,
+      firstBatch.operationId,
+    );
+    await Promise.all(batch.slice(1).map((operation) => confirm(d, operation)));
+    assert.equal((await call(d, 'positions_list', { q: 'batch account' })).total, 3);
+    assert.equal(
+      (await call(d, 'position_get', { id: firstBatch.result.id })).amount,
+      '8.86420975',
+    );
+    for (const operation of [edit, otherDraft]) {
+      assert.equal(
+        (
+          await web(d.cookie, '/agent/operations/' + operation.operationId, 'POST', {
+            approve: true,
+          })
+        ).status,
+        409,
+      );
+    }
+    const webStale = await write(d, 'position_create', { ...position, name: 'web stale' });
+    assert.equal(
+      (
+        await web(d.cookie, '/positions', 'POST', {
+          ...position,
+          name: 'manual web account',
+        })
+      ).status,
+      201,
+    );
+    assert.equal(
+      (await web(d.cookie, '/agent/operations/' + webStale.operationId, 'POST', { approve: true }))
+        .status,
+      409,
+    );
+
     const expired = await write(d, 'position_create', { ...position, name: 'expired' });
     await db.agentOperation.update({
       where: { id: expired.operationId },
