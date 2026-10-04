@@ -28,7 +28,9 @@ OAuth 使用发现元数据、动态注册的公开客户端、授权码、S256 
 
 ## 页面复制提示词配置
 
-在「设置与备份 → 连接 Agent → 开始连接」选择申请权限（默认 read,draft）及是否申请隐藏账户读取、修改权限（默认关闭），点击「复制 Codex 配置提示词」，发送给运行在本机、能够执行命令的 Codex。提示词明确授权它仅配置 worthpath 连接、使用 OAuth、保留其他配置并核对实际工具加载；命令由 Codex 执行，用户无需手动输入。用户仍须完成 WorthPath 网页登录和权限确认，当前会话无法加载新增工具时须重启客户端或新建会话。提示词不包含个人令牌，也不会修改账目。
+在「设置与备份 → 连接 Agent → 开始连接」选择申请权限（默认 read,draft）及是否申请隐藏账户读取、修改权限（默认关闭），点击「复制 Codex 配置提示词」，发送给运行在本机、能够执行命令的 Codex。提示词授权它配置 worthpath OAuth 连接，并仅在实际加载的全局 AGENTS.md 或 AGENTS.override.md 中保存带标记的 WorthPath 使用规则；保留其他连接、配置和已有指令。新本机会话处理余额、资产、负债、转账或还款等任务时优先使用 MCP，先发现工具并核对实际资源、权限等级、scopes 和隐藏账户授权。全局规则不保存财务明细或凭据，也不代表自动授权账目修改。
+
+命令由 Codex 执行，用户无需手动输入。提示词区分 Windows 短命令超时与 OAuth 回调等待，并避免 add 自动登录和显式 login 同时等待。用户仍须完成 WorthPath 网页登录、最终权限与期限确认；候选 scopes 较宽时以网页最终选择及 connection_info 为准。连接配置、OAuth 登录和真实工具调用分别验证，当前会话无法加载新增工具时须重启客户端或新建本机会话。规则适用于同一电脑、同一 Codex 配置；提示词不包含个人令牌，配置和验证期间不会修改账目。
 
 权限选择只改变申请内容，不会立即改变现有连接授权；最终以网页确认和 connection_info 为准。这是可执行的配置指令，不是浏览器一键注册客户端；客户端缺少本机执行能力时需如实说明限制。
 
@@ -105,12 +107,12 @@ cd E:\WorthPath
 .\scripts\pnpm.ps1 dev
 ```
 
-| 环境变量            | 本地示例                  | 用途                                 |
-| ------------------- | ------------------------- | ------------------------------------ |
+| 环境变量            | 本地示例                  | 用途                                                           |
+| ------------------- | ------------------------- | -------------------------------------------------------------- |
 | MCP_PUBLIC_URL      | http://localhost:3100/mcp | 连接页显示/复制地址与提示词、OAuth 规范资源 URL，路径必须 /mcp |
-| MCP_ALLOWED_HOSTS   | 留空                     | Host 白名单（含端口），逗号分隔；`*` 允许所有 IP 和域名 |
-| MCP_WEB_URL         | http://localhost:5173     | 网页授权及草稿确认入口               |
-| MCP_ALLOWED_ORIGINS | http://localhost:5173     | 精确 Origin 列表，逗号分隔，无通配符 |
+| MCP_ALLOWED_HOSTS   | 留空                      | Host 白名单（含端口），逗号分隔；`*` 允许所有 IP 和域名        |
+| MCP_WEB_URL         | http://localhost:5173     | 网页授权及草稿确认入口                                         |
+| MCP_ALLOWED_ORIGINS | http://localhost:5173     | 精确 Origin 列表，逗号分隔，无通配符                           |
 
 上线时应通过网络开关启用 HTTPS、Secure Cookie 并配置准确 WEB_ORIGIN；所有策略现由 apps/api/.env 控制。`MCP_ALLOWED_HOSTS` 未设置或留空时保留原有规则：允许规范资源 Host，非生产额外允许 localhost 和 127.0.0.1 对应端口。非空白名单替代默认列表，例如 `localhost:3100,127.0.0.1:3100,198.18.0.1:3100`；设置 `MCP_ALLOWED_HOSTS=*` 允许所有 IP 和域名，关闭 Host 防护，建议通过防火墙限制可访问的网络。修改 .env 后重启 API。该配置不改变 HTTPS 校验、OAuth 规范资源 URL、Origin 白名单或 Bearer 认证；MCP_PUBLIC_URL 和 MCP_WEB_URL 是否允许 HTTP 由 NETWORK_ALLOW_HTTP 控制。带 Origin 的请求匹配白名单，无 Origin 的非浏览器客户端允许接入。不得用任意转发头构造授权地址。
 

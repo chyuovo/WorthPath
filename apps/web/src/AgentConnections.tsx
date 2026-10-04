@@ -57,7 +57,7 @@ function instructions(url: string) {
     '请使用已连接的 WorthPath MCP 服务处理我的资产与负债，服务地址：' + url,
     '接入使用 Streamable HTTP。支持 OAuth 的客户端使用该地址发现授权服务，并由我在 WorthPath 网页登录授权；个人令牌仅用于明确支持 Bearer 认证的客户端，按其文档配置环境变量或凭据存储。不要假设客户端有自定义请求头界面，不要让我把密码或令牌粘贴到对话中。localhost 仅适用于 MCP 请求在 WorthPath 所在电脑执行的客户端；云端客户端需要可访问的 HTTPS 地址。',
     '先 tools/list 发现工具，调用 connection_info 核对权限：read 只读，draft 创建待网页确认的草稿，write 直接普通写入。隐藏账户读写以连接附加授权为准。',
-    '查询：用 positions_list 搜索对象；遇到同名先让我选择稳定 ID；按 limit/offset 或 cursor 翻页。金额和克数使用十进制字符串，业务时间是 UTC+8 的 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm。',
+    '查询：用 positions_list 搜索对象；需要选定对象且遇到同名时先让我选择稳定 UUID；按 limit/offset 或 cursor 完整翻页。金额和克数使用十进制字符串，业务时间是 UTC+8 的 YYYY-MM-DD 或 YYYY-MM-DDTHH:mm。不同币种不能直接相加；明确折算币种、汇率日期、统计纳入范围及缺失汇率或估值。不擅自排除测试项目或其他项目；若提供剔除后的参考汇总，同时说明系统实际汇总与剔除项，不修改纳入设置。',
     '写入：先 state_get 取得 state，使用 expectedState 与唯一 idempotencyKey 调用所需工具。网络重试保持键和全部参数一致；状态冲突则重新查询并换键。不要把估值更新、转账、还款或负债变化互相替代。',
     '若返回 pending，把 confirmationUrl 给我，由我在网页审阅并确认；用 operation_get 轮询最终结果，不能用 confirmed=true 代替人类确认，也不能把草稿称为已完成。',
     'MCP 不提供密码修改、清空数据、备份导出恢复、共享图标发布及汇率或报价修改；这些流程由我在网站操作。',
@@ -66,14 +66,15 @@ function instructions(url: string) {
 }
 
 function codexSetupPrompt(url: string, level: string, hiddenRead = false, hiddenWrite = false) {
+  const requestedHiddenWrite = hiddenRead && hiddenWrite && level !== 'read';
   const selected = [
     'read',
     ...(level !== 'read' ? [level] : []),
     ...(hiddenRead ? ['hidden_read'] : []),
-    ...(hiddenRead && hiddenWrite && level !== 'read' ? ['hidden_write'] : []),
+    ...(requestedHiddenWrite ? ['hidden_write'] : []),
   ].join(',');
   return [
-    '请直接在这台电脑上为我配置 WorthPath MCP，不要只给我命令或方案。我授权你新增或更新名为 worthpath 的 MCP 连接，使用 Streamable HTTP 与 OAuth；仅修改这条连接，保留其他 MCP 和 Codex 配置。',
+    '请直接在这台电脑上配置并验证 WorthPath MCP，让其他本机 Codex 新对话也能使用，并在我提出余额、账户、资产、负债、净资产、历史、转账、借贷、还款等相关任务时主动优先调用它。不要只给我命令或方案。我授权必要的本机检查、新增或更新名为 worthpath 的 Streamable HTTP 与 OAuth 连接、发起 OAuth，以及保存下面的跨对话使用规则。仅修改 worthpath 连接及全局指令文件中的 WorthPath 规则，保留其他 MCP、Codex 配置和已有指令。配置和验证期间不得创建、修改或删除账目。',
     '服务地址：' +
       url +
       '。申请权限：' +
@@ -81,28 +82,36 @@ function codexSetupPrompt(url: string, level: string, hiddenRead = false, hidden
       '。隐藏账户读取：' +
       (hiddenRead ? '允许' : '不允许') +
       '；隐藏账户修改：' +
-      (hiddenRead && hiddenWrite && level !== 'read' ? '允许' : '不允许') +
+      (requestedHiddenWrite ? '允许' : '不允许') +
       '。最终权限和授权期限由我在 WorthPath 网页审核完成。不要让我把密码或个人令牌发送到聊天里，也不要替我点击授权确认。',
-    '先检查本机 codex 命令是否可用，并核对 mcp add/login 的帮助。只检查 WorthPath 相关配置，不输出凭据、Authorization 头或其他秘密。如果你运行在云端或另一台电脑，无法访问此 localhost 地址，请如实说明，不要声称已连接。',
+    '先确认执行环境确实在这台电脑上，再检查 codex 命令、实际版本及 codex mcp add --help、codex mcp login --help。只检查 WorthPath 相关连接配置，输出经过筛选的名称、地址、启用状态和认证类型，不输出凭据、Authorization 头、令牌或其他连接详情。如果运行在云端或另一台电脑，无法访问上述服务地址，请如实说明，不要声称已连接。',
     'Windows 命令执行排查也请由你完成，不要一遇到 PowerShell 挂起就让我自行确认 CLI。版本和帮助检查是短命令：执行工具支持时先设置 login:false（或等效 -NoProfile），避免启动配置文件。若短命令超过 15 秒无输出，结束你自己启动的这一条检查，不要停止 WorthPath 服务或其他进程；不要反复原样重试。',
-    '若受限执行环境中的短命令仍挂起，使用执行工具提供的正常权限申请流程，申请 sandbox_permissions=require_escalated 或等效本机执行权限，说明用途是核对 Codex CLI 并配置 WorthPath OAuth。我授权这项必要的本机检查和 WorthPath 连接配置。获得工具批准后继续执行；若被拒绝，报告具体拒绝原因和受影响步骤。不要绕过权限限制，也不要仅因普通沙箱命令挂起就认定 CLI 不可用。',
+    '若普通沙箱检查挂起或权限不足，使用执行工具提供的正常权限申请流程，申请 sandbox_permissions=require_escalated 或等效本机执行权限，说明用途是核对 Codex CLI、配置 WorthPath OAuth及保存跨对话使用规则。我授权这些必要操作。获得工具批准后继续执行；若被拒绝，报告具体拒绝原因和受影响步骤。不要绕过权限限制，也不要仅因普通沙箱命令挂起就认定 CLI 不可用。',
     'CLI 找不到时，在本机已安装 Codex 的官方目录中定位可执行文件并使用完整路径；不要安装未知程序、永久修改 PATH 或读取其他凭据。区分短命令故障和 OAuth 等待：授权登录进程在等待网页回调时应保留，不适用上述 15 秒短命令期限。',
     '使用 codex mcp add worthpath --url ' +
       url +
-      ' 添加连接；已有同名、同地址且启用的 OAuth 连接时跳过添加。若同名连接指向不同服务，请先说明冲突，不覆盖它。若这条连接使用旧 Bearer 认证，将本连接切换为 OAuth 并移除其静态 Authorization 或 bearer_token_env_var，保留其余配置，不展示旧令牌。',
+      ' 添加连接；已有同名、同地址且启用的 OAuth 连接时跳过添加。同地址连接被禁用时仅启用它；同名连接指向不同服务时说明冲突，等待我决定，不覆盖。若这条连接使用旧 Bearer 认证，将本连接切换为 OAuth，移除 bearer_token_env_var 和静态或环境映射的 Authorization 头，保留其余配置，不展示旧令牌。',
+    'mcp add 可能自动发起默认 OAuth。避免产生两条同时等待的授权流程；如需切换到下方显式登录，可以结束自己启动的自动登录等待，再启动指定 scopes 的登录。不要把默认候选权限较宽当作登录故障。',
     '执行 codex mcp login worthpath --scopes ' +
       selected +
       ' --oauth-client-registration dcr 发起网页登录。我会自行登录并确认权限。等待回调时保留登录进程；需要等待我完成网页步骤时，明确告诉我当前状态。',
-    '实测 Codex CLI 0.160.0 显式执行 --scopes read,draft 时只请求这两项；默认登录会使用 scopes_supported，授权链接列出 read,draft,write,hidden_read,hidden_write。如果实际请求范围较宽，这是客户端请求的候选范围，不是最终授权。WorthPath 网页支持收窄：选择本次指定的权限等级，隐藏账户选项严格按本提示词指定的读写范围选择，页面会明确显示最终授予权限；服务端仅按网页选择发行令牌。不要仅因请求包含全部候选权限就终止登录或让我自行检查页面。你可以打开正确 WorthPath 资源的授权页面供我审阅，最终选择和确认仍由我完成。',
-    '授权后检查连接配置与真实工具可用性。能调用时先 tools/list，再 connection_info；最终 scopes 必须仅为本次指定的 ' +
+    '若授权链接包含 read,draft,write,hidden_read,hidden_write 等较宽范围，这是客户端候选范围，不代表最终授权。WorthPath 网页支持收窄，服务端按网页选择发行令牌。打开正确 WorthPath 资源的授权页供我审阅；由我选择本次指定的权限等级、隐藏账户读写选项和授权期限并确认。不要仅因候选范围较宽就终止登录；最终以 connection_info 返回的实际权限为准。',
+    '分别验证连接配置正确且启用、OAuth 登录成功、真实 MCP 工具调用成功，三者不能互相替代。先通过 tools/list 或客户端暴露的工具目录发现真实工具，再调用 connection_info。resource 必须为 ' +
+      url +
+      '，permission 必须为 ' +
+      level +
+      '，最终 scopes 集合必须恰好为 ' +
       selected +
-      '，且 readHidden=' +
+      '（顺序不限），且 readHidden=' +
       hiddenRead +
       '、writeHidden=' +
-      (hiddenRead && hiddenWrite && level !== 'read') +
+      requestedHiddenWrite +
       '。若结果不符，停止使用该连接并报告差异，不修改账目。若当前会话不会重新加载工具，请告诉我重启客户端或新建本机会话后继续验证。只有配置、OAuth 成功和工具调用成功都验证后才能说已可用，不把 codex mcp list 或网页登录成功当作工具调用成功。',
-    '配置期间不要创建、修改或删除我的账目。后续资产查询、转账和还款优先使用 WorthPath MCP；工具或权限不可用时如实说明。',
+    '保存跨对话使用规则：在实际 CODEX_HOME（默认 ~/.codex）的全局指令中，先检查 AGENTS.override.md 与 AGENTS.md 的加载优先级，在会被加载的文件中新增或更新 <!-- worthpath-mcp-preference:start --> 与 <!-- worthpath-mcp-preference:end --> 标记块。保留已有内容，只更新此块；不要创建会遮蔽其他全局指令的 override 文件，不重复添加规则。',
+    '全局规则应保存本次服务地址、申请的权限等级、scopes 和隐藏账户读写选项，以及下面的查询和写入操作规则。每个新会话先发现真实工具，再通过 connection_info 核对资源及本次授权，若不符停止使用并报告差异。用户提出个人余额、账户、资产、负债、净资产、历史、转账、借贷、还款或其他 WorthPath 任务时主动优先调用 worthpath MCP，不要求重复指定，不把旧聊天余额当作当前数据。这项偏好仅决定工具选择；只有用户提出具体写入任务后才执行，不自动授权账目修改。',
+    '工具未加载、服务不可达或授权失效时如实说明，必要时提示重新授权、重启客户端或新建本机会话，不擅自改用 UI/API 写入。不记录密码、令牌、账户余额或其他财务明细到全局指令中。保存后验证文件内容与加载条件，说明规则适用于这台电脑使用同一 Codex 配置的本机会话，不声称自动适用于其他电脑或云端会话。',
     ...instructions(url).split('\n\n').slice(3),
+    '完成后简要报告连接配置、OAuth、真实工具验证和全局规则保存的实际结果及剩余步骤。在我提出具体账目任务前，不修改任何数据。',
   ].join('\n\n');
 }
 
