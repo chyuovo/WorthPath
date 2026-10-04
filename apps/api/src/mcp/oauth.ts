@@ -1,3 +1,4 @@
+import { networkConfig } from '../network';
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
 import { Response } from 'express';
@@ -55,17 +56,11 @@ export function urls() {
     throw Error('MCP_PUBLIC_URL must be the canonical /mcp URL');
   if (
     resource.protocol !== 'https:' &&
-    !(
-      process.env.NODE_ENV !== 'production' &&
-      ['localhost', '127.0.0.1', '[::1]'].includes(resource.hostname)
-    )
+    !(networkConfig().allowHttp && resource.protocol === 'http:')
   )
-    throw Error('MCP requires HTTPS except local development');
+    throw Error('MCP HTTP is disabled; enable NETWORK_ALLOW_HTTP or use HTTPS');
   const web = new URL(process.env.MCP_WEB_URL || 'http://localhost:5173');
-  if (
-    web.protocol !== 'https:' &&
-    !(process.env.NODE_ENV !== 'production' && ['localhost', '127.0.0.1'].includes(web.hostname))
-  )
+  if (web.protocol !== 'https:' && !(networkConfig().allowHttp && web.protocol === 'http:'))
     throw Error('MCP web confirmation requires HTTPS');
   return { resource, issuer: new URL(resource.origin), web };
 }
@@ -102,7 +97,9 @@ export class AgentOAuth implements OAuthServerProvider {
             u.password ||
             !(
               u.protocol === 'https:' ||
-              (u.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname))
+              (u.protocol === 'http:' &&
+                (networkConfig().allowHttpRedirects ||
+                  ['127.0.0.1', 'localhost', '[::1]'].includes(u.hostname)))
             )
           )
             throw new InvalidClientMetadataError('HTTPS or loopback redirect required');

@@ -1,3 +1,4 @@
+import { networkConfig, isNetworkOriginAllowed } from '../src/network';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -452,7 +453,7 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
       401,
     );
     const originDenied = await fetch(resource, {
-      method: 'POST',
+      method: 'OPTIONS',
       headers: {
         Origin: 'https://evil.invalid',
         Authorization: 'Bearer ' + a.token,
@@ -460,7 +461,13 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
       },
       body: '{}',
     });
-    assert.equal(originDenied.status, 403);
+    const originAllowed = isNetworkOriginAllowed(
+      'https://evil.invalid',
+      process.env.MCP_ALLOWED_ORIGINS ||
+        new URL(process.env.MCP_WEB_URL || 'http://localhost:5173').origin,
+      networkConfig().allowWildcardOrigins,
+    );
+    assert.equal(originDenied.status, originAllowed ? 204 : 403);
   } finally {
     for (const c of clients) await c.close().catch(() => {});
     await db.user.deleteMany({ where: { id: { in: users } } });

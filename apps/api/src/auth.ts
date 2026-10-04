@@ -1,3 +1,4 @@
+import { networkConfig, isNetworkOriginAllowed } from './network';
 import {
   Injectable,
   Controller,
@@ -36,30 +37,26 @@ export function allowedOrigin(
   configured: string | undefined,
   production = false,
 ) {
-  if (configured !== '*') return !!origin && origin === configured;
-  if (production || !origin) return false;
-  try {
-    const url = new URL(origin);
-    return ['http:', 'https:'].includes(url.protocol) && url.origin === origin;
-  } catch {
-    return false;
-  }
+  return isNetworkOriginAllowed(origin, configured, !production);
 }
 @Injectable()
 export class AuthService {
   private attempts = new Map<string, { count: number; until: number }>();
   constructor(private db: Database) {}
   limit(req: Request) {
+    const network = networkConfig();
+    if (!network.rateLimitEnabled) return;
     const key =
         (req.ip || 'local') +
         ('userId' in req && typeof req.userId === 'string' ? ':' + req.userId : ''),
       now = Date.now();
     let v = this.attempts.get(key);
     if (!v || v.until < now) {
-      v = { count: 0, until: now + 900000 };
+      v = { count: 0, until: now + network.rateLimitWindowMs };
       this.attempts.set(key, v);
     }
-    if (++v.count > 30) throw new HttpException('尝试过于频繁，请 15 分钟后重试', 429);
+    if (++v.count > network.authRateLimitMax)
+      throw new HttpException('尝试过于频繁，请稍后重试', 429);
     if (this.attempts.size > 10000) {
       for (const [k, v] of this.attempts) if (v.until < now) this.attempts.delete(k);
       if (this.attempts.size > 10000) throw new HttpException('服务繁忙，请稍后重试', 429);
@@ -75,8 +72,8 @@ export class AuthService {
   cookie(token: string, expiresAt: Date, res: Response) {
     res.cookie('wp_session', token, {
       httpOnly: true,
-      sameSite: 'strict',
-      secure: process.env.COOKIE_SECURE === 'true',
+      sameSite: networkConfig().sameSite,
+      secure: networkConfig().cookieSecure,
       expires: expiresAt,
       path: '/api',
     });
@@ -100,8 +97,8 @@ export class AuthService {
       await this.db.session.deleteMany({ where: { id: digest(req.cookies.wp_session) } });
     res.clearCookie('wp_session', {
       path: '/api',
-      sameSite: 'strict',
-      secure: process.env.COOKIE_SECURE === 'true',
+      sameSite: networkConfig().sameSite,
+      secure: networkConfig().cookieSecure,
       httpOnly: true,
     });
   }
@@ -119,7 +116,7 @@ export class AuthGuard implements CanActivate {
       !allowedOrigin(
         req.headers.origin,
         process.env.WEB_ORIGIN,
-        process.env.NODE_ENV === 'production',
+        !networkConfig().allowWildcardOrigins,
       )
     )
       throw new ForbiddenException('请求来源不受信任');

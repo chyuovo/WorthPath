@@ -5,7 +5,7 @@
     "dev": "node scripts/dev.cjs",
     "build": "tsc",
     "typecheck": "tsc --noEmit",
-    "test": "tsx --test --test-concurrency=1 test/calculation.test.ts test/update.test.ts test/zip.test.ts test/metals.test.ts ../web/test/i18n.test.ts test/account-deletion.test.ts",
+    "test": "tsx --test --test-concurrency=1 test/calculation.test.ts test/update.test.ts test/zip.test.ts test/metals.test.ts ../web/test/i18n.test.ts test/account-deletion.test.ts test/mcp-hosts.test.ts test/mcp-http.test.ts test/network.test.ts",
     "db:generate": "prisma generate",
     "db:migrate": "node scripts/database.cjs deploy",
     "db:status": "node scripts/database.cjs status",

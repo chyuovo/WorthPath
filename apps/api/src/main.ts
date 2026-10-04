@@ -1,3 +1,4 @@
+import { networkConfig, isNetworkHostAllowed } from './network';
 import 'reflect-metadata';
 import 'dotenv/config';
 import { setupOpenApi } from './openapi';
@@ -92,12 +93,33 @@ class AppModule {}
 async function bootstrap() {
   if (!process.env.DATABASE_URL || !process.env.WEB_ORIGIN)
     throw Error('Missing local environment configuration');
-  if (process.env.NODE_ENV === 'production' && process.env.WEB_ORIGIN === '*')
+  const network = networkConfig();
+  if (
+    !network.allowWildcardOrigins &&
+    process.env.WEB_ORIGIN.split(',').some((v) => v.trim() === '*')
+  )
     throw Error('Production requires an explicit web origin');
-  if (process.env.NODE_ENV === 'production' && process.env.COOKIE_SECURE !== 'true')
+  if (network.requireSecureCookie && !network.cookieSecure)
     throw Error('Production requires secure cookies');
   const app = await NestFactory.create(AppModule, { logger: false, bodyParser: false });
-  app.use(helmet());
+  app.use(
+    helmet({
+      strictTransportSecurity: network.hsts ? undefined : false,
+      contentSecurityPolicy: {
+        directives: { 'upgrade-insecure-requests': network.upgradeInsecureRequests ? [] : null },
+      },
+    }),
+  );
+  app.use((req: { headers: { host?: string } }, res: any, next: () => void) => {
+    if (!isNetworkHostAllowed(req.headers.host, network.apiAllowedHosts))
+      return res.status(403).json({ message: '请求 Host 不受信任' });
+    next();
+  });
+  const origins = process.env.WEB_ORIGIN.split(',').map((v) => v.trim());
+  app.enableCors({
+    origin: network.allowWildcardOrigins && origins.includes('*') ? true : origins,
+    credentials: true,
+  });
   app.use(json({ limit: '8mb' }));
   app.use(cookieParser());
   app.use((_req: unknown, res: { setHeader: (k: string, v: string) => void }, next: () => void) => {
@@ -108,7 +130,7 @@ async function bootstrap() {
   app.useGlobalFilters(new SafeErrors());
   setupOpenApi(app);
   app.enableShutdownHooks();
-  await app.listen(Number(process.env.PORT || 3100), '0.0.0.0');
+  await app.listen(Number(process.env.PORT || 3100), network.apiHost);
   console.log('WorthPath API ready');
 }
 void bootstrap().catch(() => {

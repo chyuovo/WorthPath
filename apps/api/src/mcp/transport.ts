@@ -1,12 +1,9 @@
+import { networkConfig, isNetworkOriginAllowed } from '../network';
 import { Injectable } from '@nestjs/common';
 import { Express } from 'express';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import {
-  mcpAuthRouter,
-  getOAuthProtectedResourceMetadataUrl,
-} from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { requireBearerAuth } from '@modelcontextprotocol/sdk/server/auth/middleware/bearerAuth.js';
 import { AgentOAuth, urls, scopes } from './oauth';
 import { AgentOperations, writing, plain } from './operations';
@@ -14,6 +11,7 @@ import { AgentFiles } from './files';
 import { Database } from '../database';
 import { HttpException } from '@nestjs/common';
 import { ZodError } from 'zod';
+import { isAllowedMcpHost } from './hosts';
 
 export function toolResult(value: unknown) {
   const data = plain(value);
@@ -40,6 +38,15 @@ export class AgentTransport {
   ) {}
   install(app: Express) {
     const { issuer, resource } = urls();
+    // The SDK reads this flag when its router module is first loaded.
+    process.env.MCP_DANGEROUSLY_ALLOW_INSECURE_ISSUER_URL =
+      networkConfig().allowHttp && issuer.protocol === 'http:' ? 'true' : 'false';
+    const { mcpAuthRouter, getOAuthProtectedResourceMetadataUrl } =
+      require('@modelcontextprotocol/sdk/server/auth/router.js') as typeof import('@modelcontextprotocol/sdk/server/auth/router.js');
+    const network = networkConfig();
+    const rateLimit = network.rateLimitEnabled
+      ? { windowMs: network.rateLimitWindowMs, limit: network.mcpAuthRateLimitMax }
+      : (false as const);
     app.use(
       mcpAuthRouter({
         provider: this.oauth,
@@ -47,23 +54,32 @@ export class AgentTransport {
         resourceServerUrl: resource,
         scopesSupported: [...scopes],
         resourceName: 'WorthPath',
+        authorizationOptions: { rateLimit },
+        tokenOptions: { rateLimit },
+        revocationOptions: { rateLimit },
+        clientRegistrationOptions: { rateLimit },
       }),
     );
     this.files.install(app);
     app.all(
       '/mcp',
       (req, res, next) => {
-        const allowed = (process.env.MCP_ALLOWED_ORIGINS || urls().web.origin)
-          .split(',')
-          .map((s) => s.trim());
-        if (req.headers.origin && !allowed.includes(req.headers.origin)) {
+        const allowed = process.env.MCP_ALLOWED_ORIGINS || urls().web.origin;
+        if (
+          req.headers.origin &&
+          !isNetworkOriginAllowed(req.headers.origin, allowed, networkConfig().allowWildcardOrigins)
+        ) {
           res.status(403).json({ error: 'Untrusted origin' });
           return;
         }
-        const validHosts = [resource.host];
-        if (process.env.NODE_ENV !== 'production')
-          validHosts.push('127.0.0.1:' + resource.port, 'localhost:' + resource.port);
-        if (!validHosts.includes(req.headers.host || '')) {
+        if (
+          !isAllowedMcpHost(
+            req.headers.host,
+            resource,
+            process.env.MCP_ALLOWED_HOSTS,
+            !networkConfig().allowLoopbackHosts,
+          )
+        ) {
           res.status(403).json({ error: 'Untrusted host' });
           return;
         }
