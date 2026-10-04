@@ -168,6 +168,58 @@ test('quick entries undo paired repayment and balance, persist monthly marks, pr
     assert.equal((await call(a, '/transfers/' + payment.data.id, 'DELETE')).status, 200);
     assert.equal((await call(a, '/positions/' + cash)).data.amount, '1000');
     assert.equal((await call(a, '/positions/' + card)).data.amount, '200');
+
+    for (const [fee, expected] of [
+      ['-5.87654321', '955.87654321'],
+      ['1.86420975', '948.13579025'],
+    ] as const) {
+      const movement = await call(a, '/transfers', 'POST', {
+        sourceId: cash,
+        targetId: card,
+        amount: '50',
+        received: '50',
+        fee,
+        date: '2026-09-03T11:00',
+        requestId: randomUUID(),
+      });
+      assert.equal(movement.status, 201);
+      assert.equal((await call(a, '/positions/' + cash)).data.amount, expected);
+      assert.equal((await call(a, '/positions/' + card)).data.amount, '150');
+      assert.equal((await call(a, '/transfers/' + movement.data.id, 'DELETE')).status, 200);
+      assert.equal((await call(a, '/positions/' + cash)).data.amount, '1000');
+      assert.equal((await call(a, '/positions/' + card)).data.amount, '200');
+    }
+    const invalidDiscount = await call(a, '/transfers', 'POST', {
+      sourceId: cash,
+      targetId: card,
+      amount: '30',
+      received: '30',
+      fee: '-31',
+      date: '2026-09-03T11:00',
+      requestId: randomUUID(),
+    });
+    assert.equal(invalidDiscount.status, 400);
+    assert.equal((await call(a, '/positions/' + cash)).data.amount, '1000');
+    const loan = await create('测试独立欠款', 'debt', 'liability', 'personal', '200');
+    for (const [fee, expected] of [
+      ['-5', '975'],
+      ['2', '968'],
+    ] as const) {
+      const movement = await call(a, '/transfers', 'POST', {
+        operation: 'repay',
+        sourceId: cash,
+        targetId: loan,
+        amount: '30',
+        received: '30',
+        fee,
+        date: '2026-09-03T12:00',
+        requestId: randomUUID(),
+      });
+      assert.equal(movement.status, 201);
+      assert.equal((await call(a, '/positions/' + cash)).data.amount, expected);
+      assert.equal((await call(a, '/positions/' + loan)).data.amount, '170');
+      assert.equal((await call(a, '/transfers/' + movement.data.id, 'DELETE')).status, 200);
+    }
     const month = today().slice(0, 7),
       path = '/positions/' + card + '/repayment-mark';
     assert.equal((await call(b, path, 'PATCH', { month, expectedMonth: null })).status, 404);

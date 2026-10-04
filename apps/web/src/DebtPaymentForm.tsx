@@ -1,4 +1,5 @@
 import { AccountPicker } from './AccountPicker';
+import { repaymentFee } from './repayment';
 import { useState, type FormEvent } from 'react';
 import { type Position, nowMinute, money, requestUuid, positionAmount } from './api';
 import { t as tr } from './i18n';
@@ -45,7 +46,12 @@ export function DebtPaymentForm({
   const same = debt?.currency === account?.currency;
   function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    submit(Object.fromEntries(new FormData(event.currentTarget)));
+    const data = Object.fromEntries(new FormData(event.currentTarget));
+    if (operation === 'repay') {
+      data.fee = repaymentFee(String(data.discount));
+      delete data.discount;
+    }
+    submit(data);
   }
   if (!accounts.length || !debts.length)
     return <p>{tr('请先创建启用的资产账户和借入或借出债务。')}</p>;
@@ -122,9 +128,11 @@ export function DebtPaymentForm({
         )}
       </label>
       <label>
-        {tr('手续费 / 优惠')} ({account?.currency})
+        {tr(operation === 'repay' ? '还款优惠（负数表示手续费）' : '手续费 / 优惠')} (
+        {account?.currency})
         <input
-          name="fee"
+          name={operation === 'repay' ? 'discount' : 'fee'}
+          key={operation}
           required
           defaultValue="0"
           inputMode="decimal"
@@ -132,7 +140,11 @@ export function DebtPaymentForm({
         />
       </label>
       <p className="muted">
-        {tr('手续费只影响账户余额：付款时额外扣除，收款时从到账金额扣除；负数表示优惠。')}
+        {tr(
+          operation === 'repay'
+            ? '正数为优惠，负数为手续费，0 表示无优惠；只影响付款账户，优惠不能超过还款金额。跨币种请填写欠款减少金额。'
+            : '手续费只影响账户余额：付款时额外扣除，收款时从到账金额扣除；负数表示优惠。',
+        )}
       </p>
       <label>
         {tr('记录时间（UTC+8）')}

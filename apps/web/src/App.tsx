@@ -46,6 +46,7 @@ import {
   type PageResult,
 } from './api';
 import './style.css';
+import { NetWorthChart } from './NetWorthChart';
 import { allOverviewCards, overviewCardLabels } from './overview-cards';
 import { useToast } from './Toast';
 import { GroupOrderContext } from './GroupOrderContext';
@@ -163,76 +164,6 @@ function Empty({ title, body, action }: { title: string; body: string; action?: 
       <p>{body}</p>
       {action}
     </div>
-  );
-}
-function Chart({ rows, base }: { rows: Total[]; base: string }) {
-  const valid = rows.filter((r) => r.complete);
-  if (valid.length < 2)
-    return (
-      <Empty
-        title={tr('等待更多历史记录')}
-        body={tr('至少两个日期的完整余额和汇率记录，才能绘制趋势。')}
-      />
-    );
-  const values = valid.flatMap((r) => [Number(r.assets), Number(r.liabilities), Number(r.net)]),
-    min = Math.min(0, ...values),
-    max = Math.max(1, ...values),
-    w = 720,
-    h = 210;
-  const x = (date: string) =>
-    35 +
-    ((new Date(date).getTime() - new Date(rows[0].date).getTime()) /
-      (new Date(rows.at(-1)!.date).getTime() - new Date(rows[0].date).getTime() || 1)) *
-      (w - 65);
-  const y = (v: string) => 15 + ((max - Number(v)) / (max - min)) * (h - 40);
-  const series = ['assets', 'liabilities', 'net'] as const;
-  return (
-    <>
-      <div className="legend">
-        <span className="green">{tr('总资产')}</span>
-        <span className="danger-text">{tr('总负债')}</span>
-        <span className="blue">{tr('净资产')}</span>
-        <small>{base}</small>
-      </div>
-      <svg
-        viewBox={`0 0 ${w} ${h}`}
-        className="chart"
-        role="img"
-        aria-label={tr('资产、负债和净资产历史趋势')}
-      >
-        <line x1="35" y1={y('0')} x2="690" y2={y('0')} stroke="#dbe4e2" />
-        {series.map((s, i) => (
-          <path
-            key={s}
-            d={rows
-              .map((r, n) =>
-                r.complete
-                  ? `${n === 0 || !rows[n - 1].complete ? 'M' : 'L'}${x(r.date)},${y(r[s])}`
-                  : '',
-              )
-              .join(' ')}
-            fill="none"
-            stroke={['#199b76', '#c73542', '#457bca'][i]}
-            strokeWidth="3"
-          />
-        ))}
-        {valid.map((r) => (
-          <circle key={r.date} cx={x(r.date)} cy={y(r.net)} r="4" fill="#457bca">
-            <title>
-              {r.date} {tr('净资产')}
-              {money(r.net, base)}
-            </title>
-          </circle>
-        ))}
-      </svg>
-      <div className="chart-dates">
-        <span>{rows[0].date}</span>
-        <span>{rows.at(-1)!.date}</span>
-      </div>
-      {rows.some((r) => !r.complete) && (
-        <p className="muted">{tr('缺失汇率的日期未绘制，曲线在该处断开。')}</p>
-      )}
-    </>
   );
 }
 export default function App() {
@@ -381,6 +312,7 @@ export default function App() {
         currency: source?.currency || '',
         amount: value.amount,
         received: value.received,
+        fee: value.fee,
         targetCurrency: target?.currency,
         date: value.date,
       },
@@ -1390,7 +1322,7 @@ export default function App() {
                       '默认最近90天；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。',
                     )}
                   </p>
-                  <Chart rows={overview.trend} base={user.baseCurrency} />
+                  <NetWorthChart rows={overview.trend} base={user.baseCurrency} />
                   <p className="muted">
                     {tr('按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。')}
                   </p>

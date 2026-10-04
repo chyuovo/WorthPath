@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { repaymentFee } from './repayment';
 import { AccountPicker } from './AccountPicker';
 import { QuickTransfer } from './QuickTransfer';
 import { money, positionAmount, type Position } from './api';
@@ -14,6 +15,7 @@ export type QuickEntry = {
   after?: string;
   amount?: string;
   received?: string;
+  fee?: string;
   targetCurrency?: string;
   date: string;
   previousMonth?: string | null;
@@ -79,6 +81,15 @@ export function QuickJournal({
                   {money(entry.amount || '0', entry.currency)}
                   {entry.targetCurrency !== entry.currency && (
                     <> → {money(entry.received || '0', entry.targetCurrency || entry.currency)}</>
+                  )}
+                </p>
+              )}
+              {entry.kind === 'transfer' && entry.fee && !/^-?0(?:\.0+)?$/.test(entry.fee) && (
+                <p>
+                  {tr(entry.fee.startsWith('-') ? '优惠' : '手续费')} ·{' '}
+                  {money(
+                    entry.fee.startsWith('-') ? repaymentFee(entry.fee) : entry.fee,
+                    entry.currency,
                   )}
                 </p>
               )}
@@ -154,6 +165,7 @@ export function QuickRepayment({
               changeSource={() => setSourceId('')}
               changeTarget={() => {}}
               fixedTarget
+              repayment
               actionLabel={tr('确认还款')}
               submit={submit}
             />

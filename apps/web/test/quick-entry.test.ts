@@ -1,3 +1,4 @@
+import { repaymentFee } from '../src/repayment';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
@@ -75,4 +76,12 @@ test('daily badges expire and filters combine month and day without mutating mar
     false,
   );
   assert.equal(p.lastBookedDate, '2026-10-04');
+});
+
+test('repayment discount uses opposite fee sign without decimal precision loss', () => {
+  assert.equal(repaymentFee('5.87654321'), '-5.87654321');
+  assert.equal(repaymentFee('-1.86420975'), '1.86420975');
+  assert.equal(repaymentFee('-0.00000000'), '0');
+  assert.equal(repaymentFee('0'), '0');
+  assert.throws(() => repaymentFee('1e3'));
 });
