@@ -160,7 +160,6 @@ export class PortfolioBusinessService {
   }
   async deletion(r: UserRequest, id: string) {
     const p = await this.own(r.userId, id, r.revealed);
-    if (p.kind !== 'account') throw new BadRequestException('此功能仅用于删除账户');
     const [historyCount, movementCount, scheduleCount, linkCount] = await Promise.all([
       this.db.revision.count({ where: { positionId: id } }),
       this.db.transfer.count({
@@ -192,23 +191,24 @@ export class PortfolioBusinessService {
       const p = await tx.position.findFirst({
         where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
       });
-      if (!p) throw new NotFoundException('账户不存在');
-      if (p.kind !== 'account') throw new BadRequestException('此功能仅用于删除账户');
+      if (!p) throw new NotFoundException('项目不存在');
       if (input.confirmation !== p.name)
-        throw new BadRequestException('请输入完整账户名称确认删除');
+        throw new BadRequestException('请输入完整项目名称确认删除');
       // Paired movements must be removed through replay, never via cascade.
       if (
         await tx.transfer.count({
           where: { userId: r.userId, OR: [{ sourceId: id }, { targetId: id }] },
         })
       )
-        throw new ConflictException('账户存在资金往来，请先撤销相关记录，或选择归档保留历史');
+        throw new ConflictException(
+          '项目存在资金往来，请先撤销相关转账、借贷或还款记录，或选择归档保留历史',
+        );
       if (
         await tx.schedule.count({
           where: { userId: r.userId, OR: [{ sourceId: id }, { targetId: id }] },
         })
       )
-        throw new ConflictException('账户被定时计划使用，请先删除相关计划，或选择归档');
+        throw new ConflictException('项目被定时计划使用，请先删除相关计划，或选择归档');
       await tx.position.delete({ where: { id } });
       return { ok: true };
     });

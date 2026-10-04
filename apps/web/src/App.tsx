@@ -55,7 +55,7 @@ import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
 import { AgentConnections } from './AgentConnections';
 import { AgentAuthorization, AgentOperation } from './AgentReview';
-import { AccountDeletion } from './AccountDeletion';
+import { PositionDeletion, deletionLabel } from './PositionDeletion';
 import { IconPicker } from './IconPicker';
 import { MetalPanel } from './MetalPanel';
 import { QuickTransfer } from './QuickTransfer';
@@ -1367,15 +1367,13 @@ export default function App() {
                         </button>
                       </>
                     )}
-                    {p.kind === 'account' && (
-                      <button
-                        className="secondary danger-text"
-                        disabled={busy}
-                        onClick={() => setModal({ kind: 'delete-account', p })}
-                      >
-                        删除账户
-                      </button>
-                    )}
+                    <button
+                      className="secondary danger-text"
+                      disabled={busy}
+                      onClick={() => setModal({ kind: 'delete-position', p })}
+                    >
+                      删除{deletionLabel(p)}
+                    </button>
                     <button className="secondary" onClick={() => setModal({ kind: 'edit', p })}>
                       {tr('编辑资料')}
                     </button>
@@ -2607,8 +2605,8 @@ export default function App() {
               ? modal.p?.kind === 'debt'
                 ? operationLabel(modal.p.side === 'asset' ? 'collect' : 'repay')
                 : tr('收款 / 还款')
-              : modal.kind === 'delete-account'
-                ? '删除账户'
+              : modal.kind === 'delete-position'
+                ? '删除' + deletionLabel(modal.p!)
                 : modal.kind === 'transfer'
                   ? tr('转账')
                   : modal.kind === 'reveal'
@@ -2627,16 +2625,19 @@ export default function App() {
             if (!busy) setModal(null);
           }}
         >
-          {modal.kind === 'delete-account' && modal.p ? (
-            <AccountDeletion
+          {modal.kind === 'delete-position' && modal.p ? (
+            <PositionDeletion
               position={modal.p}
               busy={busy}
               cancel={() => setModal(null)}
               remove={(confirmation) =>
-                void act(async () => {
-                  await api('/positions/' + modal.p!.id, 'DELETE', { confirmation });
-                  setSelected(null);
-                }, '账户已删除')
+                void act(
+                  async () => {
+                    await api('/positions/' + modal.p!.id, 'DELETE', { confirmation });
+                    setSelected(null);
+                  },
+                  deletionLabel(modal.p!) + '已删除',
+                )
               }
             />
           ) : ['transfer', 'debt-payment'].includes(modal.kind) ? (

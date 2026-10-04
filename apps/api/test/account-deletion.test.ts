@@ -65,18 +65,12 @@ test('account deletion checks ownership and hidden visibility before deleting or
   await f.service.remove({ ...owner, revealed: true }, 'account', { confirmation: '测试账户' });
   assert.deepEqual(f.state(), { deleted: true, invalidated: true });
 });
-test('wrong confirmation, non-accounts, paired movements and schedules cannot cascade', async () => {
+test('wrong confirmation, paired movements and schedules cannot cascade', async () => {
   const f = fixture();
   await assert.rejects(
     () => f.service.remove(owner, 'account', { confirmation: '错误名称' }),
     BadRequestException,
   );
-  f.row.kind = 'asset';
-  await assert.rejects(
-    () => f.service.remove(owner, 'account', { confirmation: '测试账户' }),
-    BadRequestException,
-  );
-  f.row.kind = 'account';
   f.setMovements(1);
   await assert.rejects(
     () => f.service.remove(owner, 'account', { confirmation: '测试账户' }),
@@ -94,4 +88,15 @@ test('wrong confirmation, non-accounts, paired movements and schedules cannot ca
     ok: true,
   });
   assert.deepEqual(f.state(), { deleted: true, invalidated: true });
+});
+
+test('standalone assets and debts support deletion and invalidate totals', async () => {
+  for (const kind of ['asset', 'debt']) {
+    const f = fixture();
+    f.row.kind = kind;
+    assert.deepEqual(await f.service.remove(owner, 'account', { confirmation: '测试账户' }), {
+      ok: true,
+    });
+    assert.deepEqual(f.state(), { deleted: true, invalidated: true });
+  }
 });
