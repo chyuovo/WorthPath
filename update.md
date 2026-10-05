@@ -103,3 +103,5 @@
 - ~~通过MCP 对账号还款时 确定时出现请选择有效的资产账户和对应借入或借出债务。本批修改未执行，请刷新后重新审阅。~~ — 已完成并验证：2026-10-05 20:23（UTC+8），见 docs/update-connections-repayment-users-2026-10-05.md
 - ~~删除账号功能，只能删除admin默认的这个账号，对其他账号无法被删除~~ — 已完成并验证：2026-10-05 20:23（UTC+8）；按用户澄清：仅默认 admin 可删除，其他账号禁止删除，见 docs/update-connections-repayment-users-2026-10-05.md
 - ~~余额显示绿色，欠款为红色~~ — 已完成并验证：2026-10-05 20:23（UTC+8），见 docs/update-connections-repayment-users-2026-10-05.md
+- ~~使用OAuth的进行连接时应该可以设置三种权限，但是现在授权页只有一种~~ — 已完成并验证：2026-10-05 21:34（UTC+8），见 docs/update-oauth-permissions-2026-10-05.md
+- ~~修改 Agent 提示词：连接时检查一次当前权限，权限可能变更，仅在需要时重新检查~~ — 已完成：2026-10-05 21:34（UTC+8），见 docs/update-oauth-permissions-2026-10-05.md

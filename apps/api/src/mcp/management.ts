@@ -155,8 +155,10 @@ export class AgentManagementController {
     });
     return { ok: true };
   }
-  @Get('authorizations/:id') pending(@Param('id') id: string) {
-    return this.oauth.pending(z.string().uuid().parse(id));
+  @Get('authorizations/:id') async pending(@Req() r: UserRequest, @Param('id') id: string) {
+    const result = await this.oauth.pending(z.string().uuid().parse(id));
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
+    return { ...result, canWrite: user.role !== 'readonly' };
   }
   @Post('authorizations/:id') async consent(
     @Req() r: UserRequest,

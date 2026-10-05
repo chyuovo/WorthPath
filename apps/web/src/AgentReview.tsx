@@ -13,6 +13,8 @@ type Consent = {
   id: string;
   name: string;
   scopes: string[];
+  availableScopes: string[];
+  canWrite: boolean;
   redirectUri: string;
   resource: string;
 };
@@ -75,14 +77,20 @@ export function AgentAuthorization({ id }: { id: string | null }) {
       active = false;
     };
   }, [id, reload]);
-  const selected =
-    consent?.scopes.filter(
-      (s) =>
-        s === 'read' ||
-        s === level ||
-        (s === 'hidden_read' && hiddenRead) ||
-        (s === 'hidden_write' && hiddenWrite && hiddenRead && level !== 'read'),
-    ) || [];
+  const selected = consent
+    ? [
+        'read',
+        ...(level !== 'read' && consent.canWrite ? [level] : []),
+        ...(hiddenRead && consent.scopes.includes('hidden_read') ? ['hidden_read'] : []),
+        ...(hiddenWrite &&
+        hiddenRead &&
+        level !== 'read' &&
+        consent.canWrite &&
+        consent.scopes.includes('hidden_write')
+          ? ['hidden_write']
+          : []),
+      ]
+    : [];
   async function decide(approve: boolean) {
     if (!consent || busy) return;
     setBusy(true);
@@ -116,12 +124,12 @@ export function AgentAuthorization({ id }: { id: string | null }) {
           ['draft', '草稿修改', '提出修改，由你逐项确认后执行。'],
           ['write', '直接写入', '普通账目修改立即执行，无需逐次确认。'],
         ]
-          .filter(([key]) => consent.scopes.includes(key))
+          .filter(([key]) => consent.availableScopes.includes(key))
           .map(([key, title, detail]) => (
             <button
               key={key}
               className={level === key ? 'permission-choice selected' : 'permission-choice'}
-              disabled={busy}
+              disabled={busy || (key !== 'read' && !consent.canWrite)}
               aria-pressed={level === key}
               onClick={() => {
                 setLevel(key);
@@ -133,6 +141,12 @@ export function AgentAuthorization({ id }: { id: string | null }) {
             </button>
           ))}
       </div>
+      {level === 'write' && (
+        <p className="agent-warning">
+          直接写入会立即修改账目，无需逐次网页确认。请仅授予你信任的助手。
+        </p>
+      )}
+      {!consent.canWrite && <p className="muted">你的账号为只读用户，只能授予查询权限。</p>}
       <label className="agent-duration">
         授权有效期
         <select value={days} disabled={busy} onChange={(e) => setDays(e.target.value)}>
@@ -170,7 +184,7 @@ export function AgentAuthorization({ id }: { id: string | null }) {
             <label className="check-line">
               <input
                 type="checkbox"
-                disabled={busy || !hiddenRead || level === 'read'}
+                disabled={busy || !consent.canWrite || !hiddenRead || level === 'read'}
                 checked={hiddenWrite}
                 onChange={(e) => setHiddenWrite(e.target.checked)}
               />
@@ -200,12 +214,14 @@ export function AgentAuthorization({ id }: { id: string | null }) {
           <dd>{consent.resource}</dd>
           <dt>回调地址</dt>
           <dd>{consent.redirectUri}</dd>
-          <dt>候选权限</dt>
+          <dt>客户端申请权限</dt>
           <dd>{consent.scopes.join(', ')}</dd>
           <dt>最终权限代码</dt>
           <dd>{selected.join(', ')}</dd>
         </dl>
-        <p>客户端请求的是候选范围；最终仅授予上方选中的权限。只批准你正在连接的客户端。</p>
+        <p>
+          普通权限等级由你在此选择，可以高于客户端申请范围；隐藏访问仅限客户端已申请的范围。最终仅授予上方明确选中的权限。只批准你正在连接并信任的客户端。
+        </p>
       </details>
       <div className="modal-actions">
         <button className="secondary" disabled={busy} onClick={() => void decide(false)}>

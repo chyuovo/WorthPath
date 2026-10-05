@@ -162,6 +162,12 @@ export class AgentOAuth implements OAuthServerProvider {
       name: client?.client_name,
       redirectUri: p.redirectUri,
       scopes: p.scopes,
+      availableScopes: [
+        'read',
+        'draft',
+        'write',
+        ...p.scopes.filter((s: string) => s.startsWith('hidden_')),
+      ],
       resource: p.resource,
     };
   }
@@ -188,8 +194,14 @@ export class AgentOAuth implements OAuthServerProvider {
         allowed.some((s: string) => ['draft', 'write', 'hidden_write'].includes(s))
       )
         throw new ForbiddenException('只读账号只能授予查询权限');
-      if (allowed.some((scope: string) => !parameters.scopes.includes(scope)))
-        throw new BadRequestException('不能授予客户端未请求的权限');
+      // The owner explicitly chooses the ordinary permission level on the consent page.
+      // Hidden access still requires a corresponding client request and separate consent.
+      if (
+        allowed.some(
+          (scope: string) => scope.startsWith('hidden_') && !parameters.scopes.includes(scope),
+        )
+      )
+        throw new BadRequestException('不能授予客户端未请求的隐藏权限');
       const code = secret();
       const changed = await this.db.agentAuthorization.updateMany({
         where: { id, status: 'pending', expiresAt: { gt: new Date() } },
