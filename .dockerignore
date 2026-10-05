@@ -1,0 +1,13 @@
+.git
+.codex
+.agents
+**/node_modules
+.pnpm-store
+**/dist
+**/public
+**/.env
+**/.env.*
+**/*.log
+**/coverage
+**/*.db
+**/*.sqlite*

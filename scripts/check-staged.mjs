@@ -6,7 +6,8 @@ if (
   names.some(
     (n) =>
       /(^|\/)(\.env(?:\..*)?|node_modules|dist|coverage)(\/|$)/.test(n) &&
-      !n.endsWith('.env.example'),
+      !n.endsWith('.env.example') &&
+      n !== '.env.production.example',
   ) ||
   names.some((n) => /\.(db|sqlite|log)$/.test(n))
 )

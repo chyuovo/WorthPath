@@ -26,6 +26,7 @@ import { AgentOperations } from './mcp/operations';
 import { AgentFiles } from './mcp/files';
 import { AgentTransport } from './mcp/transport';
 import { AgentManagementController } from './mcp/management';
+import { installWeb } from './web';
 @Catch()
 class SafeErrors implements ExceptionFilter {
   catch(error: unknown, host: ArgumentsHost) {
@@ -132,6 +133,7 @@ async function bootstrap() {
   app.get(AgentTransport).install(app.getHttpAdapter().getInstance());
   app.useGlobalFilters(new SafeErrors());
   setupOpenApi(app);
+  installWeb(app.getHttpAdapter().getInstance());
   app.enableShutdownHooks();
   await app.listen(Number(process.env.PORT || 3100), network.apiHost);
   console.log('WorthPath API ready');

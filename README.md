@@ -1,5 +1,7 @@
 # WorthPath
 
+Docker 前后端合并容器部署见 [Docker 部署说明](docker.md)。
+
 个人资产负债与净资产管理。NestJS + React/Vite + TypeScript + MySQL，支持手机和电脑。Node.js 22.12+、pnpm 11、MySQL 8+。
 
 ```powershell
