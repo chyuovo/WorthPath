@@ -2,7 +2,7 @@
 
 内置图库新增独立命名的“抖音月付”和“东方财富”，现共 36 项。可在账户新增／编辑的图标选择器或设置页图库按名称搜索并选择，复用现有图标关联和完整备份逻辑。
 
-“抖音月付”采用[抖音支付官网](https://www.douyinpay.com/)公开的抖音品牌标识，并非另行绘制的月付专属标识。“东方财富”采用[东方财富官方产品页](https://about.eastmoney.com/about/product)的品牌符号，从横向标识中保留适合账户卡片的独立图形。公开资源地址和原始内容 SHA-256 记录在 apps/api/assets/icons/sources.json，expand-icons.py 同步添加可复现来源。
+“抖音月付”采用[抖音支付官网](https://www.douyinpay.com/)公开的抖音品牌标识，并非另行绘制的月付专属标识。“东方财富”采用[东方财富官方产品页](https://about.eastmoney.com/about/product)的品牌符号，从横向标识中保留适合账户卡片的独立图形。公开资源地址和原始内容 SHA-256 记录在 apps/api/assets/icons/sources.json。图标与来源清单已保存；2026-10-05 清理已完成的一次性下载、扩充和 ICO 转换脚本，保留 icons:seed 初始化入口。
 
 图像均保存为静态 PNG，初始化时复用现有尺寸限制、透明处理和固定内置 ID。无需数据库结构变更；已运行 icons:seed，保留用户上传图标与财务记录。
 
