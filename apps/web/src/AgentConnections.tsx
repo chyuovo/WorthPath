@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import { AgentDrafts } from './AgentDrafts';
 import { toolLabel, statusLabel, permissionLabel } from './agent-display';
 import { showToast, useToast } from './Toast';
 
@@ -116,7 +117,8 @@ function codexSetupPrompt(url: string, level: string, hiddenRead = false, hidden
 }
 
 const connectionExpiry = (g: Connection) => (g.clientId ? g.refreshExpiresAt : g.expiresAt);
-export function AgentConnections() {
+export function AgentConnections({ changed }: { changed?: () => void }) {
+  const [review, setReview] = useState<string | null>(null);
   const [data, setData] = useState<Management | null>(null),
     [view, setView] = useState('connect'),
     [busy, setBusy] = useState(false),
@@ -479,6 +481,9 @@ export function AgentConnections() {
       {data && view === 'operations' && (
         <section className="agent-card">
           <h3>待确认草稿</h3>
+          <button className="primary" disabled={busy} onClick={() => setReview('all')}>
+            审阅全部草稿
+          </button>
           {!pending.length && <p className="agent-empty">没有等待确认的修改。</p>}
           {pending.map((o) => (
             <div className="agent-row" key={o.id}>
@@ -486,9 +491,9 @@ export function AgentConnections() {
                 <strong>{toolLabel(o.tool)}</strong>
                 <p className="muted">有效至 {new Date(o.expiresAt).toLocaleTimeString()}</p>
               </div>
-              <a className="agent-review-link" href={'/agent/operation?agent_operation=' + o.id}>
+              <button className="agent-review-link" onClick={() => setReview(o.id)}>
                 审阅草稿
-              </a>
+              </button>
             </div>
           ))}
           <details className="agent-details">
@@ -507,7 +512,9 @@ export function AgentConnections() {
                     · {new Date(o.createdAt).toLocaleString()}
                   </p>
                 </div>
-                <a href={'/agent/operation?agent_operation=' + o.id}>查看详情</a>
+                <button className="text" onClick={() => setReview(o.id)}>
+                  查看详情
+                </button>
               </div>
             ))}
           </details>
@@ -583,6 +590,16 @@ export function AgentConnections() {
             ) && <p>没有匹配的能力。</p>}
           </section>
         </>
+      )}
+      {review !== null && (
+        <AgentDrafts
+          initialId={review === 'all' ? undefined : review}
+          close={() => setReview(null)}
+          changed={() => {
+            void load();
+            changed?.();
+          }}
+        />
       )}
     </section>
   );

@@ -55,7 +55,9 @@ import { orderedGroups, mergeGroupOrder } from './group-order';
 import { Calendar } from './Calendar';
 import { SchedulePanel } from './SchedulePanel';
 import { AgentConnections } from './AgentConnections';
-import { AgentAuthorization, AgentOperation } from './AgentReview';
+import { AgentAuthorization } from './AgentReview';
+import { AgentDrafts } from './AgentDrafts';
+import { savedLogin, rememberLogin } from './login-preferences';
 import { PositionDeletion, deletionLabel } from './PositionDeletion';
 import { IconPicker } from './IconPicker';
 import { MetalPanel } from './MetalPanel';
@@ -93,6 +95,7 @@ const categories: Record<string, [string, string][]> = {
     ['other', '其他'],
   ],
   asset: [
+    ['cash', '现金'],
     ['property', '房产'],
     ['vehicle', '车辆'],
     ['gold', '贵金属'],
@@ -175,10 +178,7 @@ export default function App() {
     [boot, setBoot] = useState(true),
     [register, setRegister] = useState(false),
     [page, setPage] = useState(
-      new URLSearchParams(location.search).has('agent_authorization') ||
-        new URLSearchParams(location.search).has('agent_operation')
-        ? 'agent-review'
-        : 'overview',
+      new URLSearchParams(location.search).has('agent_authorization') ? 'agent-review' : 'overview',
     ),
     [positions, setPositions] = useState<Position[]>([]),
     [overview, setOverview] = useState<Overview | null>(null),
@@ -212,6 +212,11 @@ export default function App() {
   const [hideBooked, setHideBooked] = useState(false);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [assetQuickMode, setAssetQuickMode] = useState(false);
+  const [assetValueMode, setAssetValueMode] = useState(false);
+  const [remember, setRemember] = useState(() => savedLogin().remember);
+  const [draftId, setDraftId] = useState(() =>
+    new URLSearchParams(location.search).get('agent_operation'),
+  );
   const [businessDay, setBusinessDay] = useState(today());
   const [repaymentMonth, setRepaymentMonth] = useState(today().slice(0, 7));
   const quickGeneration = useRef(0);
@@ -829,9 +834,9 @@ export default function App() {
         password: f.get('password'),
       });
       if (session !== sessionGeneration.current) return;
-      const agentReturn =
-        new URLSearchParams(location.search).has('agent_authorization') ||
-        new URLSearchParams(location.search).has('agent_operation');
+      if (!register)
+        void rememberLogin(String(f.get('username')), String(f.get('password')), remember);
+      const agentReturn = new URLSearchParams(location.search).has('agent_authorization');
       setPage(agentReturn ? 'agent-review' : 'overview');
       if (agentReturn) setSettingsSection('agent');
       setSelected(null);
@@ -911,10 +916,11 @@ export default function App() {
               {register ? tr('建立属于你的私人资产空间') : tr('登录以查看你的资产与负债')}
             </p>
 
-            <form onSubmit={auth}>
+            <form onSubmit={auth} autoComplete="on">
               <Field label={tr('账号')}>
                 <input
                   name="username"
+                  defaultValue={savedLogin().username}
                   autoComplete="username"
                   required
                   minLength={3}
@@ -933,6 +939,19 @@ export default function App() {
                   placeholder={tr('至少 10 个字符，最多 72 字节')}
                 />
               </Field>
+              {!register && (
+                <>
+                  <label className="check-line">
+                    <input
+                      type="checkbox"
+                      checked={remember}
+                      onChange={(e) => setRemember(e.target.checked)}
+                    />
+                    {tr('记住账号密码')}
+                  </label>
+                  <p className="muted">{tr('密码由浏览器密码管理器保存，下次登录可自动填充。')}</p>
+                </>
+              )}
               <button className="primary full" disabled={busy}>
                 {busy ? tr('正在处理…') : register ? tr('注册并进入') : tr('登录')}
                 <ArrowUpRight size={18} />
@@ -1018,12 +1037,7 @@ export default function App() {
     }
   }
   const agentParams = new URLSearchParams(location.search);
-  if (
-    agentParams.has('agent_authorization') ||
-    agentParams.has('agent_operation') ||
-    location.pathname === '/agent/authorize' ||
-    location.pathname === '/agent/operation'
-  ) {
+  if (agentParams.has('agent_authorization') || location.pathname === '/agent/authorize') {
     return (
       <main className="agent-review-page">
         <header className="agent-review-header">
@@ -1033,11 +1047,7 @@ export default function App() {
             退出登录
           </button>
         </header>
-        {agentParams.has('agent_authorization') || location.pathname === '/agent/authorize' ? (
-          <AgentAuthorization id={agentParams.get('agent_authorization')} />
-        ) : (
-          <AgentOperation id={agentParams.get('agent_operation')} />
-        )}
+        <AgentAuthorization id={agentParams.get('agent_authorization')} />
       </main>
     );
   }
@@ -1733,11 +1743,30 @@ export default function App() {
                         className={assetQuickMode ? 'primary' : 'secondary'}
                         disabled={busy}
                         aria-pressed={assetQuickMode}
-                        onClick={() => setAssetQuickMode(!assetQuickMode)}
+                        onClick={() => {
+                          setAssetQuickMode(!assetQuickMode);
+                          setAssetValueMode(false);
+                        }}
                       >
                         {tr(assetQuickMode ? '结束统计设置' : '快速设置计入总资产')}
                       </button>
+                      <button
+                        className={assetValueMode ? 'primary' : 'secondary'}
+                        disabled={busy}
+                        aria-pressed={assetValueMode}
+                        onClick={() => {
+                          setAssetValueMode(!assetValueMode);
+                          setAssetQuickMode(false);
+                        }}
+                      >
+                        {tr(assetValueMode ? '结束快速估值' : '快速设置估值')}
+                      </button>
                     </div>
+                    {assetValueMode && (
+                      <p className="muted">
+                        {tr('点击资产卡片填写最新估值；贵金属按报价自动估值。')}
+                      </p>
+                    )}
                     {assetQuickMode && (
                       <p className="muted">{tr('点击资产卡片，切换是否计入总资产。')}</p>
                     )}
@@ -1816,6 +1845,9 @@ export default function App() {
                             }
                             disabled={
                               busy ||
+                              (page === 'asset' &&
+                                assetValueMode &&
+                                (p.archived || p.category === 'gold')) ||
                               (!!quickTransfer && p.archived) ||
                               (quickMode &&
                                 quickMarkMode &&
@@ -1824,19 +1856,26 @@ export default function App() {
                             }
                             key={p.id}
                             onClick={() =>
-                              page === 'asset' && assetQuickMode
-                                ? void act(() => toggleAssetInclusion(p), tr('统计设置已保存'))
-                                : quickMode && quickBookedMode && page === 'account'
-                                  ? void act(() => markQuickBooked(p), tr('记账标记已保存'))
-                                  : quickMode && quickMarkMode && page === 'account'
-                                    ? p.kind === 'account' && p.side === 'liability' && !p.archived
-                                      ? void act(() => markQuickRepayment(p), tr('还款标记已保存'))
-                                      : undefined
-                                    : quickTransfer !== null && page === 'account' && quickMode
-                                      ? chooseQuickAccount(p)
-                                      : page === 'account' && quickMode && !p.archived
-                                        ? setModal({ kind: 'revision', p, quick: true })
-                                        : setSelected(p.id)
+                              page === 'asset' && assetValueMode
+                                ? setModal({ kind: 'revision', p })
+                                : page === 'asset' && assetQuickMode
+                                  ? void act(() => toggleAssetInclusion(p), tr('统计设置已保存'))
+                                  : quickMode && quickBookedMode && page === 'account'
+                                    ? void act(() => markQuickBooked(p), tr('记账标记已保存'))
+                                    : quickMode && quickMarkMode && page === 'account'
+                                      ? p.kind === 'account' &&
+                                        p.side === 'liability' &&
+                                        !p.archived
+                                        ? void act(
+                                            () => markQuickRepayment(p),
+                                            tr('还款标记已保存'),
+                                          )
+                                        : undefined
+                                      : quickTransfer !== null && page === 'account' && quickMode
+                                        ? chooseQuickAccount(p)
+                                        : page === 'account' && quickMode && !p.archived
+                                          ? setModal({ kind: 'revision', p, quick: true })
+                                          : setSelected(p.id)
                             }
                           >
                             <div>
@@ -2119,7 +2158,7 @@ export default function App() {
                   <IconLibrary />
                 </section>
               )}
-              {settingsSection === 'agent' && <AgentConnections />}
+              {settingsSection === 'agent' && <AgentConnections changed={() => void load()} />}
               {settingsSection === 'security' && (
                 <section className="panel">
                   <h2>{tr('账号与密码')}</h2>
@@ -3356,6 +3395,19 @@ export default function App() {
             </form>
           )}
         </Modal>
+      )}
+      {draftId && (
+        <AgentDrafts
+          initialId={draftId}
+          close={() => {
+            setDraftId(null);
+            const url = new URL(location.href);
+            url.searchParams.delete('agent_operation');
+            if (url.pathname === '/agent/operation') url.pathname = '/';
+            history.replaceState(null, '', url.pathname + url.search + url.hash);
+          }}
+          changed={() => void load()}
+        />
       )}
     </div>,
   );

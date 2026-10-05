@@ -16,7 +16,7 @@ type Consent = {
   redirectUri: string;
   resource: string;
 };
-type Preview = {
+export type Preview = {
   operationId: string;
   tool: string;
   status: string;
@@ -222,7 +222,7 @@ export function AgentAuthorization({ id }: { id: string | null }) {
     </section>
   );
 }
-function Fields({
+export function Fields({
   data,
   references,
   currency,
@@ -283,7 +283,7 @@ function Fields({
     </dl>
   );
 }
-export function AgentOperation({ id }: { id: string | null }) {
+export function AgentOperation({ id, changed }: { id: string | null; changed?: () => void }) {
   const [preview, setPreview] = useState<Preview | null>(null),
     [error, setError] = useState(''),
     [busy, setBusy] = useState(false),
@@ -318,6 +318,7 @@ export function AgentOperation({ id }: { id: string | null }) {
     try {
       await api('/agent/operations/' + preview.operationId, 'POST', { approve });
       setPreview(await api<Preview>('/agent/operations/' + preview.operationId));
+      changed?.();
       showToast(approve ? '修改已完成，Agent 可以查询结果' : '草稿已取消', 'success');
     } catch (e) {
       showToast(e instanceof Error ? e.message : '操作失败', 'error');

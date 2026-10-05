@@ -271,6 +271,126 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
       409,
     );
 
+    const reviewedState = (await call(d, 'state_get')).state;
+    const reviewedCreates = await Promise.all(
+      [0, 1, 2].map((i) =>
+        call(d, 'position_create', {
+          ...position,
+          name: 'atomic batch ' + i,
+          expectedState: reviewedState,
+          idempotencyKey: randomUUID(),
+        }),
+      ),
+    );
+    const reviewedBalances = await Promise.all(
+      ['11.86420975', '12.86420975'].map((amount) =>
+        call(d, 'balance_record', {
+          id: applied.result.id,
+          data: { amount, date: day },
+          expectedState: reviewedState,
+          idempotencyKey: randomUUID(),
+        }),
+      ),
+    );
+    const batchBody = {
+      approve: true,
+      operationIds: [...reviewedCreates, ...reviewedBalances].map((o) => o.operationId),
+    };
+    const confirmedBatch = await web(
+      d.cookie,
+      '/agent/operations/confirm-batch',
+      'POST',
+      batchBody,
+    );
+    assert.equal(confirmedBatch.status, 201, JSON.stringify(confirmedBatch.data));
+    assert.equal(confirmedBatch.data.operations.length, 5);
+    assert.ok(confirmedBatch.data.operations.every((o: any) => o.status === 'completed'));
+    assert.equal((await call(d, 'position_get', { id: applied.result.id })).amount, '12.86420975');
+    assert.equal(
+      (await web(d.cookie, '/agent/operations/confirm-batch', 'POST', batchBody)).status,
+      201,
+    );
+    assert.equal((await call(d, 'positions_list', { q: 'atomic batch' })).total, 3);
+    assert.equal(
+      (await web(b.cookie, '/agent/operations/confirm-batch', 'POST', batchBody)).status,
+      404,
+    );
+    assert.equal(
+      (
+        await web(d.cookie, '/agent/operations/confirm-batch', 'POST', {
+          approve: true,
+          operationIds: [batchBody.operationIds[0], batchBody.operationIds[0]],
+        })
+      ).status,
+      400,
+    );
+    const rollbackState = (await call(d, 'state_get')).state;
+    const rollbackCreate = await call(d, 'position_create', {
+      ...position,
+      name: 'must roll back',
+      expectedState: rollbackState,
+      idempotencyKey: randomUUID(),
+    });
+    const invalidMovement = await call(d, 'movement_create', {
+      sourceId: applied.result.id,
+      targetId: randomUUID(),
+      amount: '1',
+      received: '1',
+      date: day,
+      expectedState: rollbackState,
+      idempotencyKey: randomUUID(),
+    });
+    const rejectedBatch = await web(d.cookie, '/agent/operations/confirm-batch', 'POST', {
+      approve: true,
+      operationIds: [rollbackCreate.operationId, invalidMovement.operationId],
+    });
+    assert.equal(rejectedBatch.status, 400);
+    assert.equal((await call(d, 'positions_list', { q: 'must roll back' })).total, 0);
+    assert.equal(
+      (await call(d, 'operation_get', { operationId: rollbackCreate.operationId })).status,
+      'pending',
+    );
+    assert.equal((await call(d, 'state_get')).state, rollbackState);
+    assert.equal(
+      (
+        await web(d.cookie, '/agent/operations/confirm-batch', 'POST', {
+          approve: true,
+          operationIds: [webStale.operationId],
+        })
+      ).status,
+      409,
+    );
+    // All live drafts are paginated; the management panel's recent-100 cap is not used.
+    const pagesState = (await call(d, 'state_get')).state;
+    const pageDrafts = [];
+    for (let i = 0; i < 53; i++)
+      pageDrafts.push(
+        await call(d, 'position_create', {
+          ...position,
+          name: 'page draft ' + i,
+          expectedState: pagesState,
+          idempotencyKey: randomUUID(),
+        }),
+      );
+    const pageIds: string[] = [];
+    let cursor: string | null = null;
+    do {
+      const page = await web(d.cookie, '/agent/drafts' + (cursor ? '?cursor=' + cursor : ''));
+      assert.equal(page.status, 200);
+      assert.ok(page.data.items.length <= 50);
+      pageIds.push(...page.data.items.map((o: any) => o.operationId));
+      cursor = page.data.nextCursor;
+    } while (cursor);
+    assert.equal(new Set(pageIds).size, pageIds.length);
+    assert.ok(pageDrafts.every((o) => pageIds.includes(o.operationId)));
+    const cancelledBatch = await web(d.cookie, '/agent/operations/confirm-batch', 'POST', {
+      approve: false,
+      operationIds: [rollbackCreate.operationId, invalidMovement.operationId],
+    });
+    assert.equal(cancelledBatch.status, 201);
+    assert.ok(cancelledBatch.data.operations.every((o: any) => o.status === 'cancelled'));
+    assert.equal((await call(d, 'positions_list', { q: 'must roll back' })).total, 0);
+
     const expired = await write(d, 'position_create', { ...position, name: 'expired' });
     await db.agentOperation.update({
       where: { id: expired.operationId },

@@ -5,6 +5,7 @@ import {
   Delete,
   Req,
   Param,
+  Query,
   Body,
   Res,
   ForbiddenException,
@@ -116,6 +117,18 @@ export class AgentManagementController {
       .strict()
       .parse(raw);
     return this.oauth.consent(r.userId, z.string().uuid().parse(id), approve, scopes, days);
+  }
+
+  @Get('drafts') drafts(@Req() r: UserRequest, @Query('cursor') cursor?: string) {
+    return this.operations.drafts(r.userId, cursor ? z.string().uuid().parse(cursor) : undefined);
+  }
+  @Post('operations/confirm-batch') async confirmBatch(
+    @Req() r: UserRequest,
+    @Body() raw: unknown,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    this.auth.limit(r);
+    return this.operations.confirmBatch(r, raw, res);
   }
   @Get('operations/:id') preview(@Req() r: UserRequest, @Param('id') id: string) {
     return this.operations.preview(r.userId, z.string().uuid().parse(id));

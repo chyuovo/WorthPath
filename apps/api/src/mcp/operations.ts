@@ -361,6 +361,86 @@ export class AgentOperations {
       );
     }, 300000);
   }
+
+  async drafts(userId: string, cursor?: string) {
+    const rows = await this.db.agentOperation.findMany({
+      where: { userId, status: 'pending', expiresAt: { gt: new Date() } },
+      orderBy: { id: 'asc' },
+      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+      take: 51,
+    });
+    const page = rows.slice(0, 50);
+    const items = await Promise.all(
+      page.map(async (row) => {
+        try {
+          return await this.preview(userId, row.id);
+        } catch {
+          return {
+            operationId: row.id,
+            tool: row.tool,
+            status: 'unavailable',
+            expiresAt: row.expiresAt,
+            error: '连接已失效，请取消或重新授权后刷新',
+          };
+        }
+      }),
+    );
+    return { items, nextCursor: rows.length > 50 ? page[49].id : null };
+  }
+  async confirmBatch(r: UserRequest, raw: unknown, res: Response) {
+    const input = z
+      .object({
+        operationIds: z
+          .array(z.string().uuid())
+          .min(1)
+          .max(100)
+          .refine((ids) => new Set(ids).size === ids.length, '草稿编号不能重复'),
+        approve: z.boolean(),
+      })
+      .strict()
+      .parse(raw);
+    return this.db.atomic(async () => {
+      await this.db.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id=${r.userId} FOR UPDATE`);
+      const rows = await this.db.agentOperation.findMany({
+        where: { userId: r.userId, id: { in: input.operationIds } },
+      });
+      if (rows.length !== input.operationIds.length) throw new NotFoundException('操作不存在');
+      // A lost success response may be retried without executing anything twice.
+      if (input.approve && rows.every((row) => row.status === 'completed'))
+        return {
+          operations: input.operationIds.map((id) => this.view(rows.find((row) => row.id === id)!)),
+        };
+      if (!input.approve) {
+        if (rows.some((row) => row.status !== 'pending' || row.expiresAt <= new Date()))
+          throw new ConflictException('部分草稿已完成或失效，请刷新后重新选择');
+        await this.db.agentOperation.updateMany({
+          where: { userId: r.userId, id: { in: input.operationIds } },
+          data: { status: 'cancelled', completedAt: new Date() },
+        });
+        return { operations: rows.map((row) => this.view({ ...row, status: 'cancelled' })) };
+      }
+      const snapshot = await this.state(r.userId);
+      for (const row of rows) {
+        if (row.status !== 'pending' || row.expiresAt <= new Date())
+          throw new ConflictException('部分草稿已完成或失效，请刷新后重新选择');
+        if (row.snapshot !== snapshot)
+          throw new ConflictException('账目已变化，请取消并重新创建操作');
+        const grant = await this.oauth.grant(row.grantId, r.userId);
+        await this.permission(grant, this.get(row.tool), row.parameters);
+      }
+      const operations = [];
+      for (const id of input.operationIds) {
+        // All selected drafts were reviewed against the same baseline above.
+        // Only this atomic, manually confirmed batch may advance their snapshots.
+        await this.db.agentOperation.update({
+          where: { id },
+          data: { snapshot: await this.state(r.userId) },
+        });
+        operations.push(await this.confirm(r, id, { approve: true }, res));
+      }
+      return { operations };
+    }, 300000);
+  }
   async uploadRequest(grantId: string, kind: 'icon') {
     const grant = await this.oauth.grant(grantId);
     const selected = grant.scopes as string[];
