@@ -83,6 +83,7 @@ async function main() {
           'test/mcp.test.ts',
           'test/oauth-duration.test.ts',
           'test/database-migrations.test.ts',
+          'test/connection-repayment-integration.test.ts',
         ];
     const result = spawnSync(
       process.execPath,

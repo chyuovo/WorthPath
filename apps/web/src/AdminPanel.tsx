@@ -183,18 +183,20 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
                     >
                       {account.banned ? tr('解除封禁') : tr('封禁账号')}
                     </button>
-                    {account.role === 'admin' && account.id !== user.id && (
-                      <button
-                        className="danger"
-                        disabled={busy}
-                        onClick={() => {
-                          setDeleting(account);
-                          setConfirmation('');
-                        }}
-                      >
-                        {tr('删除管理员')}
-                      </button>
-                    )}
+                    {account.username === 'admin' &&
+                      account.role === 'admin' &&
+                      account.id !== user.id && (
+                        <button
+                          className="danger"
+                          disabled={busy}
+                          onClick={() => {
+                            setDeleting(account);
+                            setConfirmation('');
+                          }}
+                        >
+                          {tr('删除默认 admin')}
+                        </button>
+                      )}
                   </td>
                 </tr>
               ))}
@@ -220,9 +222,9 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
       </section>
       {deleting && (
         <div className="veil">
-          <section className="modal" role="dialog" aria-modal="true" aria-label={tr('删除管理员')}>
+          <section className="modal" role="dialog" aria-modal="true" aria-label={tr('删除账号')}>
             <h2>
-              {tr('删除管理员')} · {deleting.username}
+              {tr('删除账号')} · {deleting.username}
             </h2>
             <p className="danger-text">
               {tr(
@@ -230,7 +232,9 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
               )}
             </p>
             <p className="muted">
-              {tr('必须保留另一位已完成改密且未封禁的管理员。不能删除当前登录账号。')}
+              {tr(
+                '仅允许删除默认 admin 账号；其他账号禁止删除。必须保留另一位已完成改密且未封禁的管理员，不能删除当前登录账号。',
+              )}
             </p>
             <form onSubmit={remove}>
               <label className="field">

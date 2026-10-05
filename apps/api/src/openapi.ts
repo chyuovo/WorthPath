@@ -1,3 +1,4 @@
+import { scopeInput } from './mcp/oauth';
 import { INestApplication } from '@nestjs/common';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { metalConfig, metalHoldingInput } from './metals';
@@ -38,6 +39,9 @@ export function setupOpenApi(app: INestApplication) {
     'PATCH /api/admin/users/{id}': adminUpdateInput,
     'DELETE /api/admin/users/{id}': adminDeleteInput,
     'PATCH /api/auth/credentials': credentialChange,
+    'PATCH /api/agent/connections/{id}': z
+      .object({ scopes: scopeInput, password: loginInput.shape.password })
+      .strict(),
     'POST /api/auth/reveal': z.object({ password: credentials.shape.password.optional() }).strict(),
     'POST /api/positions': positionInput,
     'PATCH /api/positions/{id}': positionMeta,
@@ -101,6 +105,12 @@ export function setupOpenApi(app: INestApplication) {
           description: '{ items, nextCursor, revealed }；金额为绝对余额，before 为真实前序余额',
         };
       }
+      if (method === 'patch' && path === '/api/agent/connections/{id}')
+        operation.description =
+          '验证当前密码后修改自己的有效 OAuth/PAT 连接权限；实际权限变更取消未确认草稿，不延长授权期限。只读用户不能授予写入。';
+      if (['post', 'put'].includes(method) && path.startsWith('/api/transfers'))
+        operation.description =
+          'repay 从资产账户向借入债务或负债账户还款；负债账户超额还款保存为溢缴存款。amount/received 为原币本金，fee 负数表示优惠。同币种本金一致，双边金额与历史原子更新。';
       if (method === 'get' && path === '/api/trend') {
         operation.parameters = [
           ...['from', 'to'].map((name) => ({

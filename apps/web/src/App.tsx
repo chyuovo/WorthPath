@@ -1260,7 +1260,7 @@ export default function App() {
                       </div>
                       <strong
                         className={
-                          cls === 'debt' || value.startsWith('-') ? 'danger-text' : undefined
+                          cls === 'debt' || value.startsWith('-') ? 'danger-text' : 'income-text'
                         }
                       >
                         {money(value, user.baseCurrency)}
@@ -1468,7 +1468,9 @@ export default function App() {
                             )}
                       {p.archived ? tr(' · 已归档') : ''}
                     </span>
-                    <h2 className={positionAmount(p).startsWith('-') ? 'danger-text' : undefined}>
+                    <h2
+                      className={positionAmount(p).startsWith('-') ? 'danger-text' : 'income-text'}
+                    >
                       {p.valuationAvailable === false
                         ? tr('待估值')
                         : money(positionAmount(p), p.currency)}
@@ -1922,7 +1924,7 @@ export default function App() {
                             </p>
                             <strong
                               className={
-                                positionAmount(p).startsWith('-') ? 'danger-text' : undefined
+                                positionAmount(p).startsWith('-') ? 'danger-text' : 'income-text'
                               }
                             >
                               {p.valuationAvailable === false
@@ -3474,17 +3476,23 @@ function HistoryTable({
                 </small>
               </td>
               <td
-                className={positionAmount(h, h.before).startsWith('-') ? 'danger-text' : undefined}
+                className={
+                  positionAmount(h, h.before).startsWith('-') ? 'danger-text' : 'income-text'
+                }
               >
                 {money(positionAmount(h, h.before), h.currency)}
               </td>
               <td
-                className={positionAmount(h, h.after).startsWith('-') ? 'danger-text' : undefined}
+                className={
+                  positionAmount(h, h.after).startsWith('-') ? 'danger-text' : 'income-text'
+                }
               >
                 {money(positionAmount(h, h.after), h.currency)}
               </td>
               <td
-                className={positionAmount(h, h.delta).startsWith('-') ? 'danger-text' : undefined}
+                className={
+                  positionAmount(h, h.delta).startsWith('-') ? 'danger-text' : 'income-text'
+                }
               >
                 {money(positionAmount(h, h.delta), h.currency)}
               </td>

@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  NotFoundException,
   Delete,
   Req,
   Param,
@@ -11,9 +13,11 @@ import {
   ForbiddenException,
   HttpException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { compare } from 'bcryptjs';
 import { Response } from 'express';
 import { z } from 'zod';
+import { loginInput } from '../user-access';
 import { Database } from '../database';
 import { AuthService, UserRequest } from '../auth';
 import { AgentOAuth, urls, scopeInput, oauthDays } from './oauth';
@@ -94,6 +98,53 @@ export class AgentManagementController {
     return this.db.atomic(async () => {
       const v = await this.oauth.issue(r.userId, p.name, p.scopes, p.days);
       return { id: v.grant.id, token: v.tokens.access_token, expiresAt: v.grant.expiresAt };
+    });
+  }
+  @Patch('connections/:id') async permissions(
+    @Req() r: UserRequest,
+    @Param('id') id: string,
+    @Body() raw: unknown,
+  ) {
+    z.string().uuid().parse(id);
+    const p = z
+      .object({ scopes: scopeInput, password: loginInput.shape.password })
+      .strict()
+      .parse(raw);
+    this.auth.limit(r);
+    const verified = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
+    if (!(await compare(p.password, verified.passwordHash)))
+      throw new ForbiddenException('密码错误');
+    return this.db.atomic(async () => {
+      await this.db.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id=${r.userId} FOR UPDATE`);
+      const user = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
+      if (user.banned || user.mustChangePassword || user.passwordHash !== verified.passwordHash)
+        throw new ForbiddenException('账号状态已变化，请重新登录');
+      if (
+        user.role === 'readonly' &&
+        p.scopes.some((s) => ['draft', 'write', 'hidden_write'].includes(s))
+      )
+        throw new ForbiddenException('只读账号只能授予查询权限');
+      // Refresh and edits lock the same grant before reading its permissions.
+      await this.db.$queryRaw(
+        Prisma.sql`SELECT id FROM AgentGrant WHERE id=${id} AND userId=${r.userId} FOR UPDATE`,
+      );
+      const grant = await this.db.agentGrant.findFirst({ where: { id, userId: r.userId } });
+      const expiry = grant?.clientId ? grant.refreshExpiresAt : grant?.expiresAt;
+      if (!grant || grant.revokedAt || (expiry && expiry <= new Date()))
+        throw new NotFoundException('有效连接不存在');
+      const previous = grant.scopes as string[];
+      if (
+        previous.length === p.scopes.length &&
+        previous.every((s) => (p.scopes as string[]).includes(s))
+      )
+        return { ok: true };
+      await this.db.agentGrant.update({ where: { id }, data: { scopes: p.scopes } });
+      // Permission edits never execute old drafts under a newly granted privilege.
+      await this.db.agentOperation.updateMany({
+        where: { grantId: id, userId: r.userId, status: 'pending' },
+        data: { status: 'cancelled', completedAt: new Date() },
+      });
+      return { ok: true };
     });
   }
   @Delete('connections/:id') async revoke(@Req() r: UserRequest, @Param('id') id: string) {

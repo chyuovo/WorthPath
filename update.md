@@ -7,6 +7,7 @@
 > * 数据库的表和字段需要有注释
 > * 在docs目录不要保存任何图片
 > * 完成任务后完善本项目的README.md
+> * 完成任务后主动删除以后不需要的脚本和测试文件
 
 更新要求：
 
@@ -98,3 +99,7 @@
 - ~~优化审阅功能，快速阅读所有草稿并全选同意~~ — 已完成并验证：2026-10-05 12:27（UTC+8），见 docs/update-cash-drafts-login-2026-10-05.md
 - ~~添加记住账号密码的功能~~ — 已完成并验证：2026-10-05 12:27（UTC+8），见 docs/update-cash-drafts-login-2026-10-05.md
 - ~~修复 MCP 同批新增多个账号时后续草稿提示账目已变化~~ — 已完成并验证：2026-10-04 22:53（UTC+8），见 docs/fix-mcp-create-drafts-2026-10-04.md
+- ~~在已经添加的连接中可以修改权限，并且使用OAuth的可以设置直接写入的权限~~ — 已完成并验证：2026-10-05 20:23（UTC+8），见 docs/update-connections-repayment-users-2026-10-05.md
+- ~~通过MCP 对账号还款时 确定时出现请选择有效的资产账户和对应借入或借出债务。本批修改未执行，请刷新后重新审阅。~~ — 已完成并验证：2026-10-05 20:23（UTC+8），见 docs/update-connections-repayment-users-2026-10-05.md
+- ~~删除账号功能，只能删除admin默认的这个账号，对其他账号无法被删除~~ — 已完成并验证：2026-10-05 20:23（UTC+8）；按用户澄清：仅默认 admin 可删除，其他账号禁止删除，见 docs/update-connections-repayment-users-2026-10-05.md
+- ~~余额显示绿色，欠款为红色~~ — 已完成并验证：2026-10-05 20:23（UTC+8），见 docs/update-connections-repayment-users-2026-10-05.md

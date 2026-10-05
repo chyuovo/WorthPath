@@ -85,7 +85,11 @@ export function AccountPicker({
                   {p.iconId && <img src={iconUrl(p.iconId)} alt="" />}
                   <span>
                     {p.name}
-                    <small>{money(positionAmount(p), p.currency)}</small>
+                    <small
+                      className={positionAmount(p).startsWith('-') ? 'danger-text' : 'income-text'}
+                    >
+                      {money(positionAmount(p), p.currency)}
+                    </small>
                   </span>
                   {p.id === value && <span>✓</span>}
                 </button>

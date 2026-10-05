@@ -135,7 +135,8 @@ export class AdminService {
         throw new ForbiddenException('管理员权限已变更');
       const target = await tx.user.findUnique({ where: { id } });
       if (!target) throw new NotFoundException('账号不存在');
-      if (target.role !== 'admin') throw new BadRequestException('仅支持删除管理员账号');
+      if (target.username !== 'admin' || target.role !== 'admin')
+        throw new ForbiddenException('仅允许删除默认 admin 账号，其他账号不可删除');
       if (v.confirmationUsername !== target.username)
         throw new BadRequestException('确认账号名称不一致，请重新核对');
       if (

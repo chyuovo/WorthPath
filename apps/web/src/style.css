@@ -1276,7 +1276,7 @@ footer {
   color: #c73542 !important;
 }
 .income-text {
-  color: #1b7855;
+  color: #1b7855 !important;
 }
 .calendar-grid {
   display: grid;

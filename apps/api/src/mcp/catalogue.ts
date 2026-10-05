@@ -193,7 +193,7 @@ export class AgentCatalogue {
       ),
       write(
         'movement_create',
-        '执行 transfer 转账、borrow 借入、lend 借出、collect 收款、repay 还款。amount 为本金，received 为到账/债务本金，fee 可负表示优惠；原币十进制字符串，双边事务和余额检查。',
+        '执行 transfer 转账、borrow 借入、lend 借出、collect 收款、repay 还款。amount 为本金，received 为到账/债务本金，fee 可负表示优惠；原币十进制字符串，双边事务和余额检查。repay 的 sourceId 必须是资产账户，targetId 可以是借入债务或信用卡等负债账户；负债账户超额还款保留为存款。',
         transferInput.safeExtend({ requestId: z.never().optional() }),
         (r, p) => transfers.create(r, p),
       ),

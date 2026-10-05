@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
-import { AgentDrafts } from './AgentDrafts';
+import { AgentDrafts, ReviewDialog } from './AgentDrafts';
 import { toolLabel, statusLabel, permissionLabel } from './agent-display';
 import { showToast, useToast } from './Toast';
 
@@ -118,6 +118,10 @@ function codexSetupPrompt(url: string, level: string, hiddenRead = false, hidden
 
 const connectionExpiry = (g: Connection) => (g.clientId ? g.refreshExpiresAt : g.expiresAt);
 export function AgentConnections({ changed }: { changed?: () => void }) {
+  const [editing, setEditing] = useState<Connection | null>(null);
+  const [editPermission, setEditPermission] = useState('read');
+  const [editHiddenRead, setEditHiddenRead] = useState(false);
+  const [editHiddenWrite, setEditHiddenWrite] = useState(false);
   const [review, setReview] = useState<string | null>(null);
   const [data, setData] = useState<Management | null>(null),
     [view, setView] = useState('connect'),
@@ -322,7 +326,9 @@ export function AgentConnections({ changed }: { changed?: () => void }) {
         <>
           <section className="agent-card">
             <h3>已授权连接</h3>
-            <p className="muted">最近 100 条 · 撤销后助手将无法继续访问。</p>
+            <p className="muted">
+              最近 100 条 · 可修改权限，OAuth 也支持直接写入；撤销后助手无法继续访问。
+            </p>
             {!data.grants.length && (
               <div className="agent-empty">
                 <h4>还没有连接</h4>
@@ -357,18 +363,40 @@ export function AgentConnections({ changed }: { changed?: () => void }) {
                   </small>
                 </div>
                 {!g.revokedAt && (
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(async () => {
-                        await api('/agent/connections/' + g.id, 'DELETE');
-                        showToast('连接已撤销', 'success');
-                      })
-                    }
-                  >
-                    撤销连接
-                  </button>
+                  <div className="actions">
+                    {active.some((a) => a.id === g.id) && (
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() => {
+                          setEditing(g);
+                          setEditPermission(
+                            g.scopes.includes('write')
+                              ? 'write'
+                              : g.scopes.includes('draft')
+                                ? 'draft'
+                                : 'read',
+                          );
+                          setEditHiddenRead(g.scopes.includes('hidden_read'));
+                          setEditHiddenWrite(g.scopes.includes('hidden_write'));
+                        }}
+                      >
+                        修改权限
+                      </button>
+                    )}
+                    <button
+                      className="secondary"
+                      disabled={busy}
+                      onClick={() =>
+                        void act(async () => {
+                          await api('/agent/connections/' + g.id, 'DELETE');
+                          showToast('连接已撤销', 'success');
+                        })
+                      }
+                    >
+                      撤销连接
+                    </button>
+                  </div>
                 )}
               </div>
             ))}
@@ -590,6 +618,104 @@ export function AgentConnections({ changed }: { changed?: () => void }) {
             ) && <p>没有匹配的能力。</p>}
           </section>
         </>
+      )}
+      {editing && (
+        <ReviewDialog title="修改连接权限" close={() => setEditing(null)} busy={busy}>
+          <p>
+            <strong>{editing.name}</strong> · {editing.clientId ? 'OAuth' : '个人令牌'}
+          </p>
+          <p className="muted">
+            保存后权限立即生效，授权期限保持不变。修改权限会取消该连接未确认的草稿，需要重新创建。
+          </p>
+          <form
+            className="agent-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const f = new FormData(e.currentTarget);
+              void act(async () => {
+                await api('/agent/connections/' + editing.id, 'PATCH', {
+                  password: f.get('password'),
+                  scopes: [
+                    'read',
+                    ...(editPermission === 'read' ? [] : [editPermission]),
+                    ...(editHiddenRead ? ['hidden_read'] : []),
+                    ...(editHiddenRead && editHiddenWrite && editPermission !== 'read'
+                      ? ['hidden_write']
+                      : []),
+                  ],
+                });
+                setEditing(null);
+                showToast('连接权限已更新', 'success');
+              });
+            }}
+          >
+            <label>
+              连接权限
+              <select
+                value={editPermission}
+                onChange={(e) => {
+                  setEditPermission(e.target.value);
+                  if (e.target.value === 'read') setEditHiddenWrite(false);
+                }}
+              >
+                <option value="read">只读查询</option>
+                <option value="draft">草稿修改</option>
+                <option value="write">直接写入</option>
+              </select>
+            </label>
+            {editPermission === 'write' && (
+              <p className="danger-text">
+                直接写入会立即执行普通修改，无需逐次网页确认。请仅授予你信任的助手。
+              </p>
+            )}
+            <fieldset className="agent-scope-options">
+              <legend>隐藏账户权限</legend>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={editHiddenRead}
+                  onChange={(e) => {
+                    setEditHiddenRead(e.target.checked);
+                    if (!e.target.checked) setEditHiddenWrite(false);
+                  }}
+                />
+                允许读取隐藏账户
+              </label>
+              <label className="check-line">
+                <input
+                  type="checkbox"
+                  checked={editHiddenWrite}
+                  disabled={!editHiddenRead || editPermission === 'read'}
+                  onChange={(e) => setEditHiddenWrite(e.target.checked)}
+                />
+                允许修改隐藏账户
+              </label>
+            </fieldset>
+            <label>
+              验证当前密码
+              <input
+                name="password"
+                type="password"
+                required
+                maxLength={72}
+                autoComplete="current-password"
+              />
+            </label>
+            <div className="actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={busy}
+                onClick={() => setEditing(null)}
+              >
+                取消
+              </button>
+              <button className="primary" disabled={busy}>
+                保存权限
+              </button>
+            </div>
+          </form>
+        </ReviewDialog>
       )}
       {review !== null && (
         <AgentDrafts

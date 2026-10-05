@@ -9,10 +9,12 @@ export function ReviewDialog({
   children,
   close,
   busy = false,
+  title = '审阅草稿',
 }: {
   children: ReactNode;
   close: () => void;
   busy?: boolean;
+  title?: string;
 }) {
   const ref = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -38,7 +40,7 @@ export function ReviewDialog({
         className="modal draft-dialog"
         role="dialog"
         aria-modal="true"
-        aria-label="审阅草稿"
+        aria-label={title}
         onKeyDown={(e) => {
           if (e.key === 'Escape' && !busy) {
             e.preventDefault();
@@ -73,7 +75,7 @@ export function ReviewDialog({
         }}
       >
         <header>
-          <h2>审阅草稿</h2>
+          <h2>{title}</h2>
           <button className="icon" aria-label="关闭" disabled={busy} onClick={close}>
             ×
           </button>

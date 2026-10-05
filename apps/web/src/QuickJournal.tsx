@@ -137,7 +137,7 @@ export function QuickRepayment({
   const source = choices.find((p) => p.id === sourceId);
   return (
     <section>
-      <p>
+      <p className={positionAmount(target).startsWith('-') ? 'danger-text' : 'income-text'}>
         {tr('还款账户')}：{target.name} · {money(positionAmount(target), target.currency)}
       </p>
       <p className="muted">

@@ -1,6 +1,7 @@
 import { networkConfig } from '../network';
 import { Injectable, BadRequestException, ForbiddenException } from '@nestjs/common';
 import { randomBytes, randomUUID, createHash } from 'node:crypto';
+import { Prisma } from '@prisma/client';
 import { Response } from 'express';
 import { z } from 'zod';
 import { Database } from '../database';
@@ -324,6 +325,9 @@ export class AgentOAuth implements OAuthServerProvider {
   ) {
     this.resource(resource);
     return this.db.atomic(async () => {
+      await this.db.$queryRaw(
+        Prisma.sql`SELECT id FROM AgentGrant WHERE refreshDigest=${digest(token)} FOR UPDATE`,
+      );
       const row = await this.db.agentGrant.findUnique({ where: { refreshDigest: digest(token) } });
       if (
         !row ||

@@ -183,10 +183,12 @@ export async function executeMovement(
     (v.operation !== 'transfer' && source.side !== 'asset') ||
     (v.operation === 'transfer'
       ? target.kind !== 'account'
-      : target.kind !== 'debt' ||
-        target.side !== (['borrow', 'repay'].includes(v.operation) ? 'liability' : 'asset'))
+      : !(
+          (target.kind === 'debt' || (v.operation === 'repay' && target.kind === 'account')) &&
+          target.side === (['borrow', 'repay'].includes(v.operation) ? 'liability' : 'asset')
+        ))
   )
-    throw new BadRequestException('请选择有效的资产账户和对应借入或借出债务');
+    throw new BadRequestException('请选择资产账户及对应债务；还款也可选择负债账户');
   if (accounts.some((p) => p.revisions[0] && +p.revisions[0].effectiveDate > +when))
     throw new ConflictException('转账时间不能早于任一账户的最新余额记录，请以当前余额转账');
   if (source.currency === target.currency && !new Decimal(v.amount).eq(v.received))
@@ -235,7 +237,7 @@ export async function executeMovement(
       notes: v.notes,
     },
   });
-  if (v.operation !== 'transfer')
+  if (v.operation !== 'transfer' && target.kind === 'debt')
     await tx.positionLink.upsert({
       where: { sourceId_targetId: { sourceId: target.id, targetId: source.id } },
       create: { sourceId: target.id, targetId: source.id },

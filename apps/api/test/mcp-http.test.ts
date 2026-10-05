@@ -6,6 +6,8 @@ test('HTTP resources, web links and client redirects work beyond loopback in dev
   const before = { ...process.env };
   try {
     process.env.NODE_ENV = 'development';
+    process.env.NETWORK_ALLOW_HTTP = 'true';
+    process.env.NETWORK_ALLOW_HTTP_REDIRECTS = 'true';
     process.env.MCP_PUBLIC_URL = 'http://192.0.2.10:3100/mcp';
     process.env.MCP_WEB_URL = 'http://192.0.2.10:5173';
     assert.equal(urls().issuer.href, 'http://192.0.2.10:3100/');
@@ -28,7 +30,13 @@ test('HTTP resources, web links and client redirects work beyond loopback in dev
       }),
     );
   } finally {
-    for (const k of ['NODE_ENV', 'MCP_PUBLIC_URL', 'MCP_WEB_URL']) {
+    for (const k of [
+      'NODE_ENV',
+      'MCP_PUBLIC_URL',
+      'MCP_WEB_URL',
+      'NETWORK_ALLOW_HTTP',
+      'NETWORK_ALLOW_HTTP_REDIRECTS',
+    ]) {
       if (before[k] === undefined) delete process.env[k];
       else process.env[k] = before[k];
     }
@@ -39,6 +47,8 @@ test('production requires HTTPS for configured endpoints and rejects non-loopbac
   const before = { ...process.env };
   try {
     process.env.NODE_ENV = 'production';
+    process.env.NETWORK_ALLOW_HTTP = 'false';
+    process.env.NETWORK_ALLOW_HTTP_REDIRECTS = 'false';
     process.env.MCP_PUBLIC_URL = 'http://192.0.2.10:3100/mcp';
     process.env.MCP_WEB_URL = 'https://worthpath.example';
     assert.throws(() => urls(), /HTTPS/);
@@ -61,7 +71,13 @@ test('production requires HTTPS for configured endpoints and rejects non-loopbac
       token_endpoint_auth_method: 'none',
     });
   } finally {
-    for (const k of ['NODE_ENV', 'MCP_PUBLIC_URL', 'MCP_WEB_URL']) {
+    for (const k of [
+      'NODE_ENV',
+      'MCP_PUBLIC_URL',
+      'MCP_WEB_URL',
+      'NETWORK_ALLOW_HTTP',
+      'NETWORK_ALLOW_HTTP_REDIRECTS',
+    ]) {
       if (before[k] === undefined) delete process.env[k];
       else process.env[k] = before[k];
     }
