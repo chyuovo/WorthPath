@@ -8,6 +8,7 @@ import cookieParser from 'cookie-parser';
 import helmet from 'helmet';
 import { json } from 'express';
 import { AuthController, AuthBusinessService, AuthGuard, AuthService } from './auth';
+import { AdminController, AdminService } from './admin';
 import { CalendarController, CalendarBusinessService } from './calendar';
 import { SchedulesController, SchedulesBusinessService } from './schedules';
 import { TransfersController, TransfersBusinessService } from './transfers';
@@ -57,6 +58,7 @@ class SafeErrors implements ExceptionFilter {
   providers: [
     Database,
     AuthService,
+    AdminService,
     RatesService,
     MetalsService,
     IconsService,
@@ -82,6 +84,7 @@ class SafeErrors implements ExceptionFilter {
     CalendarController,
     IconsController,
     AuthController,
+    AdminController,
     PortfolioController,
     MetalsController,
     SettingsController,

@@ -3,6 +3,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { metalConfig, metalHoldingInput } from './metals';
 import { scheduleInput } from './schedules';
 import { z } from 'zod';
+import { loginInput, adminCreateInput, adminUpdateInput } from './user-access';
 import {
   credentials,
   credentialChange,
@@ -32,8 +33,9 @@ export function setupOpenApi(app: INestApplication) {
       .build(),
   );
   const bodies: Record<string, z.ZodType> = {
-    'POST /api/auth/register': credentials,
-    'POST /api/auth/login': credentials,
+    'POST /api/auth/login': loginInput,
+    'POST /api/admin/users': adminCreateInput,
+    'PATCH /api/admin/users/{id}': adminUpdateInput,
     'PATCH /api/auth/credentials': credentialChange,
     'POST /api/auth/reveal': z.object({ password: credentials.shape.password.optional() }).strict(),
     'POST /api/positions': positionInput,

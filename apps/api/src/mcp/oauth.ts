@@ -178,6 +178,15 @@ export class AgentOAuth implements OAuthServerProvider {
       const authorizationDays = oauthDays.parse(days);
       const allowed = selected || ['read'];
       scopeInput.parse(allowed);
+      const user = await this.db.user.findUnique({ where: { id: userId } });
+      if (!user || user.banned || user.mustChangePassword)
+        throw new ForbiddenException('账号不可用');
+      if (
+        approved &&
+        user.role === 'readonly' &&
+        allowed.some((s: string) => ['draft', 'write', 'hidden_write'].includes(s))
+      )
+        throw new ForbiddenException('只读账号只能授予查询权限');
       if (allowed.some((scope: string) => !parameters.scopes.includes(scope)))
         throw new BadRequestException('不能授予客户端未请求的权限');
       const code = secret();
@@ -220,6 +229,14 @@ export class AgentOAuth implements OAuthServerProvider {
     authorizationDays: number | null = 30,
   ) {
     if (clientId && days === null) throw new BadRequestException('OAuth 连接必须有期限');
+    const user = await this.db.user.findUnique({ where: { id: userId } });
+    if (!user || user.banned || user.mustChangePassword)
+      throw new ForbiddenException('账号已封禁或需要首次改密');
+    if (
+      user.role === 'readonly' &&
+      selected.some((s) => ['draft', 'write', 'hidden_write'].includes(s))
+    )
+      throw new ForbiddenException('只读账号只能授予查询权限');
     const access = secret(),
       refresh = clientId ? secret() : undefined,
       sessionId = digest(secret());
@@ -315,6 +332,9 @@ export class AgentOAuth implements OAuthServerProvider {
         (row.refreshExpiresAt && row.refreshExpiresAt <= new Date())
       )
         throw new InvalidGrantError('Invalid refresh token');
+      const user = await this.db.user.findUnique({ where: { id: row.userId } });
+      if (!user || user.banned || user.mustChangePassword)
+        throw new InvalidGrantError('Account unavailable');
       const current = row.scopes as string[];
       if (
         selected &&
@@ -368,6 +388,9 @@ export class AgentOAuth implements OAuthServerProvider {
       row.resource !== urls().resource.toString()
     )
       throw new InvalidTokenError('Expired, revoked or invalid resource token');
+    const user = await this.db.user.findUnique({ where: { id: row.userId } });
+    if (!user || user.banned || user.mustChangePassword)
+      throw new InvalidTokenError('Account unavailable');
     return {
       token,
       clientId: row.clientId || row.id,
@@ -407,6 +430,9 @@ export class AgentOAuth implements OAuthServerProvider {
       },
     });
     if (!row) throw new ForbiddenException('Agent 连接已过期或撤销');
+    const user = await this.db.user.findUnique({ where: { id: row.userId } });
+    if (!user || user.banned || user.mustChangePassword)
+      throw new ForbiddenException('账号已封禁或需要首次改密');
     return row;
   }
 }

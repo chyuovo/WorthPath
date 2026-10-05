@@ -18,6 +18,9 @@ export async function api<T>(path: string, method = 'GET', data?: unknown): Prom
   return body;
 }
 export type User = {
+  id?: string;
+  role?: 'admin' | 'user' | 'readonly';
+  mustChangePassword?: boolean;
   username: string;
   baseCurrency: string;
   hiddenMenus: string[];

@@ -15,6 +15,7 @@ import {
   ForbiddenException,
   HttpException,
   SetMetadata,
+  OnModuleInit,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Request, Response } from 'express';
@@ -23,6 +24,7 @@ import { hash, compare } from 'bcryptjs';
 import { Database } from './database';
 import { credentials, credentialChange, defaultOverviewCards } from './validation';
 import { Prisma } from '@prisma/client';
+import { loginInput } from './user-access';
 export type UserRequest = Request & {
   userId: string;
   sessionId: string;
@@ -40,9 +42,26 @@ export function allowedOrigin(
   return isNetworkOriginAllowed(origin, configured, !production);
 }
 @Injectable()
-export class AuthService {
+export class AuthService implements OnModuleInit {
   private attempts = new Map<string, { count: number; until: number }>();
   constructor(private db: Database) {}
+  async onModuleInit() {
+    // Never reset or promote an existing account based on environment defaults.
+    const username = credentials.shape.username.parse(process.env.ADMIN_USERNAME ?? 'admin');
+    const password = loginInput.shape.password.parse(process.env.ADMIN_PASSWORD ?? 'admin');
+    if (await this.db.user.count({ where: { role: 'admin' } })) return;
+    const passwordHash = await hash(password, 12);
+    await this.db.serial(async (tx) => {
+      if (await tx.user.count({ where: { role: 'admin' } })) return;
+      if (await tx.user.findUnique({ where: { username } }))
+        throw new Error(
+          'Default administrator username already exists; configure a different ADMIN_USERNAME',
+        );
+      await tx.user.create({
+        data: { username, passwordHash, role: 'admin', mustChangePassword: true },
+      });
+    });
+  }
   limit(req: Request) {
     const network = networkConfig();
     if (!network.rateLimitEnabled) return;
@@ -84,8 +103,9 @@ export class AuthService {
     if (!s || s.expiresAt <= new Date()) return null;
     const u = await this.db.user.findUniqueOrThrow({
       where: { id: s.userId },
-      select: { idleMinutes: true },
+      select: { idleMinutes: true, banned: true },
     });
+    if (u.banned) throw new UnauthorizedException('账号已被封禁');
     if (u.idleMinutes && Date.now() - +s.lastActivity >= u.idleMinutes * 60000) {
       await this.db.session.deleteMany({ where: { id: s.id } });
       throw new UnauthorizedException('长时间无操作，已自动退出登录');
@@ -101,6 +121,29 @@ export class AuthService {
       secure: networkConfig().cookieSecure,
       httpOnly: true,
     });
+  }
+  async access(req: UserRequest) {
+    const u = await this.db.user.findUniqueOrThrow({ where: { id: req.userId } });
+    if (u.banned) throw new UnauthorizedException('账号已被封禁');
+    const path = req.path.replace(/\/$/, '');
+    const passwordAllowed = [
+      '/api/auth/me',
+      '/api/auth/credentials',
+      '/api/auth/logout',
+      '/api/auth/activity',
+    ];
+    if (u.mustChangePassword && !passwordAllowed.includes(path))
+      throw new ForbiddenException('首次登录必须修改密码');
+    const connectionManagement =
+      path === '/api/agent/tokens' ||
+      /^\/api\/agent\/(authorizations|connections)\/[a-f0-9-]{36}$/.test(path);
+    if (
+      u.role === 'readonly' &&
+      !['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+      !path.startsWith('/api/auth/') &&
+      !connectionManagement
+    )
+      throw new ForbiddenException('只读账号不能修改数据');
   }
 }
 @Injectable()
@@ -126,6 +169,7 @@ export class AuthGuard implements CanActivate {
     req.userId = id.userId;
     req.sessionId = id.id;
     req.revealed = !!id.revealUntil && +id.revealUntil > Date.now();
+    await this.auth.access(req);
     return true;
   }
 }
@@ -140,30 +184,34 @@ export class AuthBusinessService {
     return { status: 'ok' };
   }
   async register(body: unknown, req: Request, res: Response) {
-    this.auth.limit(req);
-    const v = credentials.parse(body),
-      user = await this.db.user.create({
-        data: { username: v.username, passwordHash: await hash(v.password, 12) },
-      });
-    await this.auth.issue(user.id, res);
-    return { username: user.username, baseCurrency: user.baseCurrency };
+    throw new ForbiddenException('公开注册已关闭，请联系管理员创建账号');
   }
   async login(body: unknown, req: Request, res: Response) {
     this.auth.limit(req);
-    const v = credentials.parse(body),
+    const v = loginInput.parse(body),
       user = await this.db.user.findUnique({ where: { username: v.username } });
     const ok = await compare(
       v.password,
       user?.passwordHash || '$2b$12$JZKvzAzfqM3obKxMQTFBjOzqIIKG97kn96/xUMbgTuWUnlMAT2bSi',
     );
     if (!user || !ok) throw new UnauthorizedException('账号或密码错误');
+    if (user.banned) throw new ForbiddenException('账号已被封禁');
     await this.auth.issue(user.id, res);
-    return { username: user.username, baseCurrency: user.baseCurrency };
+    return {
+      username: user.username,
+      baseCurrency: user.baseCurrency,
+      role: user.role,
+      mustChangePassword: user.mustChangePassword,
+      hiddenMenus: [],
+    };
   }
   async me(req: UserRequest) {
     const user = await this.db.user.findUniqueOrThrow({
       where: { id: req.userId },
       select: {
+        id: true,
+        role: true,
+        mustChangePassword: true,
         username: true,
         baseCurrency: true,
         hiddenMenus: true,
@@ -195,6 +243,11 @@ export class AuthBusinessService {
     const user = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
     if (!(await compare(v.currentPassword, user.passwordHash)))
       throw new ForbiddenException('当前密码错误');
+    if (
+      user.mustChangePassword &&
+      (!v.newPassword || (await compare(v.newPassword, user.passwordHash)))
+    )
+      throw new BadRequestException('请设置与初始密码不同的新密码（至少 10 个字符）');
     if ((!v.username || v.username === user.username) && !v.newPassword)
       throw new BadRequestException('请填写新的账号或密码');
     const passwordHash = v.newPassword ? await hash(v.newPassword, 12) : user.passwordHash;
@@ -203,11 +256,23 @@ export class AuthBusinessService {
     await this.db.serial(async (tx) => {
       await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE id = ${r.userId} FOR UPDATE`);
       const current = await tx.user.findUniqueOrThrow({ where: { id: r.userId } });
-      if (current.passwordHash !== user.passwordHash || current.username !== user.username)
+      if (
+        current.banned ||
+        current.passwordHash !== user.passwordHash ||
+        current.username !== user.username
+      )
         throw new ForbiddenException('账号已变更，请重新登录后操作');
       await tx.user.update({
         where: { id: r.userId },
-        data: { username: v.username, passwordHash },
+        data: {
+          username: v.username,
+          passwordHash,
+          ...(v.newPassword ? { mustChangePassword: false } : {}),
+        },
+      });
+      await tx.agentGrant.updateMany({
+        where: { userId: r.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
       });
       await tx.session.deleteMany({ where: { userId: r.userId } });
       await tx.session.create({ data: { id: digest(token), userId: r.userId, expiresAt } });

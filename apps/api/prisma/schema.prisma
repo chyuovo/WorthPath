@@ -13,6 +13,12 @@ model User {
   username String @unique @db.VarChar(64)
   /// 登录密码的 bcrypt 哈希，不存储明文
   passwordHash String @db.VarChar(255)
+  /// 系统权限：admin、user 或 readonly；管理员不能查看其他用户财务数据
+  role String @default("user") @db.VarChar(16)
+  /// 封禁后禁止登录和使用已有会话、MCP 授权
+  banned Boolean @default(false)
+  /// 首次登录必须设置新的强密码
+  mustChangePassword Boolean @default(false)
   /// 本位币代码
   baseCurrency String @default("CNY") @db.Char(3)
   /// 隐藏菜单标识列表

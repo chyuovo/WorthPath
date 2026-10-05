@@ -58,6 +58,7 @@ import { AgentConnections } from './AgentConnections';
 import { AgentAuthorization } from './AgentReview';
 import { AgentDrafts } from './AgentDrafts';
 import { savedLogin, rememberLogin } from './login-preferences';
+import { AdminPanel, FirstPassword } from './AdminPanel';
 import { PositionDeletion, deletionLabel } from './PositionDeletion';
 import { IconPicker } from './IconPicker';
 import { MetalPanel } from './MetalPanel';
@@ -84,6 +85,7 @@ const labels: Record<string, string> = {
   calendar: '收支日历',
   schedules: '定时计划',
   settings: '设置与备份',
+  admin: '管理员后台',
 };
 const categories: Record<string, [string, string][]> = {
   account: [
@@ -176,7 +178,6 @@ export default function App() {
   const authCheck = useRef<Promise<User> | null>(null);
   const [user, setUser] = useState<User | null>(null),
     [boot, setBoot] = useState(true),
-    [register, setRegister] = useState(false),
     [page, setPage] = useState(
       new URLSearchParams(location.search).has('agent_authorization') ? 'agent-review' : 'overview',
     ),
@@ -498,7 +499,6 @@ export default function App() {
     setBackup(null);
     setPreview(null);
     setPage('overview');
-    setRegister(false);
     setLoading(false);
     setSuccess('');
     setQuickTransfer(null);
@@ -521,6 +521,10 @@ export default function App() {
     try {
       const s = refreshUser ? await api<User>('/auth/me') : userRef.current;
       if (!active() || !s) return;
+      if (s.mustChangePassword) {
+        setUser(s);
+        return;
+      }
       const visibilityChanged = !!s.revealed !== !!userRef.current?.revealed;
       if (visibilityChanged) rangeOnly = false;
       if (refreshUser) {
@@ -561,7 +565,7 @@ export default function App() {
         const rows = await api<Position[]>('/positions?kind=account');
         if (active()) setPositions(rows);
       } else if (['account', 'asset', 'debt'].includes(page)) {
-        if (page === 'account' && !rangeOnly && runDue) {
+        if (page === 'account' && !rangeOnly && runDue && s.role !== 'readonly') {
           const result = await api<{
             executed: number;
             errors: { message: string }[];
@@ -703,7 +707,7 @@ export default function App() {
   }, [modal]);
   const previousView = useRef('');
   useEffect(() => {
-    if (!user) return;
+    if (!user || user.mustChangePassword) return;
     const mutated = previousDataVersion.current !== dataVersion;
     previousDataVersion.current = dataVersion;
     const rangeOnly =
@@ -718,7 +722,7 @@ export default function App() {
     return () => {
       loadGeneration.current++;
     };
-  }, [viewKey, !!user, dataVersion]);
+  }, [viewKey, !!user, user?.mustChangePassword, dataVersion]);
   useEffect(() => {
     const session = sessionGeneration.current;
     authCheck.current ||= api<User>('/auth/me');
@@ -829,13 +833,12 @@ export default function App() {
     setBusy(true);
     setError('');
     try {
-      const u = await api<User>('/auth/' + (register ? 'register' : 'login'), 'POST', {
+      const u = await api<User>('/auth/login', 'POST', {
         username: f.get('username'),
         password: f.get('password'),
       });
       if (session !== sessionGeneration.current) return;
-      if (!register)
-        void rememberLogin(String(f.get('username')), String(f.get('password')), remember);
+      void rememberLogin(String(f.get('username')), String(f.get('password')), remember);
       const agentReturn = new URLSearchParams(location.search).has('agent_authorization');
       setPage(agentReturn ? 'agent-review' : 'overview');
       if (agentReturn) setSettingsSection('agent');
@@ -911,10 +914,8 @@ export default function App() {
         <section className="auth-form">
           <div>
             <p className="eyebrow">{tr('开始你的资产之路')}</p>
-            <h2>{register ? tr('创建账号') : tr('欢迎回来')}</h2>
-            <p className="muted">
-              {register ? tr('建立属于你的私人资产空间') : tr('登录以查看你的资产与负债')}
-            </p>
+            <h2>{tr('欢迎回来')}</h2>
+            <p className="muted">{tr('登录以查看你的资产与负债')}</p>
 
             <form onSubmit={auth} autoComplete="on">
               <Field label={tr('账号')}>
@@ -932,14 +933,14 @@ export default function App() {
                 <input
                   name="password"
                   type="password"
-                  autoComplete={register ? 'new-password' : 'current-password'}
+                  autoComplete="current-password"
                   required
-                  minLength={10}
+                  minLength={1}
                   maxLength={72}
-                  placeholder={tr('至少 10 个字符，最多 72 字节')}
+                  placeholder={tr('输入密码')}
                 />
               </Field>
-              {!register && (
+              {
                 <>
                   <label className="check-line">
                     <input
@@ -951,24 +952,13 @@ export default function App() {
                   </label>
                   <p className="muted">{tr('密码由浏览器密码管理器保存，下次登录可自动填充。')}</p>
                 </>
-              )}
+              }
               <button className="primary full" disabled={busy}>
-                {busy ? tr('正在处理…') : register ? tr('注册并进入') : tr('登录')}
+                {busy ? tr('正在处理…') : tr('登录')}
                 <ArrowUpRight size={18} />
               </button>
             </form>
-            <p>
-              {register ? tr('已有账号？') : tr('还没有账号？')}{' '}
-              <button
-                className="text"
-                onClick={() => {
-                  setRegister(!register);
-                  setError('');
-                }}
-              >
-                {register ? tr('登录') : tr('创建账号')}
-              </button>
-            </p>
+            <p className="muted">{tr('账号由管理员创建，请联系管理员获取账号。')}</p>
             <p className="privacy">
               <ShieldCheck size={16} />
               {tr('个人数据按登录身份隔离')}
@@ -977,6 +967,8 @@ export default function App() {
         </section>
       </div>
     );
+  if (user.mustChangePassword)
+    return <FirstPassword changed={setUser} logout={() => void logout()} report={report} />;
   async function correctHistory(h: History) {
     if (h.reason.startsWith('transfer_') || h.reason.startsWith('loan_')) {
       const session = sessionGeneration.current,
@@ -1060,8 +1052,11 @@ export default function App() {
     ['calendar', CalendarDays],
     ['schedules', HistoryIcon],
     ['settings', Settings],
+    ['admin', ShieldCheck],
   ] as const;
-  const visibleNav = nav.filter(([key]) => !(user.hiddenMenus || []).includes(key));
+  const visibleNav = nav.filter(([key]) =>
+    key === 'admin' ? user.role === 'admin' : !(user.hiddenMenus || []).includes(key),
+  );
   const groups = orderedGroups(
     positions.filter((p) => p.kind === 'account').map((p) => p.groupName || ''),
     user.accountGroupOrder,
@@ -1181,18 +1176,24 @@ export default function App() {
               </p>
             </div>
             <div className="actions">
-              {page === 'account' && !p && !quickMode && (
+              {user.role !== 'readonly' && page === 'account' && !p && !quickMode && (
                 <button className="secondary" onClick={() => setModal({ kind: 'transfer' })}>
                   {tr('转账')}
                 </button>
               )}
-              {['overview', 'account', 'asset', 'debt'].includes(page) &&
+              {user.role !== 'readonly' &&
+                ['overview', 'account', 'asset', 'debt'].includes(page) &&
                 !p &&
                 !(page === 'account' && quickMode) &&
                 newAction}
             </div>
           </div>
 
+          {user.role === 'readonly' && (
+            <p className="muted" role="status">
+              {tr('当前为只读账号，无法修改业务数据。')}
+            </p>
+          )}
           {loading && (
             <p role="status" className="muted">
               {tr('正在刷新数据…')}
@@ -2128,6 +2129,7 @@ export default function App() {
           {page === 'calendar' && (
             <Calendar revealed={!!user.revealed} refreshVersion={calendarRefresh} />
           )}
+          {page === 'admin' && user.role === 'admin' && <AdminPanel user={user} report={report} />}
           {page === 'settings' && (
             <>
               <nav className="settings-tabs" aria-label={tr('设置分类')}>

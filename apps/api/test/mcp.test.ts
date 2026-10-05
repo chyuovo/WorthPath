@@ -1,3 +1,4 @@
+import { provisionTestUser } from './user-fixture';
 import { networkConfig, isNetworkOriginAllowed } from '../src/network';
 import 'dotenv/config';
 import { test } from 'node:test';
@@ -44,7 +45,8 @@ test('official SDK Streamable HTTP: real MySQL full business paths, drafts, isol
   ) {
     const username = 'mcp_test_' + randomUUID().slice(0, 12),
       password = randomBytes(20).toString('hex');
-    const registered = await web('', '/auth/register', 'POST', { username, password });
+    await provisionTestUser({ username, password });
+    const registered = await web('', '/auth/login', 'POST', { username, password });
     assert.equal(registered.status, 201);
     const user = await db.user.findUniqueOrThrow({ where: { username } });
     users.push(user.id);
@@ -705,7 +707,8 @@ test('real concurrent MCP idempotency, stale writes, icon workflow, nested rollb
     });
   }
   try {
-    assert.equal((await web('/auth/register', 'POST', { username, password })).status, 201);
+    await provisionTestUser({ username, password });
+    assert.equal((await web('/auth/login', 'POST', { username, password })).status, 201);
     userId = (await db.user.findUniqueOrThrow({ where: { username } })).id;
     const grant = (
       await web('/agent/tokens', 'POST', {
@@ -902,7 +905,8 @@ test('official SDK OAuth discovery, DCR, PKCE, consent, one-use codes, rotation 
     };
   }
   try {
-    const registered = await post('/api/auth/register', { username, password });
+    await provisionTestUser({ username, password });
+    const registered = await post('/api/auth/login', { username, password });
     assert.equal(registered.status, 201);
     userId = (await db.user.findUniqueOrThrow({ where: { username } })).id;
     assert.equal(await auth(provider, { serverUrl: resource, scope: 'read write' }), 'REDIRECT');

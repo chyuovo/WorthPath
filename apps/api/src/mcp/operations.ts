@@ -134,6 +134,10 @@ export class AgentOperations {
     return digest(stable(plain(data)));
   }
   private async permission(grant: AgentGrant, t: ToolDefinition, p: any) {
+    const user = await this.db.user.findUniqueOrThrow({ where: { id: grant.userId } });
+    if (user.banned || user.mustChangePassword) throw new ForbiddenException('账号不可用');
+    if (user.role === 'readonly' && t.scope !== 'read')
+      throw new ForbiddenException('只读账号不能提交写入或草稿');
     const selected = grant.scopes as string[];
     if (!selected.includes('read')) throw new ForbiddenException('缺少 read 权限');
     const mode = selected.includes('write')

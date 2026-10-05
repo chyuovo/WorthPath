@@ -177,7 +177,11 @@ export const pairedReasons = [
 
 export const credentialChange = z
   .object({
-    currentPassword: credentials.shape.password,
+    currentPassword: z
+      .string()
+      .min(1)
+      .max(72)
+      .refine((s) => Buffer.byteLength(s, 'utf8') <= 72, '密码最多 72 字节'),
     username: credentials.shape.username.optional(),
     newPassword: credentials.shape.password.optional(),
   })

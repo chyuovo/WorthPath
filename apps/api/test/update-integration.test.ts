@@ -1,3 +1,4 @@
+import { provisionTestUser } from './user-fixture';
 import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
@@ -34,7 +35,8 @@ test('real MySQL: groups, scheduled atomic execution, calendar, privacy and ZIP 
     const username = 'wp_update_' + randomUUID(),
       password = randomBytes(18).toString('hex');
     names.push(username);
-    const result = await call('/auth/register', '', 'POST', { username, password });
+    await provisionTestUser({ username, password });
+    const result = await call('/auth/login', '', 'POST', { username, password });
     assert.equal(result.status, 201);
     return {
       cookie: result.cookie,

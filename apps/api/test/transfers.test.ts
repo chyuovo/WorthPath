@@ -1,3 +1,4 @@
+import { provisionTestUser } from './user-fixture';
 import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
@@ -33,7 +34,8 @@ test('transfers are atomic, scoped, retry-safe, decimal exact and included in ba
     const username = 'wp_transfer_' + randomUUID(),
       password = randomBytes(18).toString('hex');
     names.push(username);
-    const r = await call('/auth/register', '', 'POST', { username, password });
+    await provisionTestUser({ username, password });
+    const r = await call('/auth/login', '', 'POST', { username, password });
     assert.equal(r.status, 201);
     return { ...r, id: (await db.user.findUniqueOrThrow({ where: { username } })).id, password };
   }

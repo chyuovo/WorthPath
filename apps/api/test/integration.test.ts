@@ -1,3 +1,4 @@
+import { provisionTestUser } from './user-fixture';
 import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
@@ -32,7 +33,8 @@ test('real MySQL: authentication, isolation, history, backup and atomic failures
   async function account() {
     const username = 'wp_test_' + randomUUID().slice(0, 12),
       password = randomBytes(18).toString('hex');
-    const r = await call('/auth/register', 'POST', { username, password });
+    await provisionTestUser({ username, password });
+    const r = await call('/auth/login', 'POST', { username, password });
     assert.equal(r.status, 201);
     assert.ok(r.cookie);
     const u = await db.user.findUniqueOrThrow({ where: { username } });

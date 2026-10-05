@@ -1,3 +1,4 @@
+import { provisionTestUser } from './user-fixture';
 import { fixtureFetch } from './backup-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
@@ -32,11 +33,13 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
     };
   }
   async function account() {
-    const username = 'wp_icons_' + randomUUID();
+    const username = 'wp_icons_' + randomUUID(),
+      password = randomBytes(18).toString('hex');
     names.push(username);
-    const r = await call('/auth/register', '', 'POST', {
+    await provisionTestUser({ username, password });
+    const r = await call('/auth/login', '', 'POST', {
       username,
-      password: randomBytes(18).toString('hex'),
+      password,
     });
     assert.equal(r.status, 201);
     return { ...r, id: (await db.user.findUniqueOrThrow({ where: { username } })).id };

@@ -183,6 +183,9 @@ export class SettingsBusinessService {
       where: { id: r.userId },
       select: {
         username: true,
+        id: true,
+        role: true,
+        mustChangePassword: true,
         baseCurrency: true,
         hiddenMenus: true,
         showNotes: true,

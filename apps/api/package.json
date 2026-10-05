@@ -10,6 +10,7 @@
     "db:migrate": "node scripts/database.cjs deploy",
     "db:status": "node scripts/database.cjs status",
     "test:integration": "tsx --test --test-concurrency=1 test/integration.test.ts test/privacy.test.ts test/icons.test.ts test/transfers.test.ts test/queries.test.ts test/debts.test.ts test/update-integration.test.ts test/record-edit.test.ts test/security-backup.test.ts test/credit-balance.test.ts test/group-order.test.ts test/settings-plans.test.ts test/inclusion-metals.test.ts test/account-deletion-integration.test.ts test/quick-entry-integration.test.ts",
+    "test:isolated": "node scripts/test-isolated.cjs",
     "test:performance": "tsx scripts/performance.ts after",
     "test:mcp": "tsx --test --test-concurrency=1 test/mcp.test.ts test/oauth-duration.test.ts",
     "mcp:probe": "tsx scripts/mcp-probe.ts",

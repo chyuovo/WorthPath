@@ -2567,3 +2567,28 @@ textarea,
     grid-template-columns: minmax(0, 1fr);
   }
 }
+/* Administrator accounts and mandatory first-login password change. */
+.admin-panel {
+  display: grid;
+  gap: 24px;
+}
+.admin-create {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr)) auto;
+  gap: 16px;
+  align-items: end;
+}
+.first-password {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.first-password > .panel {
+  width: min(100%, 520px);
+}
+@media (max-width: 800px) {
+  .admin-create {
+    grid-template-columns: 1fr;
+  }
+}

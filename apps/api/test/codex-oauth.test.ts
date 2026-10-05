@@ -1,3 +1,4 @@
+import { provisionTestUser } from './user-fixture';
 import 'dotenv/config';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -62,7 +63,8 @@ for (const useDefaultScopes of [false, true])
         }
       }
       try {
-        const fixture = await web('/auth/register', { username, password });
+        await provisionTestUser({ username, password });
+        const fixture = await web('/auth/login', { username, password });
         userId = (await db.user.findUniqueOrThrow({ where: { username } })).id;
         await writeFile(
           join(home, 'config.toml'),
