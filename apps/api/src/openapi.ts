@@ -3,7 +3,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { metalConfig, metalHoldingInput } from './metals';
 import { scheduleInput } from './schedules';
 import { z } from 'zod';
-import { loginInput, adminCreateInput, adminUpdateInput } from './user-access';
+import { loginInput, adminCreateInput, adminUpdateInput, adminDeleteInput } from './user-access';
 import {
   credentials,
   credentialChange,
@@ -36,6 +36,7 @@ export function setupOpenApi(app: INestApplication) {
     'POST /api/auth/login': loginInput,
     'POST /api/admin/users': adminCreateInput,
     'PATCH /api/admin/users/{id}': adminUpdateInput,
+    'DELETE /api/admin/users/{id}': adminDeleteInput,
     'PATCH /api/auth/credentials': credentialChange,
     'POST /api/auth/reveal': z.object({ password: credentials.shape.password.optional() }).strict(),
     'POST /api/positions': positionInput,

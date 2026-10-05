@@ -19,6 +19,8 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
     [offset, setOffset] = useState(0);
   const [busy, setBusy] = useState(false),
     [version, setVersion] = useState(0);
+  const [deleting, setDeleting] = useState<Account | null>(null);
+  const [confirmation, setConfirmation] = useState('');
   useEffect(() => {
     let cancelled = false;
     setBusy(true);
@@ -62,6 +64,26 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
     setBusy(true);
     try {
       await api('/admin/users/' + account.id, 'PATCH', data);
+      setVersion((v) => v + 1);
+    } catch (e) {
+      report(e);
+    } finally {
+      setBusy(false);
+    }
+  }
+  async function remove(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!deleting) return;
+    const f = new FormData(e.currentTarget);
+    setBusy(true);
+    try {
+      await api('/admin/users/' + deleting.id, 'DELETE', {
+        confirmationUsername: confirmation,
+        currentPassword: f.get('currentPassword'),
+      });
+      setDeleting(null);
+      setConfirmation('');
+      setOffset(0);
       setVersion((v) => v + 1);
     } catch (e) {
       report(e);
@@ -161,6 +183,18 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
                     >
                       {account.banned ? tr('解除封禁') : tr('封禁账号')}
                     </button>
+                    {account.role === 'admin' && account.id !== user.id && (
+                      <button
+                        className="danger"
+                        disabled={busy}
+                        onClick={() => {
+                          setDeleting(account);
+                          setConfirmation('');
+                        }}
+                      >
+                        {tr('删除管理员')}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
@@ -184,6 +218,57 @@ export function AdminPanel({ user, report }: { user: User; report: (e: unknown) 
           </button>
         </div>
       </section>
+      {deleting && (
+        <div className="veil">
+          <section className="modal" role="dialog" aria-modal="true" aria-label={tr('删除管理员')}>
+            <h2>
+              {tr('删除管理员')} · {deleting.username}
+            </h2>
+            <p className="danger-text">
+              {tr(
+                '此操作不可撤销，将删除该账号及其全部财务数据、私有图标、登录会话和 MCP 授权；已发布的共享图标保留。请先由该账号用户保存需要的备份。',
+              )}
+            </p>
+            <p className="muted">
+              {tr('必须保留另一位已完成改密且未封禁的管理员。不能删除当前登录账号。')}
+            </p>
+            <form onSubmit={remove}>
+              <label className="field">
+                <span>{tr('输入要删除的账号名称')}</span>
+                <input
+                  required
+                  autoComplete="off"
+                  value={confirmation}
+                  onChange={(e) => setConfirmation(e.target.value)}
+                />
+              </label>
+              <label className="field">
+                <span>{tr('验证当前管理员密码')}</span>
+                <input
+                  name="currentPassword"
+                  type="password"
+                  required
+                  autoComplete="current-password"
+                  maxLength={72}
+                />
+              </label>
+              <div className="actions">
+                <button
+                  type="button"
+                  className="secondary"
+                  disabled={busy}
+                  onClick={() => setDeleting(null)}
+                >
+                  {tr('取消')}
+                </button>
+                <button className="danger" disabled={busy || confirmation !== deleting.username}>
+                  {tr('永久删除账号')}
+                </button>
+              </div>
+            </form>
+          </section>
+        </div>
+      )}
     </div>
   );
 }

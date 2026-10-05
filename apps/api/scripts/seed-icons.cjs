@@ -26,10 +26,9 @@ async function main() {
         name: item.name,
         shared: true,
         data,
-        source: item.source,
         hash: createHash('sha256').update(data).digest('hex'),
       },
-      update: { data, source: item.source, hash: createHash('sha256').update(data).digest('hex') },
+      update: { data, hash: createHash('sha256').update(data).digest('hex') },
     });
   }
   console.log(`Shared icon catalog ready: ${sources.length} icons.`);

@@ -2,7 +2,7 @@ import { t as tr } from './i18n';
 import { useEffect, useState, useRef } from 'react';
 import { api } from './api';
 import { useToast } from './Toast';
-type Icon = { id: string; name: string; shared: boolean; source: string | null };
+type Icon = { id: string; name: string; shared: boolean };
 export const iconUrl = (id: string) => '/api/icons/' + encodeURIComponent(id) + '/image';
 export function IconLibrary({
   initialId,

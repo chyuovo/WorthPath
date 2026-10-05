@@ -325,8 +325,6 @@ model Icon {
   hash String @db.Char(64)
   /// 规范化静态 PNG 图片二进制
   data Bytes @db.MediumBlob
-  /// 可选公开来源网址
-  source String? @db.VarChar(500)
   /// 记录创建时间，UTC
   createdAt DateTime @default(now())
   positions Position[]

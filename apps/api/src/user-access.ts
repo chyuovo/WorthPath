@@ -9,6 +9,12 @@ export const loginInput = credentials.extend({
     .max(72)
     .refine((s) => Buffer.byteLength(s, 'utf8') <= 72, '密码最多 72 字节'),
 });
+export const adminDeleteInput = z
+  .object({
+    confirmationUsername: credentials.shape.username,
+    currentPassword: loginInput.shape.password,
+  })
+  .strict();
 export const adminCreateInput = credentials.extend({ role: roles.default('user') }).strict();
 export const adminUpdateInput = z
   .object({ role: roles.optional(), banned: z.boolean().optional() })

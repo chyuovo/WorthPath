@@ -4,19 +4,21 @@ import {
   Get,
   Post,
   Patch,
+  Delete,
   Req,
   Body,
   Param,
   Query,
   ForbiddenException,
   NotFoundException,
+  BadRequestException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { hash } from 'bcryptjs';
+import { hash, compare } from 'bcryptjs';
 import { z } from 'zod';
 import { Database } from './database';
-import { UserRequest } from './auth';
-import { adminCreateInput, adminUpdateInput } from './user-access';
+import { UserRequest, AuthService } from './auth';
+import { adminCreateInput, adminUpdateInput, adminDeleteInput } from './user-access';
 
 const summary = {
   id: true,
@@ -28,7 +30,10 @@ const summary = {
 } as const;
 @Injectable()
 export class AdminService {
-  constructor(private db: Database) {}
+  constructor(
+    private db: Database,
+    private auth: AuthService,
+  ) {}
   private async requireAdmin(userId: string) {
     const u = await this.db.user.findUnique({ where: { id: userId } });
     if (!u || u.role !== 'admin' || u.banned || u.mustChangePassword)
@@ -107,6 +112,44 @@ export class AdminService {
       return result;
     });
   }
+  async remove(r: UserRequest, id: string, body: unknown) {
+    z.string().uuid().parse(id);
+    const v = adminDeleteInput.parse(body);
+    await this.requireAdmin(r.userId);
+    this.auth.limit(r);
+    if (id === r.userId) throw new ForbiddenException('不能删除当前登录的管理员账号');
+    const verified = await this.db.user.findUniqueOrThrow({ where: { id: r.userId } });
+    if (!(await compare(v.currentPassword, verified.passwordHash)))
+      throw new ForbiddenException('当前密码错误');
+    return this.db.serial(async (tx) => {
+      // Share the lock order with role/ban changes to avoid concurrent loss of administrators.
+      await tx.$queryRaw(Prisma.sql`SELECT id FROM User WHERE role='admin' ORDER BY id FOR UPDATE`);
+      const actor = await tx.user.findUnique({ where: { id: r.userId } });
+      if (
+        !actor ||
+        actor.role !== 'admin' ||
+        actor.banned ||
+        actor.mustChangePassword ||
+        actor.passwordHash !== verified.passwordHash
+      )
+        throw new ForbiddenException('管理员权限已变更');
+      const target = await tx.user.findUnique({ where: { id } });
+      if (!target) throw new NotFoundException('账号不存在');
+      if (target.role !== 'admin') throw new BadRequestException('仅支持删除管理员账号');
+      if (v.confirmationUsername !== target.username)
+        throw new BadRequestException('确认账号名称不一致，请重新核对');
+      if (
+        !(await tx.user.count({
+          where: { id: { not: id }, role: 'admin', banned: false, mustChangePassword: false },
+        }))
+      )
+        throw new ForbiddenException('请先设置另一位已完成改密且未封禁的管理员');
+      // Private images must not become ownerless; published shared images remain available.
+      await tx.icon.deleteMany({ where: { ownerId: id, shared: false } });
+      await tx.user.delete({ where: { id } });
+      return { ok: true };
+    });
+  }
 }
 @Controller('api/admin/users')
 export class AdminController {
@@ -119,5 +162,8 @@ export class AdminController {
   }
   @Patch(':id') update(@Req() r: UserRequest, @Param('id') id: string, @Body() b: unknown) {
     return this.service.update(r, id, b);
+  }
+  @Delete(':id') remove(@Req() r: UserRequest, @Param('id') id: string, @Body() b: unknown) {
+    return this.service.remove(r, id, b);
   }
 }

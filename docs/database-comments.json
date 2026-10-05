@@ -1,6 +1,6 @@
 {
   "tableCount": 17,
-  "columnCount": 161,
+  "columnCount": 163,
   "tables": [
     {
       "TABLE_NAME": "_prisma_migrations",
@@ -399,11 +399,6 @@
     },
     {
       "TABLE_NAME": "icon",
-      "COLUMN_NAME": "source",
-      "COLUMN_COMMENT": "可选公开来源网址"
-    },
-    {
-      "TABLE_NAME": "icon",
       "COLUMN_NAME": "createdAt",
       "COLUMN_COMMENT": "记录创建时间，UTC"
     },
@@ -551,6 +546,16 @@
       "TABLE_NAME": "position",
       "COLUMN_NAME": "metalCostPerGram",
       "COLUMN_COMMENT": "买入时每克实物成本，原币；空值表示不计算盈亏"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "lastRepaymentMonth",
+      "COLUMN_COMMENT": "最后手动标记已完成还款的业务月份，UTC+8 YYYY-MM；空表示未标记"
+    },
+    {
+      "TABLE_NAME": "position",
+      "COLUMN_NAME": "lastBookedDate",
+      "COLUMN_COMMENT": "最后手动标记已完成记账的业务日期，UTC+8 YYYY-MM-DD；空表示未标记"
     },
     {
       "TABLE_NAME": "positionlink",
@@ -868,14 +873,19 @@
       "COLUMN_COMMENT": "独立资产是否参与资产总览和净资产轨迹"
     },
     {
-      "TABLE_NAME": "position",
-      "COLUMN_NAME": "lastRepaymentMonth",
-      "COLUMN_COMMENT": "最后手动标记已完成还款的业务月份，UTC+8 YYYY-MM；空表示未标记"
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "role",
+      "COLUMN_COMMENT": "系统权限：admin、user 或 readonly；管理员不能查看其他用户财务数据"
     },
     {
-      "TABLE_NAME": "position",
-      "COLUMN_NAME": "lastBookedDate",
-      "COLUMN_COMMENT": "最后手动标记已完成记账的业务日期，UTC+8 YYYY-MM-DD；空表示未标记"
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "banned",
+      "COLUMN_COMMENT": "封禁后禁止登录和使用已有会话、MCP 授权"
+    },
+    {
+      "TABLE_NAME": "user",
+      "COLUMN_NAME": "mustChangePassword",
+      "COLUMN_COMMENT": "首次登录必须设置新的强密码"
     }
   ]
 }

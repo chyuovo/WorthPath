@@ -87,7 +87,7 @@ export class IconsBusinessService {
     const [items, total] = await this.db.$transaction([
       this.db.icon.findMany({
         where,
-        select: { id: true, name: true, shared: true, source: true },
+        select: { id: true, name: true, shared: true },
         orderBy: [{ name: 'asc' }, { id: 'asc' }],
         skip: (index - 1) * 60,
         take: 60,
@@ -127,7 +127,7 @@ export class IconsBusinessService {
       where: { ownerId_hash_shared: { ownerId: r.userId, hash, shared } },
       create: { name: v.name, ownerId: r.userId, shared, hash, data },
       update: {},
-      select: { id: true, name: true, shared: true, source: true },
+      select: { id: true, name: true, shared: true },
     });
     return icon;
   }

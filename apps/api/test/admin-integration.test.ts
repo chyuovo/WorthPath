@@ -228,6 +228,156 @@ test(
       const unbanned = await call('/auth/login', 'POST', { username, password: regularPassword });
       assert.equal(unbanned.status, 201);
       assert.equal((await call('/overview', 'GET', undefined, unbanned.cookie)).status, 200);
+      const originalDelete = { confirmationUsername: 'admin', currentPassword: password };
+      assert.equal(
+        (await call('/admin/users/' + initial.id, 'DELETE', originalDelete, cookie)).status,
+        403,
+      );
+      assert.equal(
+        (await call('/admin/users/' + initial.id, 'DELETE', originalDelete, unbanned.cookie))
+          .status,
+        403,
+      );
+      const replacementName = 'replacement_' + randomUUID().slice(0, 10);
+      const replacementInitial = 'Initial-' + randomUUID();
+      const replacement = await call(
+        '/admin/users',
+        'POST',
+        { username: replacementName, password: replacementInitial, role: 'admin' },
+        cookie,
+      );
+      assert.equal(replacement.status, 201);
+      const firstLogin = await call('/auth/login', 'POST', {
+        username: replacementName,
+        password: replacementInitial,
+      });
+      assert.equal(
+        (
+          await call(
+            '/admin/users/' + initial.id,
+            'DELETE',
+            { confirmationUsername: 'admin', currentPassword: replacementInitial },
+            firstLogin.cookie,
+          )
+        ).status,
+        403,
+      );
+      const replacementPassword = 'Changed-' + randomUUID();
+      const replacementChanged = await call(
+        '/auth/credentials',
+        'PATCH',
+        { currentPassword: replacementInitial, newPassword: replacementPassword },
+        firstLogin.cookie,
+      );
+      assert.equal(replacementChanged.status, 200);
+      const replacementCookie = replacementChanged.cookie;
+      assert.equal(
+        (
+          await call(
+            '/admin/users/' + initial.id,
+            'DELETE',
+            { confirmationUsername: 'admin', currentPassword: 'wrong' },
+            replacementCookie,
+          )
+        ).status,
+        403,
+      );
+      assert.equal(
+        (
+          await call(
+            '/admin/users/' + initial.id,
+            'DELETE',
+            { confirmationUsername: 'wrong-name', currentPassword: replacementPassword },
+            replacementCookie,
+          )
+        ).status,
+        400,
+      );
+      assert.ok(await db.user.findUnique({ where: { id: initial.id } }));
+      const originalToken = await call(
+        '/agent/tokens',
+        'POST',
+        { name: 'original-admin', scopes: ['read'], days: 1, password },
+        cookie,
+      );
+      assert.equal(originalToken.status, 201);
+      const privateIcon = await db.icon.create({
+        data: {
+          name: 'private-delete',
+          ownerId: initial.id,
+          shared: false,
+          hash: 'a'.repeat(64),
+          data: Buffer.from('test'),
+        },
+      });
+      const sharedIcon = await db.icon.create({
+        data: {
+          name: 'shared-keep',
+          ownerId: initial.id,
+          shared: true,
+          hash: 'b'.repeat(64),
+          data: Buffer.from('test'),
+        },
+      });
+      const position = await db.position.create({
+        data: {
+          userId: initial.id,
+          name: 'delete-fixture',
+          kind: 'account',
+          side: 'asset',
+          category: 'bank',
+          currency: 'CNY',
+          notes: '',
+        },
+      });
+      await db.revision.create({
+        data: {
+          positionId: position.id,
+          amount: '10',
+          effectiveDate: new Date(),
+          notes: '',
+          reason: 'initial',
+        },
+      });
+      assert.equal(
+        (
+          await call(
+            '/admin/users/' + initial.id,
+            'DELETE',
+            { confirmationUsername: 'admin', currentPassword: replacementPassword },
+            replacementCookie,
+          )
+        ).status,
+        200,
+      );
+      assert.equal(await db.user.findUnique({ where: { id: initial.id } }), null);
+      assert.equal(await db.position.findUnique({ where: { id: position.id } }), null);
+      assert.equal(await db.revision.count({ where: { positionId: position.id } }), 0);
+      assert.equal(await db.icon.findUnique({ where: { id: privateIcon.id } }), null);
+      assert.equal(
+        (await db.icon.findUniqueOrThrow({ where: { id: sharedIcon.id } })).ownerId,
+        null,
+      );
+      assert.equal((await call('/auth/me', 'GET', undefined, cookie)).status, 401);
+      assert.equal(
+        (await call('/auth/login', 'POST', { username: 'admin', password })).status,
+        401,
+      );
+      await assert.rejects(oauth.verifyAccessToken(originalToken.data.token));
+      assert.equal(
+        (
+          await call(
+            '/admin/users/' + replacement.data.id,
+            'DELETE',
+            { confirmationUsername: replacementName, currentPassword: replacementPassword },
+            replacementCookie,
+          )
+        ).status,
+        403,
+      );
+      await new AuthService(db as Database).onModuleInit();
+      assert.equal(await db.user.count({ where: { username: 'admin' } }), 0);
+      assert.equal((await call('/admin/users', 'GET', undefined, replacementCookie)).status, 200);
     } finally {
       await db.$disconnect();
     }

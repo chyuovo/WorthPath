@@ -32,7 +32,7 @@ Revision 保存按业务日期生效的绝对金额，每次金额更新新增�
 
 ## 账户图标模块
 
-Icon 存储 name、ownerId、shared、SHA-256、规范静态 PNG 的 MediumBlob 和可选公开来源；Position.iconId 外键 SetNull，多个账户共享同一图片。所有图标接口使用已验证身份，读取/检索/赋值均限定 shared=true 或 ownerId=当前用户，响应不返回 ownerId。个人上传默认私有；共享发布须中文名称和明确公开确认。拒绝 SVG、动图、损坏图片、超限像素/文件，重编码移除元数据。内置图标固定 ID 追加初始化；在线请求不会发送用户财务数据。
+Icon 存储 name、ownerId、shared、SHA-256 和规范静态 PNG 的 MediumBlob，不存储 source；内置图标来源保留在资源清单中。Position.iconId 外键 SetNull，多个账户共享同一图片。所有图标接口使用已验证身份，读取/检索/赋值均限定 shared=true 或 ownerId=当前用户，响应不返回 ownerId。个人上传默认私有；共享发布须中文名称和明确公开确认。拒绝 SVG、动图、损坏图片、超限像素/文件，重编码移除元数据。内置图标固定 ID 追加初始化；在线请求不会发送用户财务数据。
 
 当前备份要求完整 icons 数组，ZIP v9 将图标内容放入 icons.json；内容校验和解码在导入事务前完成，图标在事务内以当前用户私有范围重建，账户关联重映射。清空删除私有图标，公开共享图标不因发布者清空而消失。用户删除时图标 ownerId SetNull，不影响他人已引用的公共图标。
 

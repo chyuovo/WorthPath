@@ -1,0 +1,1 @@
+ALTER TABLE `Icon` DROP COLUMN `source`;

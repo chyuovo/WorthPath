@@ -74,6 +74,13 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
     assert.equal((await call('/icons')).status, 401);
     const own = await upload(a.cookie, '我的银行');
     assert.equal(own.status, 201);
+    assert.equal('source' in own.data, false);
+    const ownList = await call('/icons?q=' + encodeURIComponent('我的银行'), a.cookie);
+    assert.equal('source' in ownList.data.items.find((i: any) => i.id === own.data.id), false);
+    const sourceColumns: any[] = await db.$queryRawUnsafe(
+      "SELECT COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'Icon' AND COLUMN_NAME = 'source'",
+    );
+    assert.equal(sourceColumns.length, 0);
     assert.equal((await upload(a.cookie, '同一图片')).data.id, own.data.id);
     assert.equal((await call('/icons/' + own.data.id + '/image', b.cookie)).status, 404);
     assert.equal(

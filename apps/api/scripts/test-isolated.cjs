@@ -74,6 +74,17 @@ async function main() {
         'utf8',
       ),
     );
+    // Verify the icon column removal migration against its former shape too.
+    await connection.query('ALTER TABLE `Icon` ADD COLUMN `source` VARCHAR(500) NULL');
+    await connection.query(
+      fs.readFileSync(
+        path.join(
+          __dirname,
+          '../prisma/migrations/20261005150000_remove_icon_source/migration.sql',
+        ),
+        'utf8',
+      ),
+    );
     const build = run([require.resolve('typescript/bin/tsc')]);
     if (build.status !== 0) {
       console.log(build.stdout);

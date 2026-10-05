@@ -656,5 +656,15 @@
   "不能修改自己的系统权限或封禁自己": "You cannot change your own role or ban yourself.",
   "必须保留至少一个可用管理员": "At least one active administrator must remain.",
   "管理员权限已变更": "Administrator permissions have changed.",
-  "账号不存在": "User not found."
+  "账号不存在": "User not found.",
+  "删除管理员": "Delete administrator",
+  "此操作不可撤销，将删除该账号及其全部财务数据、私有图标、登录会话和 MCP 授权；已发布的共享图标保留。请先由该账号用户保存需要的备份。": "This cannot be undone. The account, its financial data, private icons, login sessions and MCP grants will be deleted. Published shared icons remain. Ask the account owner to save any required backup first.",
+  "必须保留另一位已完成改密且未封禁的管理员。不能删除当前登录账号。": "Another unbanned administrator who has changed their initial password must remain. You cannot delete your current account.",
+  "输入要删除的账号名称": "Enter the username to delete",
+  "验证当前管理员密码": "Verify your current administrator password",
+  "永久删除账号": "Permanently delete account",
+  "不能删除当前登录的管理员账号": "You cannot delete the currently signed-in administrator.",
+  "仅支持删除管理员账号": "Only administrator accounts can be deleted.",
+  "确认账号名称不一致，请重新核对": "The confirmation username does not match. Check it again.",
+  "请先设置另一位已完成改密且未封禁的管理员": "First set up another unbanned administrator who has changed their initial password."
 }
