@@ -7,6 +7,8 @@ import { randomBytes, randomUUID } from 'node:crypto';
 import { PrismaClient } from '@prisma/client';
 import sharp from 'sharp';
 import { readBackupZip } from '../src/zip';
+import { readFile, unlink, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 const base = process.env.TEST_API_URL || 'http://127.0.0.1:3100/api';
 test('private and shared icons, account reuse and complete ZIP restoration preserve isolation', async () => {
   const db = new PrismaClient(),
@@ -74,6 +76,21 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
     assert.equal((await call('/icons')).status, 401);
     const own = await upload(a.cookie, '我的银行');
     assert.equal(own.status, 201);
+    const stored = await db.icon.findUniqueOrThrow({ where: { id: own.data.id } });
+    const persistedFile = process.env.ICON_STORAGE_DIR
+      ? join(process.env.ICON_STORAGE_DIR, stored.hash + '.png')
+      : undefined;
+    if (process.env.TEST_ISOLATED === 'true') {
+      assert.ok(persistedFile);
+      assert.deepEqual(await readFile(persistedFile), Buffer.from(stored.data));
+      await unlink(persistedFile);
+      assert.equal((await call('/icons/' + own.data.id + '/image', a.cookie)).status, 200);
+      assert.deepEqual(await readFile(persistedFile), Buffer.from(stored.data));
+      await writeFile(persistedFile, 'corrupt file');
+      const repaired = await call('/icons/' + own.data.id + '/image', a.cookie);
+      assert.deepEqual(repaired.data, Buffer.from(stored.data));
+      assert.deepEqual(await readFile(persistedFile), Buffer.from(stored.data));
+    }
     assert.equal('source' in own.data, false);
     const ownList = await call('/icons?q=' + encodeURIComponent('我的银行'), a.cookie);
     assert.equal('source' in ownList.data.items.find((i: any) => i.id === own.data.id), false);
@@ -172,6 +189,7 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
       400,
     );
     assert.equal(await db.icon.count(), before);
+    if (process.env.TEST_ISOLATED === 'true') await unlink(persistedFile!);
     assert.equal(
       (
         await call('/backup/restore-fixture', b.cookie, 'POST', {
@@ -181,6 +199,8 @@ test('private and shared icons, account reuse and complete ZIP restoration prese
       ).status,
       201,
     );
+    if (process.env.TEST_ISOLATED === 'true')
+      assert.deepEqual(await readFile(persistedFile!), Buffer.from(stored.data));
     const imported = await db.position.findMany({
       where: { userId: b.id, importedFromId: { not: null } },
       include: { icon: true },

@@ -139,6 +139,8 @@ async function bootstrap() {
   console.log('WorthPath API ready');
 }
 void bootstrap().catch(() => {
-  console.error('API startup failed. Check local configuration and database availability.');
+  console.error(
+    'API startup failed. Check configuration, icon directory permissions and database availability.',
+  );
   process.exitCode = 1;
 });

@@ -12,6 +12,7 @@ import {
   UseInterceptors,
   BadRequestException,
   NotFoundException,
+  OnModuleInit,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { memoryStorage } from 'multer';
@@ -21,6 +22,7 @@ import { createHash } from 'node:crypto';
 import { z } from 'zod';
 import { Database } from './database';
 import { UserRequest } from './auth';
+import { initializeIconDirectory, persistIconFile, readIconFile } from './icon-files';
 
 export const iconName = z.string().trim().min(1).max(100);
 export const iconHash = (data: Buffer) => createHash('sha256').update(data).digest('hex');
@@ -78,8 +80,24 @@ export class IconsService {
 }
 
 @Injectable()
-export class IconsBusinessService {
+export class IconsBusinessService implements OnModuleInit {
   constructor(private db: Database) {}
+  async onModuleInit() {
+    if (!process.env.ICON_STORAGE_DIR?.trim()) return;
+    await initializeIconDirectory();
+    let cursor: string | undefined;
+    for (;;) {
+      const rows = await this.db.icon.findMany({
+        orderBy: { id: 'asc' },
+        take: 100,
+        ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
+        select: { id: true, hash: true, data: true },
+      });
+      for (const row of rows) await persistIconFile(row.hash, Buffer.from(row.data));
+      if (rows.length < 100) break;
+      cursor = rows[rows.length - 1].id;
+    }
+  }
   async list(r: UserRequest, q = '', page = '1') {
     const query = z.string().trim().max(100).parse(q);
     const index = z.coerce.number().int().min(1).max(100000).parse(page);
@@ -105,7 +123,7 @@ export class IconsBusinessService {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     // Uploads, built-in seeding and imports already validate stored PNG data.
     // Preserve essential white artwork rather than applying the cutout twice.
-    res.send(Buffer.from(icon.data));
+    res.send(await readIconFile(icon.hash, Buffer.from(icon.data)));
   }
 
   async upload(r: UserRequest, raw: unknown, file?: Express.Multer.File) {
@@ -123,6 +141,7 @@ export class IconsBusinessService {
     if (!file) throw new BadRequestException('请选择图标文件');
     const data = await normalizeIcon(file.buffer),
       hash = iconHash(data);
+    await persistIconFile(hash, data);
     const icon = await this.db.icon.upsert({
       where: { ownerId_hash_shared: { ownerId: r.userId, hash, shared } },
       create: { name: v.name, ownerId: r.userId, shared, hash, data },

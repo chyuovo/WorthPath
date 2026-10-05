@@ -4,8 +4,9 @@ const mysql = require('mysql2/promise');
 const { spawn, spawnSync } = require('node:child_process');
 const { randomBytes } = require('node:crypto');
 const net = require('node:net');
-const fs = require('node:fs');
-const path = require('node:path');
+const { mkdtempSync, rmSync } = require('node:fs');
+const { join, resolve, dirname, basename } = require('node:path');
+const { tmpdir } = require('node:os');
 const pkg = require('../package.json');
 async function main() {
   const url = new URL(process.env.DATABASE_URL);
@@ -17,9 +18,11 @@ async function main() {
     password: decodeURIComponent(url.password),
   });
   let api;
+  let iconDirectory;
   try {
     await connection.query('CREATE DATABASE `' + name + '`');
     url.pathname = '/' + name;
+    iconDirectory = mkdtempSync(join(tmpdir(), 'wp_test_icons_'));
     const port = await new Promise((resolve, reject) => {
       const server = net.createServer();
       server.on('error', reject);
@@ -31,6 +34,7 @@ async function main() {
     const env = {
       ...process.env,
       DATABASE_URL: url.toString(),
+      ICON_STORAGE_DIR: iconDirectory,
       ADMIN_USERNAME: 'admin',
       ADMIN_PASSWORD: 'admin',
       PORT: String(port),
@@ -44,14 +48,7 @@ async function main() {
       TEST_API_URL: 'http://127.0.0.1:' + port + '/api',
     };
     const run = (args) => spawnSync(process.execPath, args, { env, encoding: 'utf8' });
-    // Historical 005-007 directories sort before the initial migration. Use the
-    // current schema only in this disposable database, then exercise our SQL.
-    const migration = run([
-      require.resolve('prisma/build/index.js'),
-      'db',
-      'push',
-      '--skip-generate',
-    ]);
+    const migration = run([require.resolve('./database.cjs'), 'deploy']);
     if (migration.status !== 0) {
       const safe = (migration.stdout + migration.stderr)
         .split(/\r?\n/)
@@ -60,31 +57,6 @@ async function main() {
       console.error(safe);
       throw Error('Disposable database migration failed');
     }
-    await connection.query('USE `' + name + '`');
-    // db push omits the historical column comments asserted by integration tests.
-    await connection.query(
-      "ALTER TABLE `User` MODIFY COLUMN `accountGroupOrder` JSON NULL COMMENT '账户分组显示顺序；空值表示沿用默认顺序'",
-    );
-    await connection.query(
-      'ALTER TABLE `User` DROP COLUMN `role`, DROP COLUMN `banned`, DROP COLUMN `mustChangePassword`',
-    );
-    await connection.query(
-      fs.readFileSync(
-        path.join(__dirname, '../prisma/migrations/20261005130000_admin_accounts/migration.sql'),
-        'utf8',
-      ),
-    );
-    // Verify the icon column removal migration against its former shape too.
-    await connection.query('ALTER TABLE `Icon` ADD COLUMN `source` VARCHAR(500) NULL');
-    await connection.query(
-      fs.readFileSync(
-        path.join(
-          __dirname,
-          '../prisma/migrations/20261005150000_remove_icon_source/migration.sql',
-        ),
-        'utf8',
-      ),
-    );
     const build = run([require.resolve('typescript/bin/tsc')]);
     if (build.status !== 0) {
       console.log(build.stdout);
@@ -110,6 +82,7 @@ async function main() {
           'test/admin-integration.test.ts',
           'test/mcp.test.ts',
           'test/oauth-duration.test.ts',
+          'test/database-migrations.test.ts',
         ];
     const result = spawnSync(
       process.execPath,
@@ -125,6 +98,12 @@ async function main() {
     }
     await connection.query('DROP DATABASE `' + name + '`');
     await connection.end();
+    if (
+      iconDirectory &&
+      dirname(resolve(iconDirectory)) === resolve(tmpdir()) &&
+      basename(iconDirectory).startsWith('wp_test_icons_')
+    )
+      rmSync(iconDirectory, { recursive: true, force: true });
     console.log('Disposable test database and API cleaned up.');
   }
 }
@@ -133,7 +112,7 @@ main().catch((e) => {
     'Isolated test run failed: ' +
       (/Disposable|API build/.test(e.message)
         ? e.message
-        : 'check test configuration or database access'),
+        : 'check test configuration or database access (' + (e.code || e.name) + ')'),
   );
   process.exitCode = 1;
 });

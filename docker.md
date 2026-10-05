@@ -1,5 +1,42 @@
 # WorthPath Docker 部署
 
+## 更新已部署的项目（尚未上传图片）
+
+图标持久化新增配置不需要数据库结构迁移，也不需要搬运上传图片。保留服务器已有 `.env.production`、MySQL 与反向代理配置；更新镜像和 Compose 的图标挂载即可。历史空库迁移修复也包含在此次更新中，已完成迁移的数据库不用重复初始化或运行图标 seed。
+
+本机重新打包镜像并导出（在源码项目目录执行）：
+
+```powershell
+docker build -t worthpath:local .
+docker save -o E:\worthpath-local.tar worthpath:local
+```
+
+将新的 `worthpath-local.tar` 和 `compose.yaml` 传到服务器 `/opt/worthpath`，同步 Compose 时保留服务器已有的环境文件路径、端口和数据库网络配置。若希望只修改现有 Compose，在 `services.app` 下合并以下配置（不要重复创建已有的 `environment` 或 `volumes` 键）：
+
+```yaml
+environment:
+  ICON_STORAGE_DIR: /app/data/icons
+volumes:
+  - type: bind
+    source: /opt/worthpath/data/icons
+    target: /app/data/icons
+    bind:
+      create_host_path: false
+```
+
+服务器执行：
+
+```bash
+cd /opt/worthpath
+sudo install -d -m 750 -o 1000 -g 1000 /opt/worthpath/data/icons
+docker load -i worthpath-local.tar
+docker compose up -d --no-build --force-recreate app
+docker compose ps
+docker compose logs --tail=100 app
+```
+
+上述使用 `worthpath:local`，服务器 Compose 的 `image` 标签需要一致。Compose 已设置容器路径，已有 `.env.production` 无需额外添加变量。启动时现有内置图标也会自动落盘，因此尚未上传图片时目录也可能已有 PNG。随后在网页上传一张图标，可在服务器执行 `find /opt/worthpath/data/icons -maxdepth 1 -type f -name '*.png'` 检查文件。
+
 ## 部署结构
 
 前后端合并为一个应用容器：构建时编译 React/Vite 和 NestJS，将网页产物复制到 `apps/api/public`；运行时只启动 `node dist/main.js`。同一端口提供网页、`/api`、MCP 和 OAuth，不启动 Vite 开发服务。
@@ -15,6 +52,10 @@ WorthPath 应用容器
 ```
 
 本仓库的 `compose.yaml` 只管理应用，不创建数据库。需要已有 MySQL 8+、已创建的 `worthpath` 数据库及可用的数据库账号。Compose 使用命名镜像，可通过 `WORTHPATH_IMAGE_TAG` 区分版本。运行镜像保留 Prisma CLI 和相关依赖，以便单独执行迁移，不包含后端源码、测试或前端开发目录。
+
+上传图标持久化到宿主机 `/opt/worthpath/data/icons`，Compose 将它绑定到容器 `/app/data/icons`，并设置 `ICON_STORAGE_DIR=/app/data/icons`。使用 SHA-256 作为 PNG 文件名，相同内容去重。上传及 ZIP 恢复时写入文件；应用启动时分批补齐数据库中的已有图标。数据库继续保留图片内容，支持现有自包含 ZIP 备份，并可自动修复缺失或损坏的图标文件。图标访问仍通过带身份与可见性校验的 `/api/icons/:id/image` 接口；不要将该目录作为 Nginx 静态目录公开。
+
+首次启动前创建目录并设置权限（见上面的 `install` 命令）；已有目录权限不正确时执行 `sudo chown 1000:1000 /opt/worthpath/data/icons`。Compose 不自动创建宿主机目录，以避免生成 root 所有且不可写的目录。换镜像或重建容器会保留这些文件。图标文件按内容共享，删除账号或清空数据会撤销数据库引用和接口访问，不自动删除磁盘上的内容文件；服务器备份应包含该目录与 MySQL。
 
 ## Windows 本机安装 Docker 与构建镜像
 
@@ -65,7 +106,9 @@ docker build -t worthpath:local .
 
 2026-10-05：已通过前后端 TypeScript 检查、前后端生产构建，以及网页托管/网络/Host 的 6 项回归测试。检查了真实环境文件的 Git 忽略规则。测试不连接业务数据库。
 
-当前本机未找到 Docker 命令，WSL 状态检查提示需要安装；因此尚未完成 Linux 镜像构建、Compose 配置验证、容器内迁移或真实 HTTPS/MCP 联通验证。安装完成后先运行上面的环境验证和 `docker build`，再按后续步骤部署到服务器。
+初次验证时本机未找到 Docker 命令。随后配置正式部署环境时，已检测到 Docker CLI，并通过配置解析检查。图标持久化修改通过 57 项单元测试和 30 项隔离业务回归，包含真实上传落盘、备份恢复落盘、缺失或损坏文件修复及权限隔离。Compose 使用 `docker compose config --no-env-resolution --quiet` 校验结构，未读取服务器上的环境文件。服务器目录权限、容器内迁移与真实 HTTPS/MCP 联通仍需在部署环境验证。
+
+本机 Docker Desktop 的 Linux 引擎已完成修改后镜像构建，包含前后端生产构建。两个断网临时容器验证了 UID 1000 写入绑定的测试目录，以及第一个容器销毁后第二个容器读取同一 PNG。测试目录已清理，未连接业务数据库；此验证不代表服务器 `/opt/worthpath/data/icons` 的权限已配置。
 
 ## 1. 准备服务器
 

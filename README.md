@@ -2,6 +2,8 @@
 
 Docker 前后端合并容器部署见 [Docker 部署说明](docker.md)。
 
+Docker 上传图标持久化到宿主机 `/opt/worthpath/data/icons`（容器 `/app/data/icons`）；更新已部署项目需同步 Compose 挂载配置并重建镜像，具体步骤见部署说明。数据库继续保留图标内容，用于现有 ZIP 备份及文件缺失修复。
+
 个人资产负债与净资产管理。NestJS + React/Vite + TypeScript + MySQL，支持手机和电脑。Node.js 22.12+、pnpm 11、MySQL 8+。
 
 ```powershell
@@ -22,7 +24,7 @@ cd E:\WorthPath
 .\scripts\pnpm.ps1 dev
 ```
 
-已有本地环境配置时直接启动，避免重新复制模板。创建数据库前可以在 `apps/api` 中执行 `node scripts/db-preflight.cjs`；脚本先检查同名数据库，仅在不存在时创建空数据库，不删除已有数据。迁移只使用 `migrate deploy`。Windows 上重新生成 Prisma 客户端前需停止 API，以释放其 DLL。
+已有本地环境配置时直接启动，避免重新复制模板。创建数据库前可以在 `apps/api` 中执行 `node scripts/db-preflight.cjs`；脚本先检查同名数据库，仅在不存在时创建空数据库，不删除已有数据。迁移使用 `pnpm db:migrate`，由项目入口按依赖顺序执行 Prisma `migrate deploy`；空库的历史 `005_account_icons` 失败恢复见 [数据库迁移](docs/database-migrations.md)。Windows 上重新生成 Prisma 客户端前需停止 API，以释放其 DLL。
 
 ```powershell
 pnpm typecheck

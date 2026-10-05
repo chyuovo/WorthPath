@@ -23,4 +23,4 @@ ADMIN_PASSWORD=admin
 
 运行隔离回归：在仓库根目录执行 `pnpm --filter @worthpath/api test:isolated`。测试库名使用随机 `wp_test_` 前缀，API 使用随机本机端口；完成或失败后清理自己创建的服务和数据库。管理员测试只在该隔离流程中运行，避免修改真实管理员。
 
-已有迁移目录 `005_account_icons`、`006_navigation_transfers`、`007_notes_display` 排在初始迁移之前，因此原有 `migrate deploy` 从空库初始化会失败。本次未重命名历史迁移。隔离测试用当前 Prisma 模型建立临时库，再移除本次字段并执行新增 SQL 来验证增量迁移；现有库迁移正常。全新部署仍需要单独修复历史迁移顺序。
+历史 `005_account_icons`、`006_navigation_transfers`、`007_notes_display` 排在初始迁移之前的问题已由项目迁移入口修复，保留所有历史目录名称和 SQL 校验值。隔离测试通过正式迁移入口建立空库，再运行业务回归；不再使用 `db push` 或手动改列来代替迁移。空库失败恢复与部署命令见 [数据库迁移](database-migrations.md)。

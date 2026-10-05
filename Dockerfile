@@ -18,6 +18,8 @@ RUN pnpm db:generate && pnpm build \
 
 FROM base AS runtime
 ENV NODE_ENV=production
+ENV ICON_STORAGE_DIR=/app/data/icons
+RUN mkdir -p /app/data/icons && chown -R node:node /app/data
 # Preserve pnpm's workspace links and Prisma CLI for explicit release migrations.
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/package.json /app/pnpm-workspace.yaml ./

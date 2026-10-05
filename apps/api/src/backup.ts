@@ -49,6 +49,7 @@ import {
 import { createHash } from 'node:crypto';
 import { toBusinessDate } from './validation';
 import { iconName, validateStoredIcon } from './icons';
+import { persistIconFile } from './icon-files';
 import { day, businessTime } from './calculation';
 const timestamp = z.iso
   .datetime()
@@ -656,7 +657,11 @@ export class BackupBusinessService implements OnModuleDestroy, OnModuleInit {
         .parse(raw),
       b = validateBackup(backup);
     const iconData = new Map<string, Buffer>();
-    for (const i of b.icons) iconData.set(i.id, await validateStoredIcon(i.image, i.hash));
+    for (const i of b.icons) {
+      const data = await validateStoredIcon(i.image, i.hash);
+      iconData.set(i.id, data);
+      await persistIconFile(i.hash, data);
+    }
     return this.db.$transaction(
       async (tx) => {
         const ps = await tx.position.findMany({
