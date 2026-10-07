@@ -6,7 +6,7 @@ import { money, positionAmount, type Position } from './api';
 import { t as tr } from './i18n';
 export type QuickEntry = {
   key: string;
-  kind: 'balance' | 'transfer' | 'mark' | 'booked';
+  kind: 'balance' | 'transfer' | 'mark';
   id: string;
   positionId: string;
   title: string;
@@ -21,8 +21,6 @@ export type QuickEntry = {
   previousMonth?: string | null;
   month?: string | null;
   markUpdatedAt?: string;
-  previousDate?: string | null;
-  bookedDate?: string | null;
   undone?: boolean;
 };
 export const isPaidForMonth = (
@@ -32,8 +30,8 @@ export const isPaidForMonth = (
   position.kind === 'account' &&
   position.side === 'liability' &&
   position.lastRepaymentMonth === month;
-export const isBookedToday = (position: Pick<Position, 'kind' | 'lastBookedDate'>, day: string) =>
-  position.kind === 'account' && position.lastBookedDate === day;
+export const isBookedToday = (position: Pick<Position, 'kind' | 'activityDate'>, day: string) =>
+  position.kind === 'account' && position.activityDate === day;
 export const quickAccountVisible = (
   position: Position,
   month: string,
@@ -95,9 +93,6 @@ export function QuickJournal({
               )}
               {entry.kind === 'mark' && (
                 <p>{tr(entry.month ? '已标记本月还款' : '已取消本月标记')}</p>
-              )}
-              {entry.kind === 'booked' && (
-                <p>{tr(entry.bookedDate ? '已标记当天记账' : '已取消当天标记')}</p>
               )}
               <small>{entry.date.replace('T', ' ')} · UTC+8</small>
               {entry.undone ? (

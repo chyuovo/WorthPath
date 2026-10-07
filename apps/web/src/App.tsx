@@ -26,6 +26,8 @@ import {
   RefreshCw,
   TrendingUp,
   ShieldCheck,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import {
   api,
@@ -46,6 +48,14 @@ import {
   type PageResult,
 } from './api';
 import './style.css';
+import {
+  accountPages,
+  overviewPages,
+  settingsPages,
+  navigationGroup,
+  availablePages,
+  navigationDestination,
+} from './navigation';
 import { NetWorthChart } from './NetWorthChart';
 import { allOverviewCards, overviewCardLabels } from './overview-cards';
 import { useToast } from './Toast';
@@ -140,14 +150,27 @@ function Modal({
   close: () => void;
   children: ReactNode;
 }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const element = dialog.current;
+    element?.showModal();
+    return () => element?.close();
+  }, []);
   return (
-    <div
-      className="veil"
+    <dialog
+      ref={dialog}
+      aria-modal="true"
+      aria-label={title}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+      className="veil native-modal"
       onClick={(e) => {
         if (e.target === e.currentTarget) close();
       }}
     >
-      <section role="dialog" aria-modal="true" aria-label={title} className="modal">
+      <section className="modal">
         <header>
           <h2 className={title.includes(tr('清空本账号数据')) ? 'danger-text' : undefined}>
             {title}
@@ -158,7 +181,7 @@ function Modal({
         </header>
         {children}
       </section>
-    </div>
+    </dialog>
   );
 }
 function Empty({ title, body, action }: { title: string; body: string; action?: ReactNode }) {
@@ -173,6 +196,23 @@ function Empty({ title, body, action }: { title: string; body: string; action?: 
 }
 export default function App() {
   const locale = useLocale();
+  useEffect(() => {
+    const root = document.documentElement;
+    const pointer = () => {
+      root.dataset.input = 'pointer';
+    };
+    const keyboard = () => {
+      root.dataset.input = 'keyboard';
+    };
+    document.addEventListener('pointerdown', pointer, true);
+    document.addEventListener('keydown', keyboard, true);
+    return () => {
+      document.removeEventListener('pointerdown', pointer, true);
+      document.removeEventListener('keydown', keyboard, true);
+      delete root.dataset.input;
+    };
+  }, []);
+
   const sessionGeneration = useRef(0),
     loadGeneration = useRef(0);
   const authCheck = useRef<Promise<User> | null>(null);
@@ -209,7 +249,6 @@ export default function App() {
   } | null>(null);
   const [quickEntries, setQuickEntries] = useState<QuickEntry[]>([]);
   const [quickMarkMode, setQuickMarkMode] = useState(false);
-  const [quickBookedMode, setQuickBookedMode] = useState(false);
   const [hideBooked, setHideBooked] = useState(false);
   const [unpaidOnly, setUnpaidOnly] = useState(false);
   const [assetQuickMode, setAssetQuickMode] = useState(false);
@@ -237,7 +276,6 @@ export default function App() {
     quickGeneration.current++;
     setQuickEntries([]);
     setQuickMarkMode(false);
-    setQuickBookedMode(false);
     setHideBooked(false);
     setUnpaidOnly(false);
     setAssetQuickMode(false);
@@ -262,7 +300,6 @@ export default function App() {
     if (!quickMode) setQuickEntries([]);
     setQuickMode(!quickMode);
     setQuickMarkMode(false);
-    setQuickBookedMode(false);
     setHideBooked(false);
     setUnpaidOnly(false);
     setQuickTransfer(null);
@@ -356,39 +393,6 @@ export default function App() {
     );
     return result;
   }
-  async function markQuickBooked(position: Position) {
-    const previousDate = position.lastBookedDate ?? null,
-      day = today();
-    const nextDate = isBookedToday(position, day) ? null : day;
-    const generation = quickGeneration.current,
-      session = sessionGeneration.current;
-    const result = await api<{ updatedAt: string }>(
-      '/positions/' + position.id + '/booked-mark',
-      'PATCH',
-      {
-        date: nextDate,
-        expectedDate: previousDate,
-        expectedUpdatedAt: position.updatedAt,
-      },
-    );
-    rememberQuick(
-      {
-        key: 'booked:' + position.id + ':' + Date.now(),
-        kind: 'booked',
-        id: position.id,
-        positionId: position.id,
-        title: position.name,
-        currency: position.currency,
-        date: nowMinute(),
-        previousDate,
-        bookedDate: nextDate,
-        markUpdatedAt: result.updatedAt,
-      },
-      generation,
-      session,
-    );
-    return result;
-  }
   async function toggleAssetInclusion(position: Position) {
     return api('/positions/' + position.id + '/inclusion', 'PATCH', {
       included: position.included === false,
@@ -401,12 +405,6 @@ export default function App() {
       if (entry.kind === 'balance')
         await api('/positions/' + entry.positionId + '/revisions/' + entry.id, 'DELETE');
       else if (entry.kind === 'transfer') await api('/transfers/' + entry.id, 'DELETE');
-      else if (entry.kind === 'booked')
-        await api('/positions/' + entry.positionId + '/booked-mark', 'PATCH', {
-          date: entry.previousDate ?? null,
-          expectedDate: entry.bookedDate ?? null,
-          expectedUpdatedAt: entry.markUpdatedAt,
-        });
       else
         await api('/positions/' + entry.positionId + '/repayment-mark', 'PATCH', {
           month: entry.previousMonth ?? null,
@@ -467,7 +465,9 @@ export default function App() {
     [grain, setGrain] = useState('day');
   const [dataVersion, setDataVersion] = useState(0);
   const previousDataVersion = useRef(0);
-  const viewKey = [page, selected, rangeFrom, rangeTo, grain, settingsSection].join('|');
+  const viewKey = [page, selected, rangeFrom, rangeTo, grain, settingsSection, businessDay].join(
+    '|',
+  );
   const viewRef = useRef(viewKey);
   viewRef.current = viewKey;
   const userRef = useRef(user);
@@ -706,19 +706,26 @@ export default function App() {
     };
   }, [modal]);
   const previousView = useRef('');
+  const previousBusinessDay = useRef(businessDay);
   useEffect(() => {
     if (!user || user.mustChangePassword) return;
+    const dayChanged = previousBusinessDay.current !== businessDay;
+    previousBusinessDay.current = businessDay;
     const mutated = previousDataVersion.current !== dataVersion;
     previousDataVersion.current = dataVersion;
     const rangeOnly =
-      !mutated && page === 'overview' && previousView.current.startsWith('overview|') && !!overview;
+      !mutated &&
+      !dayChanged &&
+      page === 'overview' &&
+      previousView.current.startsWith('overview|') &&
+      !!overview;
     previousView.current = viewKey;
     if (!rangeOnly) setOverview(null);
     setHistoryRows([]);
     setHistoryCursor(null);
     setTransfers([]);
     setTransferCursor(null);
-    void load(true, rangeOnly, !mutated);
+    void load(true, rangeOnly, !mutated && !dayChanged);
     return () => {
       loadGeneration.current++;
     };
@@ -1044,19 +1051,27 @@ export default function App() {
     );
   }
   const nav = [
-    ['overview', LayoutDashboard],
-    ['account', Wallet],
-    ['asset', Landmark],
-    ['debt', HandCoins],
-    ['history', HistoryIcon],
-    ['calendar', CalendarDays],
-    ['schedules', HistoryIcon],
-    ['settings', Settings],
-    ['admin', ShieldCheck],
+    ['overview', LayoutDashboard, '总览'],
+    ['calendar', CalendarDays, '日历'],
+    ['account', Wallet, '账号'],
+    ['settings', Settings, '设置'],
   ] as const;
-  const visibleNav = nav.filter(([key]) =>
-    key === 'admin' ? user.role === 'admin' : !(user.hiddenMenus || []).includes(key),
-  );
+  const hiddenMenus = user.hiddenMenus || [];
+  const activeGroup = navigationGroup(page);
+  const visibleNav = nav.filter(([key]) => navigationDestination(key, hiddenMenus, user.role));
+  const sectionPages =
+    activeGroup === 'account'
+      ? accountPages
+      : activeGroup === 'overview'
+        ? overviewPages
+        : activeGroup === 'settings'
+          ? settingsPages
+          : [];
+  function navigateTo(next: string) {
+    setPage(next);
+    setSelected(null);
+    setPositions([]);
+  }
   const groups = orderedGroups(
     positions.filter((p) => p.kind === 'account').map((p) => p.groupName || ''),
     user.accountGroupOrder,
@@ -1072,18 +1087,22 @@ export default function App() {
             <span>W</span> WorthPath
           </div>
           <p className="nav-caption">{tr('我的资产空间')}</p>
-          <nav style={{ gridTemplateColumns: `repeat(${visibleNav.length}, 1fr)` }}>
-            {visibleNav.map(([key, Icon]) => (
+          <nav
+            className="primary-nav"
+            aria-label={tr('主导航')}
+            style={{ gridTemplateColumns: `repeat(${visibleNav.length}, minmax(0, 1fr))` }}
+          >
+            {visibleNav.map(([key, Icon, label]) => (
               <button
                 key={key}
-                className={page === key ? 'active' : ''}
+                className={activeGroup === key ? 'active' : ''}
+                aria-current={activeGroup === key ? 'page' : undefined}
                 onClick={() => {
-                  setPage(key);
-                  setSelected(null);
+                  navigateTo(navigationDestination(key, hiddenMenus, user.role)!);
                 }}
               >
                 <Icon size={19} />
-                <span>{tr(labels[key])}</span>
+                <span>{tr(label)}</span>
               </button>
             ))}
           </nav>
@@ -1120,6 +1139,14 @@ export default function App() {
               {user.baseCurrency}
             </span>
             <button
+              className="icon mobile-logout"
+              aria-label={tr('退出登录')}
+              disabled={busy}
+              onClick={() => void logout()}
+            >
+              <LogOut size={17} />
+            </button>
+            <button
               className="icon"
               aria-label={tr('刷新数据')}
               disabled={loading}
@@ -1134,6 +1161,20 @@ export default function App() {
             page === 'account' && quickMode && !selected ? 'content quick-content' : 'content'
           }
         >
+          {sectionPages.length > 0 && (
+            <nav className="section-nav" aria-label={tr('页面分类')}>
+              {availablePages(sectionPages, hiddenMenus, user.role).map((key) => (
+                <button
+                  key={key}
+                  type="button"
+                  aria-current={page === key ? 'page' : undefined}
+                  onClick={() => navigateTo(key)}
+                >
+                  {tr(labels[key])}
+                </button>
+              ))}
+            </nav>
+          )}
           <div className="privacy-toolbar">
             <span>
               {user.revealed
@@ -1151,6 +1192,11 @@ export default function App() {
                     : setModal({ kind: 'reveal' })
               }
             >
+              {user.revealed ? (
+                <EyeOff size={17} aria-hidden="true" />
+              ) : (
+                <Eye size={17} aria-hidden="true" />
+              )}
               {user.revealed
                 ? tr('锁定隐藏资产')
                 : user.requireHiddenPassword === false
@@ -1636,7 +1682,6 @@ export default function App() {
                           aria-pressed={quickMarkMode}
                           onClick={() => {
                             setQuickMarkMode(!quickMarkMode);
-                            setQuickBookedMode(false);
                             setQuickTransfer(null);
                           }}
                         >
@@ -1655,25 +1700,12 @@ export default function App() {
                             }
                             onClick={() => {
                               setQuickMarkMode(false);
-                              setQuickBookedMode(false);
                               setHideBooked(false);
                               setUnpaidOnly(false);
                               setQuickTransfer({});
                             }}
                           >
                             {tr('转账')}
-                          </button>
-                          <button
-                            className={quickBookedMode ? 'primary' : 'secondary'}
-                            disabled={busy}
-                            aria-pressed={quickBookedMode}
-                            onClick={() => {
-                              setQuickBookedMode(!quickBookedMode);
-                              setQuickMarkMode(false);
-                              setQuickTransfer(null);
-                            }}
-                          >
-                            {tr(quickBookedMode ? '结束记账标记' : '标记当天已记账')}
                           </button>
                           <button
                             className="secondary"
@@ -1684,6 +1716,11 @@ export default function App() {
                               setQuickTransfer(null);
                             }}
                           >
+                            {unpaidOnly ? (
+                              <Eye size={17} aria-hidden="true" />
+                            ) : (
+                              <EyeOff size={17} aria-hidden="true" />
+                            )}
                             {tr(unpaidOnly ? '显示全部账户' : '仅看本月未还款')}
                           </button>
                           <button
@@ -1695,7 +1732,12 @@ export default function App() {
                               setQuickTransfer(null);
                             }}
                           >
-                            {tr(hideBooked ? '显示当天已记账' : '隐藏当天已记账')}
+                            {hideBooked ? (
+                              <Eye size={17} aria-hidden="true" />
+                            ) : (
+                              <EyeOff size={17} aria-hidden="true" />
+                            )}
+                            {tr(hideBooked ? '显示当天有记录' : '隐藏当天有记录')}
                           </button>
                         </>
                       )}
@@ -1727,13 +1769,11 @@ export default function App() {
                     {quickMode && (
                       <p className="muted">
                         {tr(
-                          quickBookedMode
-                            ? '点击账户卡片，标记或取消当天已记账。'
-                            : quickMarkMode
-                              ? '点击欠款账户卡片，标记或取消本月已还款。'
-                              : quickTransfer !== null
-                                ? '快速转账中：依次点击转出和转入账户卡片。'
-                                : '点击账户卡片，直接填写当前余额。',
+                          quickMarkMode
+                            ? '点击欠款账户卡片，标记或取消本月已还款。'
+                            : quickTransfer !== null
+                              ? '快速转账中：依次点击转出和转入账户卡片。'
+                              : '点击账户卡片，直接填写当前余额。',
                         )}
                       </p>
                     )}
@@ -1835,6 +1875,10 @@ export default function App() {
                           <button
                             className={
                               'position-card' +
+                              (p.name.length > 40 ||
+                              money(positionAmount(p), p.currency).length > 18
+                                ? ' position-wide'
+                                : '') +
                               (quickTransfer?.sourceId === p.id
                                 ? ' quick-source'
                                 : quickTransfer?.targetId === p.id
@@ -1852,10 +1896,7 @@ export default function App() {
                                 assetValueMode &&
                                 (p.archived || p.category === 'gold')) ||
                               (!!quickTransfer && p.archived) ||
-                              (quickMode &&
-                                quickMarkMode &&
-                                (p.side !== 'liability' || p.archived)) ||
-                              (quickMode && quickBookedMode && p.archived)
+                              (quickMode && quickMarkMode && (p.side !== 'liability' || p.archived))
                             }
                             key={p.id}
                             onClick={() =>
@@ -1863,22 +1904,15 @@ export default function App() {
                                 ? setModal({ kind: 'revision', p })
                                 : page === 'asset' && assetQuickMode
                                   ? void act(() => toggleAssetInclusion(p), tr('统计设置已保存'))
-                                  : quickMode && quickBookedMode && page === 'account'
-                                    ? void act(() => markQuickBooked(p), tr('记账标记已保存'))
-                                    : quickMode && quickMarkMode && page === 'account'
-                                      ? p.kind === 'account' &&
-                                        p.side === 'liability' &&
-                                        !p.archived
-                                        ? void act(
-                                            () => markQuickRepayment(p),
-                                            tr('还款标记已保存'),
-                                          )
-                                        : undefined
-                                      : quickTransfer !== null && page === 'account' && quickMode
-                                        ? chooseQuickAccount(p)
-                                        : page === 'account' && quickMode && !p.archived
-                                          ? setModal({ kind: 'revision', p, quick: true })
-                                          : setSelected(p.id)
+                                  : quickMode && quickMarkMode && page === 'account'
+                                    ? p.kind === 'account' && p.side === 'liability' && !p.archived
+                                      ? void act(() => markQuickRepayment(p), tr('还款标记已保存'))
+                                      : undefined
+                                    : quickTransfer !== null && page === 'account' && quickMode
+                                      ? chooseQuickAccount(p)
+                                      : page === 'account' && quickMode && !p.archived
+                                        ? setModal({ kind: 'revision', p, quick: true })
+                                        : setSelected(p.id)
                             }
                           >
                             <div>
@@ -1900,7 +1934,7 @@ export default function App() {
                               <span className="badge repayment-paid">{tr('本月已还款')}</span>
                             )}
                             {quickMode && page === 'account' && isBookedToday(p, businessDay) && (
-                              <span className="badge repayment-paid">{tr('当天已记账')}</span>
+                              <span className="badge repayment-paid">{tr('当天有记账记录')}</span>
                             )}
                             {assetQuickMode && page === 'asset' && p.included !== false && (
                               <span className="badge repayment-paid">{tr('计入总资产')}</span>
@@ -2134,29 +2168,29 @@ export default function App() {
           {page === 'admin' && user.role === 'admin' && <AdminPanel user={user} report={report} />}
           {page === 'settings' && (
             <>
-              <nav className="settings-tabs" aria-label={tr('设置分类')}>
-                {Object.entries({
-                  general: '常规设置',
-                  agent: '连接 Agent',
-                  display: '显示与菜单',
-                  privacy: '登录与隐私',
-                  security: '账号与密码',
-                  icons: '图标库',
-                  rates: '每日汇率',
-                  backup: '备份与恢复',
-                  clear: '清空本账号数据',
-                }).map(([key, label]) => (
-                  <button
-                    key={key}
-                    type="button"
-                    aria-current={settingsSection === key ? 'page' : undefined}
-                    className={key === 'clear' ? 'danger-text' : undefined}
-                    onClick={() => setSettingsSection(key)}
-                  >
-                    {tr(label)}
-                  </button>
-                ))}
-              </nav>
+              <label className="settings-category">
+                <span>{tr('设置分类')}</span>
+                <select
+                  value={settingsSection}
+                  onChange={(event) => setSettingsSection(event.target.value)}
+                >
+                  {Object.entries({
+                    general: '常规设置',
+                    agent: '连接 Agent',
+                    display: '显示与菜单',
+                    privacy: '登录与隐私',
+                    security: '账号与密码',
+                    icons: '图标库',
+                    rates: '每日汇率',
+                    backup: '备份与恢复',
+                    clear: '清空本账号数据',
+                  }).map(([key, label]) => (
+                    <option key={key} value={key}>
+                      {tr(label)}
+                    </option>
+                  ))}
+                </select>
+              </label>
               {settingsSection === 'icons' && (
                 <section className="panel">
                   <IconLibrary />

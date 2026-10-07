@@ -45,7 +45,7 @@
   "欢迎回来": "Welcome back",
   "建立属于你的私人资产空间": "Create your private asset workspace",
   "登录以查看你的资产与负债": "Sign in to view your assets and liabilities",
-  "账号": "Username",
+  "账号": "Accounts",
   "输入账号（至少 3 个字符）": "Enter a username (at least 3 characters)",
   "密码": "Password",
   "至少 10 个字符，最多 72 字节": "At least 10 characters, up to 72 bytes",
@@ -666,5 +666,13 @@
   "不能删除当前登录的管理员账号": "You cannot delete the currently signed-in administrator.",
   "仅支持删除管理员账号": "Only administrator accounts can be deleted.",
   "确认账号名称不一致，请重新核对": "The confirmation username does not match. Check it again.",
-  "请先设置另一位已完成改密且未封禁的管理员": "First set up another unbanned administrator who has changed their initial password."
+  "请先设置另一位已完成改密且未封禁的管理员": "First set up another unbanned administrator who has changed their initial password.",
+  "总览": "Overview",
+  "日历": "Calendar",
+  "设置": "Settings",
+  "主导航": "Main navigation",
+  "页面分类": "Page sections",
+  "当天有记账记录": "Records today",
+  "显示当天有记录": "Show today’s recorded accounts",
+  "隐藏当天有记录": "Hide today’s recorded accounts"
 }

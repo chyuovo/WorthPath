@@ -103,45 +103,21 @@ test('quick entries undo paired repayment and balance, persist monthly marks, pr
       ).status,
       400,
     );
-    const bookedPath = '/positions/' + cash + '/booked-mark',
-      day = today();
-    const booked = await call(a, bookedPath, 'PATCH', { date: day, expectedDate: null });
-    assert.equal(booked.status, 200);
-    assert.equal((await call(a, '/positions/' + cash)).data.lastBookedDate, day);
-    assert.equal(
-      (await call(a, bookedPath, 'PATCH', { date: null, expectedDate: null })).status,
-      409,
-    );
-    assert.equal(
-      (await call(b, bookedPath, 'PATCH', { date: null, expectedDate: day })).status,
-      404,
-    );
-    assert.equal(
-      (await call(a, bookedPath, 'PATCH', { date: '2099-01-01', expectedDate: day })).status,
-      400,
-    );
+    const day = today();
+    // The obsolete marker remains in ZIP v9, but cannot be written through the retired route.
+    await db.position.update({ where: { id: cash }, data: { lastBookedDate: day } });
     assert.equal(
       (
-        await call(a, bookedPath, 'PATCH', {
-          date: null,
-          expectedDate: day,
-          expectedUpdatedAt: booked.data.updatedAt,
-        })
-      ).status,
-      200,
-    );
-    assert.equal(
-      (await call(a, bookedPath, 'PATCH', { date: day, expectedDate: null })).status,
-      200,
-    );
-    assert.equal(
-      (
-        await call(a, '/positions/' + coin.id + '/booked-mark', 'PATCH', {
+        await call(a, '/positions/' + cash + '/booked-mark', 'PATCH', {
           date: day,
           expectedDate: null,
         })
       ).status,
-      400,
+      404,
+    );
+    assert.equal(
+      (await call(a, '/positions?kind=account')).data.find((p: any) => p.id === cash).activityDate,
+      null,
     );
     const revision = await call(a, '/positions/' + cash + '/revisions', 'POST', {
       amount: '1050.87654321',
@@ -301,6 +277,58 @@ test('quick entries undo paired repayment and balance, persist monthly marks, pr
       ).status,
       409,
     );
+    // Derive daily status from surviving effective-time records; cover edits, deletes and both transfer sides.
+    const dailySource = await create('daily source', 'account', 'asset', 'bank', '100');
+    const dailyTarget = await create('daily target', 'account', 'asset', 'bank', '0');
+    const activity = async (id: string) =>
+      (await call(a, '/positions?kind=account')).data.find((p: any) => p.id === id).activityDate;
+    const daily = await call(a, '/positions/' + dailySource + '/revisions', 'POST', {
+      amount: '110',
+      date: day + 'T00:00',
+    });
+    assert.equal(daily.status, 201);
+    assert.equal(await activity(dailySource), day);
+    const yesterday = new Date(+new Date(day) - 86400000).toISOString().slice(0, 10);
+    assert.equal(
+      (
+        await call(a, '/positions/' + dailySource + '/revisions/' + daily.data.id, 'PUT', {
+          amount: '110',
+          date: yesterday + 'T23:59',
+        })
+      ).status,
+      200,
+    );
+    assert.equal(await activity(dailySource), null);
+    assert.equal(
+      (
+        await call(a, '/positions/' + dailySource + '/revisions/' + daily.data.id, 'PUT', {
+          amount: '110',
+          date: day + 'T00:00',
+        })
+      ).status,
+      200,
+    );
+    assert.equal(await activity(dailySource), day);
+    assert.equal(
+      (await call(a, '/positions/' + dailySource + '/revisions/' + daily.data.id, 'DELETE')).status,
+      200,
+    );
+    assert.equal(await activity(dailySource), null);
+    const dailyTransfer = await call(a, '/transfers', 'POST', {
+      sourceId: dailySource,
+      targetId: dailyTarget,
+      amount: '5',
+      received: '5',
+      fee: '0',
+      date: day + 'T00:01',
+      requestId: randomUUID(),
+    });
+    assert.equal(dailyTransfer.status, 201);
+    assert.equal(await activity(dailySource), day);
+    assert.equal(await activity(dailyTarget), day);
+    assert.equal((await call(a, '/transfers/' + dailyTransfer.data.id, 'DELETE')).status, 200);
+    assert.equal(await activity(dailySource), null);
+    assert.equal(await activity(dailyTarget), null);
     const backup = await call(a, '/backup');
     assert.equal(backup.status, 200);
     assert.equal(backup.data.positions.find((p: any) => p.id === card).lastRepaymentMonth, old);

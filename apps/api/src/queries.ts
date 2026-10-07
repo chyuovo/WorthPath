@@ -31,6 +31,25 @@ export const encodeCursor = (time: Date, key: string | number) =>
   Buffer.from(JSON.stringify({ time: time.toISOString(), key: String(key) })).toString('base64url');
 export const endOfDay = (d: string) => new Date(+toBusinessDate(d) + 86400000);
 
+// Use record business time, not creation time or the obsolete manual marker.
+export async function accountActivityIds(
+  db: Reader,
+  userId: string,
+  revealed: boolean,
+  day: string,
+) {
+  const rows = await db.position.findMany({
+    where: {
+      userId,
+      kind: 'account',
+      ...(revealed ? {} : { hidden: false }),
+      revisions: { some: { effectiveDate: { gte: toBusinessDate(day), lt: endOfDay(day) } } },
+    },
+    select: { id: true },
+  });
+  return new Set(rows.map((p) => p.id));
+}
+
 export async function transferPageIds(
   db: Reader,
   userId: string,

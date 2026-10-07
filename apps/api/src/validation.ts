@@ -235,13 +235,6 @@ export const repaymentMarkInput = z
   })
   .strict();
 
-export const bookedMarkInput = z
-  .object({
-    date: date.nullable(),
-    expectedDate: date.nullable(),
-    expectedUpdatedAt: z.iso.datetime().optional(),
-  })
-  .strict();
 export const inclusionInput = z
   .object({
     included: z.boolean(),

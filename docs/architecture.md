@@ -54,4 +54,4 @@ User.hiddenMenus 保存受枚举校验的菜单键，settings 不可隐藏；Use
 
 ## 快速记账标记与统计开关（2026-10-04）
 
-Position.lastRepaymentMonth 和 lastBookedDate 分别记录 UTC+8 最后已还款月份与已记账日期，可空且仅保存最后一次人工标记。页面根据当前业务年月/日期显示状态，不通过定时任务删除旧值。标记接口使用用户归属、隐藏可见性、行锁及期望状态检查；网页使用 updatedAt 防止覆盖新操作。资产快速统计开关仅修改 included，不覆盖其他项目元数据。ZIP v9 保存新字段，金额历史不受标记影响。详细操作、接口和验收见 [快速记账更新](update-quick-entry-2026-10-04.md)。
+Position.lastRepaymentMonth 记录 UTC+8 最后已还款月份，页面按当前业务月份显示，不通过定时任务删除旧值。还款标记接口使用用户归属、隐藏可见性、行锁及期望状态检查；网页使用 updatedAt 防止覆盖新操作。2026-10-07 起当天记账状态使用账号列表的派生 activityDate，从当天有效日期的 Revision 记录查询；lastBookedDate 仅为数据库和 ZIP v9 保留，不再参与筛选，booked-mark 接口已撤下。资产快速统计开关仅修改 included，不覆盖其他项目元数据。详细操作和验收见 [移动端导航与当天记录筛选](update-mobile-navigation-2026-10-07.md)。

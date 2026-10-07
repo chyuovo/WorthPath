@@ -17,22 +17,31 @@ export function useToast(message: string, kind: Kind) {
   }, [message, kind]);
 }
 function ToastItem({ notice, remove }: { notice: Notice; remove: (id: number) => void }) {
+  const [exiting, setExiting] = useState(false);
+  const dismiss = () => {
+    if (document.documentElement.dataset.input === 'keyboard') remove(notice.id);
+    else setExiting(true);
+  };
   useEffect(() => {
-    const timer = setTimeout(() => remove(notice.id), notice.kind === 'error' ? 12000 : 6000);
+    const timer = setTimeout(() => setExiting(true), notice.kind === 'error' ? 12000 : 6000);
     return () => clearTimeout(timer);
-  }, [notice, remove]);
+  }, [notice]);
+  useEffect(() => {
+    if (!exiting) return;
+    const timer = setTimeout(() => remove(notice.id), 120);
+    return () => clearTimeout(timer);
+  }, [exiting, notice.id, remove]);
   return (
-    <div className={'toast ' + notice.kind} role={notice.kind === 'error' ? 'alert' : 'status'}>
+    <div
+      className={'toast ' + notice.kind}
+      data-ending={exiting || undefined}
+      role={notice.kind === 'error' ? 'alert' : 'status'}
+    >
       <span className="toast-symbol" aria-hidden="true">
         {notice.kind === 'error' ? '!' : '✓'}
       </span>
       <p>{tr(notice.message)}</p>
-      <button
-        type="button"
-        className="icon"
-        aria-label={tr('关闭')}
-        onClick={() => remove(notice.id)}
-      >
+      <button type="button" className="icon" aria-label={tr('关闭')} onClick={dismiss}>
         ×
       </button>
     </div>

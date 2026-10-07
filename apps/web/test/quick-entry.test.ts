@@ -57,13 +57,14 @@ test('session journal displays exact balances and distinguishes saved versus und
   assert.doesNotMatch(undone, /<button/);
 });
 
-test('daily badges expire and filters combine month and day without mutating markers', () => {
+test('actual record badges expire and filters ignore obsolete manual markers', () => {
   const p = {
     id: 'test',
     kind: 'account',
     side: 'liability',
     lastRepaymentMonth: '2026-10',
-    lastBookedDate: '2026-10-04',
+    activityDate: '2026-10-04',
+    lastBookedDate: '2026-10-05',
     archived: false,
   } as any;
   assert.equal(isBookedToday(p, '2026-10-04'), true);
@@ -75,7 +76,9 @@ test('daily badges expire and filters combine month and day without mutating mar
     quickAccountVisible({ ...p, side: 'asset' }, '2026-11', '2026-10-05', true, false),
     false,
   );
-  assert.equal(p.lastBookedDate, '2026-10-04');
+  assert.equal(p.lastBookedDate, '2026-10-05');
+  assert.equal(isBookedToday({ ...p, activityDate: null }, '2026-10-05'), false);
+  assert.equal(isBookedToday({ ...p, kind: 'asset' }, '2026-10-04'), false);
 });
 
 test('repayment discount uses opposite fee sign without decimal precision loss', () => {
@@ -84,4 +87,24 @@ test('repayment discount uses opposite fee sign without decimal precision loss',
   assert.equal(repaymentFee('-0.00000000'), '0');
   assert.equal(repaymentFee('0'), '0');
   assert.throws(() => repaymentFee('1e3'));
+});
+
+import {
+  accountPages,
+  overviewPages,
+  settingsPages,
+  navigationGroup,
+  availablePages,
+  navigationDestination,
+} from '../src/navigation';
+test('navigation retains access to visible children and restricts admin to administrators', () => {
+  for (const page of accountPages) assert.equal(navigationGroup(page), 'account');
+  for (const page of overviewPages) assert.equal(navigationGroup(page), 'overview');
+  for (const page of settingsPages) assert.equal(navigationGroup(page), 'settings');
+  assert.equal(navigationDestination('account', ['account']), 'asset');
+  assert.equal(navigationDestination('account', ['account', 'asset', 'debt']), undefined);
+  assert.equal(navigationDestination('overview', ['overview']), 'history');
+  assert.equal(navigationDestination('settings', ['settings', 'schedules'], 'user'), 'settings');
+  assert.deepEqual(availablePages(settingsPages, [], 'user'), ['settings', 'schedules']);
+  assert.deepEqual(availablePages(settingsPages, [], 'admin'), ['settings', 'schedules', 'admin']);
 });

@@ -19,7 +19,6 @@ import { UserRequest } from './auth';
 import {
   positionInput,
   repaymentMarkInput,
-  bookedMarkInput,
   inclusionInput,
   positionMeta,
   revisionInput,
@@ -28,7 +27,14 @@ import {
   pairedReasons,
 } from './validation';
 import { totals, trend } from './calculation';
-import { currentPositions, currentRates, historyPage, trendData, trendInput } from './queries';
+import {
+  currentPositions,
+  currentRates,
+  historyPage,
+  trendData,
+  trendInput,
+  accountActivityIds,
+} from './queries';
 import { z } from 'zod';
 import { Prisma } from '@prisma/client';
 import { IconsService } from './icons';
@@ -54,6 +60,11 @@ export class PortfolioBusinessService {
     const kind = z.enum(['account', 'asset', 'debt']).optional().parse(inputKind);
     return this.db.$transaction(async (tx) => {
       const rows = await currentPositions(tx, r.userId, r.revealed, undefined, kind);
+      const day = today();
+      const activity =
+        !kind || kind === 'account'
+          ? await accountActivityIds(tx, r.userId, r.revealed, day)
+          : new Set<string>();
       const user = await tx.user.findUniqueOrThrow({
         where: { id: r.userId },
         select: { baseCurrency: true, includeIndependentAssets: true },
@@ -70,6 +81,7 @@ export class PortfolioBusinessService {
       );
       return rows.map(({ revisions, userId, ...p }) => ({
         ...p,
+        activityDate: activity.has(p.id) ? day : null,
         ...metalPerformance(p, revisions[0]?.amount.toString() || '0', !!revisions.length),
         amount: revisions[0]?.amount.toString() || '0',
         converted: amounts.get(p.id)!.converted,
@@ -162,8 +174,8 @@ export class PortfolioBusinessService {
     return { ok: true };
   }
 
-  async quickMeta(r: UserRequest, id: string, raw: unknown, operation: 'booked' | 'included') {
-    const v = operation === 'booked' ? bookedMarkInput.parse(raw) : inclusionInput.parse(raw);
+  async quickMeta(r: UserRequest, id: string, raw: unknown) {
+    const v = inclusionInput.parse(raw);
     return this.db.serial(async (tx) => {
       await tx.$queryRaw(
         Prisma.sql`SELECT id FROM Position WHERE id = ${id} AND userId = ${r.userId} FOR UPDATE`,
@@ -172,23 +184,16 @@ export class PortfolioBusinessService {
         where: { id, userId: r.userId, ...(r.revealed ? {} : { hidden: false }) },
       });
       if (!p) throw new NotFoundException('项目不存在');
-      if (operation === 'booked' && (p.kind !== 'account' || p.archived))
-        throw new BadRequestException('仅启用账户支持当天记账标记');
-      if (operation === 'included' && p.kind !== 'asset')
-        throw new BadRequestException('仅独立资产支持此快速统计开关');
+      if (p.kind !== 'asset') throw new BadRequestException('仅独立资产支持此快速统计开关');
       if (v.expectedUpdatedAt && p.updatedAt.toISOString() !== v.expectedUpdatedAt)
         throw new ConflictException('项目已变化，请刷新后重试');
-      if (
-        ('expectedDate' in v && p.lastBookedDate !== v.expectedDate) ||
-        ('expectedIncluded' in v && p.included !== v.expectedIncluded)
-      )
+      if (p.included !== v.expectedIncluded)
         throw new ConflictException('标记已变化，请刷新后重试');
       const updated = await tx.position.update({
         where: { id },
-        data: 'date' in v ? { lastBookedDate: v.date } : { included: v.included },
+        data: { included: v.included },
       });
       return {
-        lastBookedDate: updated.lastBookedDate,
         included: updated.included,
         updatedAt: updated.updatedAt,
       };
@@ -473,19 +478,12 @@ export class PortfolioController {
   ) {
     return this.service.edit(r, id, b);
   }
-  @Patch('positions/:id/booked-mark') async bookedMark(
-    @Req() r: UserRequest,
-    @Param('id') id: string,
-    @Body() b: unknown,
-  ) {
-    return this.service.quickMeta(r, id, b, 'booked');
-  }
   @Patch('positions/:id/inclusion') async inclusion(
     @Req() r: UserRequest,
     @Param('id') id: string,
     @Body() b: unknown,
   ) {
-    return this.service.quickMeta(r, id, b, 'included');
+    return this.service.quickMeta(r, id, b);
   }
   @Patch('positions/:id/repayment-mark') async repaymentMark(
     @Req() r: UserRequest,
