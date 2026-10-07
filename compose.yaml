@@ -1,26 +1,49 @@
 services:
   app:
-    image: worthpath:${WORTHPATH_IMAGE_TAG:-local}
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: worthpath:local
+
+    # 服务器生产环境配置，包含数据库连接、域名和安全开关
     env_file:
-      - .env.production
+      - /opt/worthpath/.env.production
+
     environment:
       ICON_STORAGE_DIR: /app/data/icons
+
+    # 图标持久化目录，宿主机目录需允许 UID/GID 1000 读写
     volumes:
       - type: bind
         source: /opt/worthpath/data/icons
         target: /app/data/icons
         bind:
           create_host_path: false
+
+    # 容器通过此名称连接宿主机 MySQL
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+    # 只供宿主机 Nginx 访问，不向公网直接开放应用端口
     ports:
-      - '127.0.0.1:3100:3100'
+      - "127.0.0.1:3100:3100"
+
+    networks:
+      - worthpath
+
     restart: unless-stopped
     init: true
     stop_grace_period: 30s
+
+    # 禁止容器进程通过执行程序获得额外权限
+    security_opt:
+      - no-new-privileges:true
+
     logging:
       driver: json-file
       options:
-        max-size: '10m'
-        max-file: '3'
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  worthpath:
+    # 使用已经创建的网络，Compose 不负责创建或删除它
+    external: true
+    name: worthpath

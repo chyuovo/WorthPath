@@ -1,5 +1,58 @@
 # WorthPath Docker 部署
 
+```
+# 打包
+docker build -t worthpath:local .
+docker save -o E:\worthpath-local.tar worthpath:local
+```
+
+```shell
+# 添加固定网桥
+docker network create \
+  --driver bridge \
+  --subnet 172.30.50.0/24 \
+  --gateway 172.30.50.1 \
+  --opt com.docker.network.bridge.name=br-worthpath \
+  worthpath
+
+# MySQL 允许172.30.50.0/255.255.255.0 连接
+
+# 更新防火墙
+ip -4 addr show br-worthpath
+
+
+sudo ufw allow in on br-worthpath \
+  from 172.30.50.0/24 \
+  to 172.17.0.1 port 3306 proto tcp \
+  comment 'WorthPath MySQL'
+
+# 创建图标持久化目录，容器内 node 用户的 UID/GID 为 1000
+sudo install -d -m 750 -o 1000 -g 1000 /opt/worthpath/data/icons
+
+# 执行数据库迁移
+docker compose run --rm app node scripts/database.cjs deploy
+
+# 初始化内置图标
+docker compose run --rm app node scripts/seed-icons.cjs
+
+# 启动应用
+docker compose up -d --no-build app
+docker compose ps
+docker compose logs --tail=100 app
+
+# 更新
+# 保留旧镜像，方便回退
+docker tag worthpath:local worthpath:rollback
+
+# 加载新镜像并重新创建应用容器
+docker load -i worthpath-local.tar
+docker compose up -d --no-build --force-recreate app
+
+# 查看运行状态和日志
+docker compose ps
+docker compose logs --since=2m --tail=100 app
+```
+
 ## 更新已部署的项目（尚未上传图片）
 
 图标持久化新增配置不需要数据库结构迁移，也不需要搬运上传图片。保留服务器已有 `.env.production`、MySQL 与反向代理配置；更新镜像和 Compose 的图标挂载即可。历史空库迁移修复也包含在此次更新中，已完成迁移的数据库不用重复初始化或运行图标 seed。
@@ -122,6 +175,14 @@ docker compose version
 服务器构建镜像需要访问镜像仓库、npm 包仓库和 Debian 软件源。镜像中固定 pnpm 11.19.0，并使用锁文件安装依赖；Node 基础镜像为 `node:24-bookworm-slim`，需要严格复现时另行固定镜像 digest。
 
 ## 2. 配置生产环境
+
+针对本次正式部署：网站为 `https://worthpath.chyuovo.top`，MySQL 和 Nginx 均在宿主机，应用在容器内。根目录 `.env.production` 已按此拓扑填写并添加中文注释，数据库和初始管理员密码仍为占位符，必须自行替换。
+
+应用容器通过 `host.docker.internal:3306` 访问数据库，Compose 已加入 `host-gateway` 映射。映射不能绕过 MySQL 的监听限制：若 MySQL 只绑定宿主机 `127.0.0.1`，需另外允许 Docker 可达的宿主机私有接口，限制数据库账号来源和防火墙，不开放公网 3306。MySQL 8.0.13+ 支持配置多个具体监听地址；填写前需确认服务器版本和实际接口地址。
+
+宿主机 Nginx 上游使用 `http://127.0.0.1:3100`，并保留外部 Host。当前 Compose 的端口只绑定宿主机回环地址，无需共享 Docker 网络，不应改成公网发布 3100。
+
+上述数据库监听与 Nginx HTTPS 代理配置尚未在服务器执行或验证；仅写环境文件不会使这些服务器前置条件自动完成。
 
 首次部署复制模板；已有配置时不要再次覆盖：
 
