@@ -68,7 +68,7 @@ export function Calendar({
   return (
     <section className="panel calendar-panel">
       <div className="panel-title">
-        <h2>{tr('收支日历')}</h2>
+        <h2>{tr('月份')}</h2>
         <input
           aria-label={tr('月份')}
           type="month"
@@ -85,9 +85,22 @@ export function Calendar({
           }}
         />
       </div>
-      <p className="muted">
-        {tr('按账户余额变动估算；转账、借贷本金、初始余额和估值不计入。负债账户按相反方向计算。')}
-      </p>
+      <details className="calendar-explanation">
+        <summary>{tr('计算说明')}</summary>
+        <p className="muted">
+          {tr('按账户余额变动估算；转账、借贷本金、初始余额和估值不计入。负债账户按相反方向计算。')}
+        </p>
+      </details>
+      <div className="calendar-legend" aria-hidden="true">
+        <span>
+          <i className="income-dot" />
+          {tr('收入')}
+        </span>
+        <span>
+          <i className="expense-dot" />
+          {tr('支出')}
+        </span>
+      </div>
       <div className="calendar-grid">
         {['一', '二', '三', '四', '五', '六', '日'].map((v) => (
           <span key={v} className="weekday">
@@ -101,19 +114,28 @@ export function Calendar({
           <button
             key={d.date}
             disabled={d.date > today()}
-            aria-label={d.date}
+            aria-label={`${d.date} · ${tr('收入')} ${money(d.income, base)} · ${tr('支出')} ${money(d.expense, base)}${!d.complete ? ' · ' + tr('缺少汇率') : ''}`}
             aria-pressed={d.date === selected}
-            className={'calendar-day ' + (d.date === selected ? 'selected' : '')}
+            className={
+              'calendar-day ' +
+              (d.date === selected ? 'selected ' : '') +
+              (d.date === today() ? 'today' : '')
+            }
             onClick={() => setSelected(d.date)}
           >
             <strong>{Number(d.date.slice(-2))}</strong>
             {Number(d.income) > 0 && (
-              <small className="income-text">+{money(d.income, base)}</small>
+              <small className="calendar-amount income-text">+{money(d.income, base)}</small>
             )}
             {Number(d.expense) > 0 && (
-              <small className="danger-text">−{money(d.expense, base)}</small>
+              <small className="calendar-amount danger-text">−{money(d.expense, base)}</small>
             )}
-            {!d.complete && <small>{tr('缺少汇率')}</small>}
+            <span className="calendar-dots" aria-hidden="true">
+              {Number(d.income) > 0 && <i className="income-dot" />}
+              {Number(d.expense) > 0 && <i className="expense-dot" />}
+              {!d.complete && <i className="incomplete-dot" />}
+            </span>
+            {!d.complete && <small className="calendar-amount">{tr('缺少汇率')}</small>}
           </button>
         ))}
       </div>
@@ -133,8 +155,10 @@ export function Calendar({
           </button>
         </div>
         {day && (
-          <p>
-            {tr('收入')}：{day.complete ? money(day.income, base) : tr('缺少汇率')} ·{' '}
+          <p className="calendar-totals">
+            <span className="income-text">
+              {tr('收入')}：{day.complete ? money(day.income, base) : tr('缺少汇率')}
+            </span>
             <span className="danger-text">
               {tr('支出')}：{day.complete ? money(day.expense, base) : tr('缺少汇率')}
             </span>

@@ -1213,7 +1213,7 @@ export default function App() {
                 )}
                 {p ? p.name : tr(labels[page])}
               </h1>
-              <p className="muted">
+              <p className={page === 'calendar' ? 'calendar-page-description' : 'muted'}>
                 {page === 'overview'
                   ? tr('你的财富全貌，从这里开始。')
                   : page === 'settings'
@@ -1666,7 +1666,12 @@ export default function App() {
               >
                 {page === 'account' && (
                   <>
-                    <div className="actions account-tools">
+                    <div
+                      className={
+                        'actions account-tools ' +
+                        (quickMode ? 'account-tools-quick' : 'account-tools-browse')
+                      }
+                    >
                       <button
                         className={quickMode ? 'primary' : 'secondary'}
                         aria-pressed={quickMode}

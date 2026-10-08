@@ -84,8 +84,8 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
         body = {
           items: Array.from({ length: 31 }, (_, i) => ({
             date: day.slice(0, 7) + '-' + String(i + 1).padStart(2, '0'),
-            income: '0',
-            expense: '0',
+            income: i === 2 ? '160501.27' : '0',
+            expense: i === 2 ? '897.82' : '0',
             complete: true,
           })),
           baseCurrency: 'CNY',
@@ -121,6 +121,22 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
     await nav.getByRole('button', { name: '账号', exact: true }).click();
     await page.getByRole('heading', { name: '日常账户', exact: true }).waitFor();
     await checkWidth('accounts');
+    await page.setViewportSize({ width: 1440, height: 900 });
+    const toolbar = await page.locator('.account-tools-browse').evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return {
+        height: r.height,
+        widths: [...el.children]
+          .filter((x) => !x.hidden)
+          .map((x) => x.getBoundingClientRect().width),
+      };
+    });
+    assert.ok(toolbar.height < 100, 'browse controls should share one row on desktop');
+    await page.screenshot({
+      path: path.join(output, 'worthpath-desktop-toolbar.png'),
+      fullPage: true,
+    });
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({
       path: path.join(output, 'worthpath-mobile-accounts.png'),
       fullPage: true,
@@ -171,6 +187,36 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
     await nav.getByRole('button', { name: '日历', exact: true }).click();
     await page.locator('.calendar-day').first().waitFor();
     await checkWidth('calendar');
+    const activeDay = page
+      .locator('.calendar-day')
+      .filter({ has: page.locator('.income-dot') })
+      .first();
+    await activeDay.click();
+    assert.ok((await page.locator('.calendar-totals').textContent()).includes('160,501.27'));
+    assert.equal(await activeDay.locator('.calendar-amount').first().isVisible(), false);
+    assert.equal(
+      await page
+        .locator('.sidebar')
+        .evaluate((el) => getComputedStyle(el).backdropFilter.includes('blur')),
+      true,
+    );
+    for (const scheme of ['light', 'dark']) {
+      await page.emulateMedia({ colorScheme: scheme });
+      for (const width of [320, 390, 430]) {
+        await page.setViewportSize({ width, height: 844 });
+        await checkWidth('calendar ' + scheme + ' ' + width);
+        assert.ok(
+          await page
+            .locator('.calendar-grid')
+            .evaluate((el) => el.getBoundingClientRect().height < 500),
+        );
+        await page.evaluate(() => (document.documentElement.style.fontSize = '200%'));
+        await checkWidth('calendar large text');
+        await page.evaluate(() => (document.documentElement.style.fontSize = ''));
+      }
+    }
+    await page.emulateMedia({ colorScheme: 'light' });
+    await page.setViewportSize({ width: 390, height: 844 });
     await page.screenshot({
       path: path.join(output, 'worthpath-mobile-calendar.png'),
       fullPage: true,

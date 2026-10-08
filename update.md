@@ -110,3 +110,5 @@
 - ~~手机端主导航改为总览、日历、账号、设置四项，合并独立资产/债务与定时/管理员入口，并应用开源设计 skill~~ — 已完成并验证：2026-10-07 17:41（UTC+8），见 docs/update-mobile-navigation-2026-10-07.md
 - ~~优化滚动条UI~~ — 已完成并验证：2026-10-07 18:06（UTC+8），见 docs/update-mobile-navigation-2026-10-07.md
 - ~~严格按照原作者仓库 apple-design 及适用的其他设计 skill 更新 Apple 风格 UI~~ — 已完成并验证：2026-10-07 18:06（UTC+8），见 docs/update-mobile-navigation-2026-10-07.md
+
+- ~~优化账户页工具栏 UI、手机底栏采用悬浮毛玻璃效果、改善手机日历显示~~ — 已完成并验证：2026-10-08 13:02（UTC+8），见 docs/update-glass-calendar-2026-10-08.md

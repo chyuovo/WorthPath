@@ -242,3 +242,5 @@ git config remote.pushDefault github
 # 需要同步多个远程时手动执行
 'github','gitee','wyh','cy' | ForEach-Object { git push $_ main }
 ```
+
+账户工具栏、悬浮毛玻璃底栏与紧凑手机日历已更新，金额在日期详情中完整显示；详见 [界面更新与验收](docs/update-glass-calendar-2026-10-08.md)。
