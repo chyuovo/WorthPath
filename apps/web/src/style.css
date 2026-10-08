@@ -3550,3 +3550,122 @@ html[data-input='pointer'] .calendar-day {
 .calendar-page-description {
   display: none;
 }
+
+/* A soft glass material and a directly draggable selection lens. */
+.nav-glass-lens {
+  display: none;
+}
+@media (max-width: 700px) {
+  .sidebar {
+    background: rgb(255 255 255 / 48%);
+    backdrop-filter: blur(28px) saturate(160%);
+    -webkit-backdrop-filter: blur(28px) saturate(160%);
+    border-color: #ffffffaa;
+    box-shadow:
+      0 8px 28px #00000014,
+      inset 0 1px 1px #ffffffcc;
+  }
+  .primary-nav {
+    position: relative;
+    touch-action: pan-y;
+    isolation: isolate;
+  }
+  .primary-nav button {
+    z-index: 1;
+    touch-action: pan-y;
+  }
+  .primary-nav button.active {
+    background: transparent;
+  }
+  .nav-glass-lens {
+    display: block;
+    position: absolute;
+    left: 0;
+    top: 5px;
+    border-radius: 28px;
+    pointer-events: none;
+    z-index: 0;
+    background: rgb(0 122 255 / 10%);
+    border: 1px solid #ffffff88;
+    box-shadow:
+      inset 0 1px 1px #ffffff99,
+      0 2px 8px #00000008;
+  }
+  .primary-nav[data-dragging] button.active {
+    color: var(--muted);
+  }
+  .primary-nav[data-dragging] button[data-preview='true'] {
+    color: var(--accent);
+  }
+}
+@media (max-width: 700px) and (prefers-color-scheme: dark) {
+  .sidebar {
+    background: rgb(28 28 30 / 58%);
+    border-color: #ffffff26;
+    box-shadow:
+      0 8px 28px #00000055,
+      inset 0 1px 1px #ffffff1a;
+  }
+  .nav-glass-lens {
+    background: rgb(10 132 255 / 18%);
+    border-color: #ffffff22;
+    box-shadow: inset 0 1px 1px #ffffff22;
+  }
+}
+@media (max-width: 700px) and (prefers-reduced-transparency: reduce),
+  (max-width: 700px) and (prefers-contrast: more) {
+  .sidebar {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border-color: var(--line);
+  }
+  .nav-glass-lens {
+    background: var(--active);
+    border-color: var(--accent);
+  }
+}
+@media (max-width: 700px) and (forced-colors: active) {
+  .sidebar {
+    background: Canvas;
+  }
+  .nav-glass-lens {
+    background: Canvas;
+    border: 2px solid Highlight;
+  }
+}
+
+.calendar-mobile-price {
+  display: none;
+}
+@media (max-width: 700px) {
+  .calendar-day {
+    min-height: 76px;
+    gap: 2px;
+  }
+  .calendar-dots {
+    display: none;
+  }
+  .calendar-mobile-price {
+    display: block;
+    font-size: clamp(0.5rem, 2.3vw, 0.625rem);
+    line-height: 1.45;
+    letter-spacing: -0.03em;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    font-variant-numeric: tabular-nums;
+  }
+  .calendar-day.selected .calendar-mobile-price {
+    color: white !important;
+  }
+}
+
+.calendar-scroll {
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+@media (max-width: 700px) {
+  .calendar-grid {
+    grid-template-columns: repeat(7, minmax(max-content, 1fr));
+  }
+}

@@ -243,6 +243,8 @@ git config remote.pushDefault github
 'github','gitee','wyh','cy' | ForEach-Object { git push $_ main }
 ```
 
-账户工具栏、悬浮毛玻璃底栏与紧凑手机日历已更新，金额在日期详情中完整显示；详见 [界面更新与验收](docs/update-glass-calendar-2026-10-08.md)。
+账户工具栏、悬浮毛玻璃底栏与紧凑手机日历已更新，手机格内显示小字号收支金额（大额使用带近似标识的紧凑单位），日期详情显示完整金额；详见 [界面更新与验收](docs/update-glass-calendar-2026-10-08.md)。
 
 Docker 默认使用 Gitea `latest` 镜像；本地构建推送后，服务器拉取并重建即可更新，见 [Gitea 镜像部署](docs/deploy-gitea-latest.md)。
+
+手机毛玻璃底栏支持左右拖动高亮选择入口，松手切换，点击与键盘操作仍可用；见 [滑动底栏与日历金额说明](docs/update-swipe-tabbar-2026-10-08.md)。

@@ -118,6 +118,52 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
       );
     };
     await checkWidth('overview');
+    const touch = await page.context().newCDPSession(page);
+    const tabCenters = await nav.locator('button').evaluateAll((bs) =>
+      bs.map((b) => {
+        const r = b.getBoundingClientRect();
+        return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      }),
+    );
+    const swipe = async (from, to) => {
+      await touch.send('Input.dispatchTouchEvent', {
+        type: 'touchStart',
+        touchPoints: [{ ...from, id: 1 }],
+      });
+      for (let i = 1; i <= 8; i++)
+        await touch.send('Input.dispatchTouchEvent', {
+          type: 'touchMove',
+          touchPoints: [{ x: from.x + ((to.x - from.x) * i) / 8, y: from.y, id: 1 }],
+        });
+      assert.equal(await nav.getAttribute('data-dragging'), 'true');
+      await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+    };
+    await swipe(tabCenters[0], tabCenters[1]);
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.primary-nav [aria-current="page"]')?.getAttribute('data-key') ===
+        'calendar',
+    );
+    await swipe(tabCenters[1], tabCenters[0]);
+    await page.waitForFunction(
+      () =>
+        document.querySelector('.primary-nav [aria-current="page"]')?.getAttribute('data-key') ===
+        'overview',
+    );
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchStart',
+      touchPoints: [{ ...tabCenters[0], id: 1 }],
+    });
+    await touch.send('Input.dispatchTouchEvent', {
+      type: 'touchMove',
+      touchPoints: [{ ...tabCenters[2], id: 1 }],
+    });
+    await touch.send('Input.dispatchTouchEvent', { type: 'touchCancel', touchPoints: [] });
+    assert.equal(await nav.locator('[aria-current="page"]').getAttribute('data-key'), 'overview');
+    assert.equal(await nav.getAttribute('data-dragging'), null);
+    console.log(
+      'PASS: real touch swipe both directions, direct selection tracking and cancellation.',
+    );
     await nav.getByRole('button', { name: '账号', exact: true }).click();
     await page.getByRole('heading', { name: '日常账户', exact: true }).waitFor();
     await checkWidth('accounts');
@@ -194,6 +240,10 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
     await activeDay.click();
     assert.ok((await page.locator('.calendar-totals').textContent()).includes('160,501.27'));
     assert.equal(await activeDay.locator('.calendar-amount').first().isVisible(), false);
+    assert.equal(await activeDay.locator('.calendar-mobile-price').first().isVisible(), true);
+    assert.ok(
+      (await activeDay.locator('.calendar-mobile-price').first().textContent()).includes('16.1'),
+    );
     assert.equal(
       await page
         .locator('.sidebar')

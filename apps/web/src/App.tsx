@@ -1,3 +1,4 @@
+import { PrimaryNav } from './PrimaryNav';
 import { t as tr, useLocale, LanguagePicker } from './i18n';
 import {
   useState,
@@ -1087,25 +1088,16 @@ export default function App() {
             <span>W</span> WorthPath
           </div>
           <p className="nav-caption">{tr('我的资产空间')}</p>
-          <nav
-            className="primary-nav"
-            aria-label={tr('主导航')}
-            style={{ gridTemplateColumns: `repeat(${visibleNav.length}, minmax(0, 1fr))` }}
-          >
-            {visibleNav.map(([key, Icon, label]) => (
-              <button
-                key={key}
-                className={activeGroup === key ? 'active' : ''}
-                aria-current={activeGroup === key ? 'page' : undefined}
-                onClick={() => {
-                  navigateTo(navigationDestination(key, hiddenMenus, user.role)!);
-                }}
-              >
-                <Icon size={19} />
-                <span>{tr(label)}</span>
-              </button>
-            ))}
-          </nav>
+          <PrimaryNav
+            active={activeGroup}
+            label={tr('主导航')}
+            items={visibleNav.map(([key, Icon, label]) => ({
+              key,
+              label: tr(label),
+              icon: <Icon size={19} />,
+              select: () => navigateTo(navigationDestination(key, hiddenMenus, user.role)!),
+            }))}
+          />
           <div className="side-bottom">
             <div className="avatar">{user.username.slice(0, 1).toUpperCase()}</div>
             <div>

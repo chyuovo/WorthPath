@@ -114,3 +114,5 @@
 - ~~优化账户页工具栏 UI、手机底栏采用悬浮毛玻璃效果、改善手机日历显示~~ — 已完成并验证：2026-10-08 13:02（UTC+8），见 docs/update-glass-calendar-2026-10-08.md
 
 - ~~Docker Compose 改用 Gitea latest 镜像，更新发布与服务器拉取说明~~ — 已完成配置与文档：2026-10-08 13:28（UTC+8）；尚未实际构建、推送或部署，见 docs/deploy-gitea-latest.md
+
+- ~~手机底栏优化 Apple 毛玻璃效果并支持滑动选择；手机日历格内恢复小字号收支金额~~ — 已完成并验证：2026-10-08 14:15（UTC+8），见 docs/update-swipe-tabbar-2026-10-08.md

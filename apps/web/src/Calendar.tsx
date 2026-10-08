@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api, money, today } from './api';
 import { useToast } from './Toast';
-import { t as tr } from './i18n';
+import { t as tr, useLocale } from './i18n';
 type Day = { date: string; income: string; expense: string; complete: boolean };
 type Entry = {
   id: string;
@@ -63,6 +63,18 @@ export function Calendar({
       active = false;
     };
   }, [selected, revealed, refreshVersion]);
+  const locale = useLocale();
+  const compactPrice = (amount: string) => {
+    const value = Number(amount);
+    return new Intl.NumberFormat(
+      locale === 'en' ? 'en' : locale === 'zh-Hant' ? 'zh-TW' : 'zh-CN',
+      {
+        notation: Math.abs(value) >= 10000 ? 'compact' : 'standard',
+        maximumFractionDigits: Math.abs(value) >= 10000 ? 1 : 2,
+        useGrouping: false,
+      },
+    ).format(value);
+  };
   const offset = (new Date(month + '-01T00:00:00Z').getUTCDay() + 6) % 7;
   const day = days.find((v) => v.date === selected);
   return (
@@ -101,43 +113,64 @@ export function Calendar({
           {tr('支出')}
         </span>
       </div>
-      <div className="calendar-grid">
-        {['一', '二', '三', '四', '五', '六', '日'].map((v) => (
-          <span key={v} className="weekday">
-            {tr(v)}
-          </span>
-        ))}
-        {Array.from({ length: offset }, (_, i) => (
-          <span key={'blank-' + i} />
-        ))}
-        {days.map((d) => (
-          <button
-            key={d.date}
-            disabled={d.date > today()}
-            aria-label={`${d.date} · ${tr('收入')} ${money(d.income, base)} · ${tr('支出')} ${money(d.expense, base)}${!d.complete ? ' · ' + tr('缺少汇率') : ''}`}
-            aria-pressed={d.date === selected}
-            className={
-              'calendar-day ' +
-              (d.date === selected ? 'selected ' : '') +
-              (d.date === today() ? 'today' : '')
-            }
-            onClick={() => setSelected(d.date)}
-          >
-            <strong>{Number(d.date.slice(-2))}</strong>
-            {Number(d.income) > 0 && (
-              <small className="calendar-amount income-text">+{money(d.income, base)}</small>
-            )}
-            {Number(d.expense) > 0 && (
-              <small className="calendar-amount danger-text">−{money(d.expense, base)}</small>
-            )}
-            <span className="calendar-dots" aria-hidden="true">
-              {Number(d.income) > 0 && <i className="income-dot" />}
-              {Number(d.expense) > 0 && <i className="expense-dot" />}
-              {!d.complete && <i className="incomplete-dot" />}
+      <div className="calendar-scroll">
+        <div className="calendar-grid">
+          {['一', '二', '三', '四', '五', '六', '日'].map((v) => (
+            <span key={v} className="weekday">
+              {tr(v)}
             </span>
-            {!d.complete && <small className="calendar-amount">{tr('缺少汇率')}</small>}
-          </button>
-        ))}
+          ))}
+          {Array.from({ length: offset }, (_, i) => (
+            <span key={'blank-' + i} />
+          ))}
+          {days.map((d) => (
+            <button
+              key={d.date}
+              disabled={d.date > today()}
+              aria-label={`${d.date} · ${tr('收入')} ${money(d.income, base)} · ${tr('支出')} ${money(d.expense, base)}${!d.complete ? ' · ' + tr('缺少汇率') : ''}`}
+              aria-pressed={d.date === selected}
+              className={
+                'calendar-day ' +
+                (d.date === selected ? 'selected ' : '') +
+                (d.date === today() ? 'today' : '')
+              }
+              onClick={() => setSelected(d.date)}
+            >
+              <strong>{Number(d.date.slice(-2))}</strong>
+              {Number(d.income) > 0 && (
+                <>
+                  <small className="calendar-amount income-text">+{money(d.income, base)}</small>
+                  <small className="calendar-mobile-price income-text" aria-hidden="true">
+                    +{Number(d.income) >= 10000 ? '≈' : ''}
+                    {compactPrice(d.income)}
+                  </small>
+                </>
+              )}
+              {Number(d.expense) > 0 && (
+                <>
+                  <small className="calendar-amount danger-text">−{money(d.expense, base)}</small>
+                  <small className="calendar-mobile-price danger-text" aria-hidden="true">
+                    −{Number(d.expense) >= 10000 ? '≈' : ''}
+                    {compactPrice(d.expense)}
+                  </small>
+                </>
+              )}
+              <span className="calendar-dots" aria-hidden="true">
+                {Number(d.income) > 0 && <i className="income-dot" />}
+                {Number(d.expense) > 0 && <i className="expense-dot" />}
+                {!d.complete && <i className="incomplete-dot" />}
+              </span>
+              {!d.complete && (
+                <>
+                  <small className="calendar-amount">{tr('缺少汇率')}</small>
+                  <small className="calendar-mobile-price" aria-hidden="true">
+                    !
+                  </small>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="calendar-detail">
         <div className="panel-title">
