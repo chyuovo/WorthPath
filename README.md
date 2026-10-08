@@ -244,3 +244,5 @@ git config remote.pushDefault github
 ```
 
 账户工具栏、悬浮毛玻璃底栏与紧凑手机日历已更新，金额在日期详情中完整显示；详见 [界面更新与验收](docs/update-glass-calendar-2026-10-08.md)。
+
+Docker 默认使用 Gitea `latest` 镜像；本地构建推送后，服务器拉取并重建即可更新，见 [Gitea 镜像部署](docs/deploy-gitea-latest.md)。

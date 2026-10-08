@@ -1,6 +1,6 @@
 services:
   app:
-    image: worthpath:local
+    image: git.chyuovo.top/chyuovo/worthpath:latest
 
     # 服务器生产环境配置，包含数据库连接、域名和安全开关
     env_file:

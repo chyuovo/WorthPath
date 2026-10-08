@@ -1,9 +1,13 @@
 # WorthPath Docker 部署
 
+当前 Compose 使用 `git.chyuovo.top/chyuovo/worthpath:latest`。推荐本地构建并推送至 Gitea，服务器执行 `docker compose pull app` 后再 `docker compose up -d --no-build app`；完整命令见 [Gitea latest 部署](docs/deploy-gitea-latest.md)。无需设置版本变量。
+
+以下 tar 导入方式保留用于离线传输，镜像名称与当前 Compose 保持一致。
+
 ```
 # 打包
-docker build -t worthpath:local .
-docker save -o E:\worthpath-local.tar worthpath:local
+docker build -t git.chyuovo.top/chyuovo/worthpath:latest .
+docker save -o E:\worthpath-local.tar git.chyuovo.top/chyuovo/worthpath:latest
 ```
 
 ```shell
@@ -42,7 +46,7 @@ docker compose logs --tail=100 app
 
 # 更新
 # 保留旧镜像，方便回退
-docker tag worthpath:local worthpath:rollback
+docker tag git.chyuovo.top/chyuovo/worthpath:latest worthpath:rollback
 
 # 加载新镜像并重新创建应用容器
 docker load -i worthpath-local.tar
@@ -60,8 +64,8 @@ docker compose logs --since=2m --tail=100 app
 本机重新打包镜像并导出（在源码项目目录执行）：
 
 ```powershell
-docker build -t worthpath:local .
-docker save -o E:\worthpath-local.tar worthpath:local
+docker build -t git.chyuovo.top/chyuovo/worthpath:latest .
+docker save -o E:\worthpath-local.tar git.chyuovo.top/chyuovo/worthpath:latest
 ```
 
 将新的 `worthpath-local.tar` 和 `compose.yaml` 传到服务器 `/opt/worthpath`，同步 Compose 时保留服务器已有的环境文件路径、端口和数据库网络配置。若希望只修改现有 Compose，在 `services.app` 下合并以下配置（不要重复创建已有的 `environment` 或 `volumes` 键）：
@@ -88,7 +92,7 @@ docker compose ps
 docker compose logs --tail=100 app
 ```
 
-上述使用 `worthpath:local`，服务器 Compose 的 `image` 标签需要一致。Compose 已设置容器路径，已有 `.env.production` 无需额外添加变量。启动时现有内置图标也会自动落盘，因此尚未上传图片时目录也可能已有 PNG。随后在网页上传一张图标，可在服务器执行 `find /opt/worthpath/data/icons -maxdepth 1 -type f -name '*.png'` 检查文件。
+上述使用 `git.chyuovo.top/chyuovo/worthpath:latest`，服务器 Compose 的 `image` 标签需要一致。Compose 已设置容器路径，已有 `.env.production` 无需额外添加变量。启动时现有内置图标也会自动落盘，因此尚未上传图片时目录也可能已有 PNG。随后在网页上传一张图标，可在服务器执行 `find /opt/worthpath/data/icons -maxdepth 1 -type f -name '*.png'` 检查文件。
 
 ## 部署结构
 
@@ -104,7 +108,7 @@ WorthPath 应用容器
 已有 MySQL 数据库
 ```
 
-本仓库的 `compose.yaml` 只管理应用，不创建数据库。需要已有 MySQL 8+、已创建的 `worthpath` 数据库及可用的数据库账号。Compose 使用命名镜像，可通过 `WORTHPATH_IMAGE_TAG` 区分版本。运行镜像保留 Prisma CLI 和相关依赖，以便单独执行迁移，不包含后端源码、测试或前端开发目录。
+本仓库的 `compose.yaml` 只管理应用，不创建数据库。需要已有 MySQL 8+、已创建的 `worthpath` 数据库及可用的数据库账号。Compose 使用 Gitea 的 `latest` 镜像；如需固定历史版本，应显式修改 `image` 标签。运行镜像保留 Prisma CLI 和相关依赖，以便单独执行迁移，不包含后端源码、测试或前端开发目录。
 
 上传图标持久化到宿主机 `/opt/worthpath/data/icons`，Compose 将它绑定到容器 `/app/data/icons`，并设置 `ICON_STORAGE_DIR=/app/data/icons`。使用 SHA-256 作为 PNG 文件名，相同内容去重。上传及 ZIP 恢复时写入文件；应用启动时分批补齐数据库中的已有图标。数据库继续保留图片内容，支持现有自包含 ZIP 备份，并可自动修复缺失或损坏的图标文件。图标访问仍通过带身份与可见性校验的 `/api/icons/:id/image` 接口；不要将该目录作为 Nginx 静态目录公开。
 
@@ -148,7 +152,7 @@ docker run --rm hello-world
 
 ```powershell
 cd E:\WorthPath
-docker build -t worthpath:local .
+docker build -t git.chyuovo.top/chyuovo/worthpath:latest .
 ```
 
 如果 Docker 能运行但构建下载失败，检查错误对应的镜像仓库/npm/Debian 源网络和 Docker Desktop 代理配置，避免修改业务数据库配置来解决下载问题。
@@ -293,7 +297,7 @@ curl -I -H 'Host: worthpath.example.com' http://127.0.0.1:3100/
 
 ## 6. 更新与回退
 
-建议为每次发布使用唯一版本标签，例如：
+默认发布与部署使用 `latest`。如需额外保存历史版本，可以另加唯一标签；服务器要部署该固定版本时需同步修改 Compose 的 `image`，例如：
 
 ```bash
 export WORTHPATH_IMAGE_TAG=20261005-1
