@@ -248,3 +248,5 @@ git config remote.pushDefault github
 Docker 默认使用 Gitea `latest` 镜像；本地构建推送后，服务器拉取并重建即可更新，见 [Gitea 镜像部署](docs/deploy-gitea-latest.md)。
 
 手机毛玻璃底栏支持左右拖动高亮选择入口，松手切换，点击与键盘操作仍可用；见 [滑动底栏与日历金额说明](docs/update-swipe-tabbar-2026-10-08.md)。
+
+编辑项目中的图标选择器使用原生嵌套模态弹窗，支持图标回填与取消，修复被外层模态框阻止交互的问题；见 [修复与验证](docs/fix-icon-picker-2026-10-12.md)。

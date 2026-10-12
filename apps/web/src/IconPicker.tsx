@@ -5,36 +5,16 @@ import { IconLibrary, iconUrl } from './IconLibrary';
 export function IconPicker({ initialId }: { initialId?: string | null }) {
   const [id, setId] = useState(initialId || ''),
     [open, setOpen] = useState(false);
-  const dialog = useRef<HTMLDivElement>(null);
+  const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (!open) return;
-    const prior = document.activeElement as HTMLElement;
-    dialog.current?.querySelector<HTMLInputElement>('input[type=search]')?.focus();
-    function key(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.stopImmediatePropagation();
-        setOpen(false);
-      }
-      if (e.key === 'Tab') {
-        const controls = [
-          ...(dialog.current?.querySelectorAll<HTMLElement>(
-            'button:not(:disabled), input, select, summary',
-          ) || []),
-        ].filter((v) => v.offsetParent !== null);
-        const index = controls.indexOf(document.activeElement as HTMLElement);
-        if (e.shiftKey && index <= 0) {
-          e.preventDefault();
-          controls.at(-1)?.focus();
-        } else if (!e.shiftKey && index === controls.length - 1) {
-          e.preventDefault();
-          controls[0]?.focus();
-        }
-      }
-    }
-    document.addEventListener('keydown', key, true);
+    const prior = document.activeElement as HTMLElement | null;
+    const element = dialog.current;
+    element?.showModal();
+    element?.querySelector<HTMLInputElement>('input[type=search]')?.focus();
     return () => {
-      document.removeEventListener('keydown', key, true);
-      prior?.focus();
+      element?.close();
+      if (prior?.isConnected) prior.focus();
     };
   }, [open]);
   return (
@@ -51,19 +31,21 @@ export function IconPicker({ initialId }: { initialId?: string | null }) {
       )}
       {open &&
         createPortal(
-          <div
-            className="icon-picker-backdrop"
+          <dialog
+            ref={dialog}
+            aria-label={tr('选择账户图标')}
+            aria-modal="true"
+            onCancel={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              setOpen(false);
+            }}
+            className="icon-picker-backdrop native-icon-picker"
             onClick={(e) => {
               if (e.target === e.currentTarget) setOpen(false);
             }}
           >
-            <div
-              ref={dialog}
-              className="icon-picker-dialog"
-              role="dialog"
-              aria-modal="true"
-              aria-label={tr('选择账户图标')}
-            >
+            <div className="icon-picker-dialog">
               <div className="panel-title">
                 <h2>{tr('账户图标')}</h2>
                 <button type="button" className="secondary" onClick={() => setOpen(false)}>
@@ -79,7 +61,7 @@ export function IconPicker({ initialId }: { initialId?: string | null }) {
                 }}
               />
             </div>
-          </div>,
+          </dialog>,
           document.body,
         )}
     </div>

@@ -60,8 +60,20 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
         await route.fulfill({ status: 400, json: { error: '浏览器验收错误' } });
         return;
       }
+      if (endpoint.endsWith('/image') && endpoint.startsWith('/icons/')) {
+        await route.fulfill({
+          contentType: 'image/svg+xml',
+          body: '<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32"><rect width="32" height="32" rx="8" fill="#007aff"/></svg>',
+        });
+        return;
+      }
       let body = {};
-      if (endpoint === '/auth/me') body = user;
+      if (endpoint === '/icons')
+        body = {
+          items: [{ id: 'fixture-bank-icon', name: '验收银行图标', shared: true }],
+          total: 1,
+        };
+      else if (endpoint === '/auth/me') body = user;
       else if (endpoint === '/settings') body = { ...user, rates: [], fxStatus: null };
       else if (endpoint === '/overview')
         body = {
@@ -291,6 +303,47 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
     await page.keyboard.press('Escape');
     await modal.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => document.documentElement.dataset.input), 'keyboard');
+    await page.getByRole('button', { name: '退出快速记账', exact: true }).click();
+    await page.locator('.position-card').first().click();
+    await page.getByRole('button', { name: '编辑资料', exact: true }).click();
+    const edit = page.getByRole('dialog', { name: '编辑项目', exact: true });
+    for (const width of [390, 1440]) {
+      await page.setViewportSize({ width, height: 900 });
+      const originalName = await edit.locator('input[name="name"]').inputValue();
+      await edit.getByRole('button', { name: /选择图标|更换图标/ }).click();
+      const picker = page.getByRole('dialog', { name: '选择账户图标', exact: true });
+      await picker.waitFor();
+      assert.equal(await picker.evaluate((el) => el.matches(':modal')), true);
+      assert.equal(await picker.evaluate((el) => el.contains(document.activeElement)), true);
+      await page.keyboard.press('Escape');
+      await picker.waitFor({ state: 'hidden' });
+      assert.equal(await edit.isVisible(), true);
+      assert.equal(await edit.locator('input[name="name"]').inputValue(), originalName);
+      assert.equal(await edit.evaluate((el) => el.contains(document.activeElement)), true);
+      await edit.getByRole('button', { name: /选择图标|更换图标/ }).click();
+      await picker.getByRole('button', { name: '验收银行图标 共享', exact: true }).click();
+      await picker.getByRole('button', { name: '应用所选图标', exact: true }).click();
+      await picker.waitFor({ state: 'hidden' });
+      assert.equal(await edit.locator('input[name="iconId"]').inputValue(), 'fixture-bank-icon');
+      await edit.getByRole('button', { name: '更换图标', exact: true }).click();
+      await picker.getByRole('button', { name: '移除图标', exact: true }).click();
+      await picker.getByRole('button', { name: '关闭图标选择', exact: true }).click();
+      assert.equal(await edit.locator('input[name="iconId"]').inputValue(), 'fixture-bank-icon');
+      await edit.getByRole('button', { name: '更换图标', exact: true }).click();
+      await page.mouse.click(5, 5);
+      await picker.waitFor({ state: 'hidden' });
+      assert.equal(await edit.isVisible(), true);
+
+      assert.equal(await edit.locator('input[name="name"]').inputValue(), originalName);
+    }
+    await edit.getByRole('button', { name: '取消', exact: true }).click();
+    await page.locator('.primary-nav').getByRole('button', { name: '账号', exact: true }).click();
+    await page.getByRole('button', { name: '快速记账', exact: true }).click();
+    await page.setViewportSize({ width: 390, height: 844 });
+    console.log(
+      'PASS: nested edit icon picker in native top layer, selection/form fill, Escape/focus restoration at mobile and desktop widths.',
+    );
+
     assert.equal(
       await nav
         .locator('button')

@@ -3669,3 +3669,20 @@ html[data-input='pointer'] .calendar-day {
     grid-template-columns: repeat(7, minmax(max-content, 1fr));
   }
 }
+
+/* A nested native dialog must join the top layer above its parent modal. */
+.native-icon-picker {
+  width: 100%;
+  height: 100dvh;
+  max-width: none;
+  max-height: none;
+  margin: 0;
+  border: 0;
+  color: var(--ink);
+}
+.native-icon-picker:not([open]) {
+  display: none;
+}
+.native-icon-picker::backdrop {
+  background: transparent;
+}
