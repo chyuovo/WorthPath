@@ -33,7 +33,28 @@ export function trendPath(
     )
     .join(' ');
 }
-export function NetWorthChart({ rows, base }: { rows: Total[]; base: string }) {
+export function trendDomain(rows: Total[], keys: SeriesKey[]) {
+  const values = rows
+    .filter((r) => r.complete)
+    .flatMap((r) => keys.map((key) => Number(r[key])))
+    .filter(Number.isFinite);
+  if (!values.length) return { min: 0, max: 1 };
+  const low = Math.min(...values),
+    high = Math.max(...values);
+  const padding = high === low ? Math.max(Math.abs(low) * 0.01, 1) : (high - low) * 0.08;
+  return { min: low - padding, max: high + padding };
+}
+export function NetWorthChart({
+  rows,
+  base,
+  from,
+  to,
+}: {
+  rows: Total[];
+  base: string;
+  from?: string;
+  to?: string;
+}) {
   const [visible, setVisible] = useState<Record<SeriesKey, boolean>>({
     assets: true,
     liabilities: true,
@@ -41,21 +62,26 @@ export function NetWorthChart({ rows, base }: { rows: Total[]; base: string }) {
   });
   const [activeDate, setActiveDate] = useState<string | null>(null);
   const tooltipId = useId();
+  rows = rows.filter((r) => (!from || r.date >= from) && (!to || r.date <= to));
   const valid = rows.filter((r) => r.complete);
-  if (valid.length < 2)
+  if (!valid.length)
     return (
       <div className="empty">
         <h3>{tr('等待更多历史记录')}</h3>
-        <p>{tr('至少两个日期的完整余额和汇率记录，才能绘制趋势。')}</p>
+        <p>{tr('所选范围内没有完整的余额和汇率记录。')}</p>
       </div>
     );
   const shown = series.filter((s) => visible[s.key]);
-  const values = valid.flatMap((r) => shown.map((s) => Number(r[s.key])));
-  const min = Math.min(0, ...values),
-    max = Math.max(1, ...values);
-  const start = dateValue(rows[0].date),
-    end = dateValue(rows.at(-1)!.date);
-  const x = (date: string) => 35 + ((dateValue(date) - start) / (end - start || 1)) * 655;
+  const { min, max } = trendDomain(
+    valid,
+    shown.map((s) => s.key),
+  );
+  const fromDate = from || rows[0].date,
+    toDate = to || rows.at(-1)!.date;
+  const start = dateValue(fromDate),
+    end = dateValue(toDate);
+  const x = (date: string) =>
+    start === end ? 362.5 : 35 + ((dateValue(date) - start) / (end - start)) * 655;
   const y = (value: string) => 15 + ((max - Number(value)) / (max - min)) * 170;
   const active = rows.find((r) => r.date === activeDate);
   function point(event: PointerEvent<SVGSVGElement>) {
@@ -132,7 +158,9 @@ export function NetWorthChart({ rows, base }: { rows: Total[]; base: string }) {
                 setActiveDate(rows[next].date);
               }}
             >
-              <line x1="35" y1={y('0')} x2="690" y2={y('0')} stroke="#dbe4e2" />
+              {min <= 0 && max >= 0 && (
+                <line x1="35" y1={y('0')} x2="690" y2={y('0')} stroke="#dbe4e2" />
+              )}
               {shown.map((s) => (
                 <path
                   key={s.key}
@@ -198,8 +226,8 @@ export function NetWorthChart({ rows, base }: { rows: Total[]; base: string }) {
         </>
       )}
       <div className="chart-dates">
-        <span>{rows[0].date}</span>
-        <span>{rows.at(-1)!.date}</span>
+        <span>{fromDate}</span>
+        <span>{toDate}</span>
       </div>
       {rows.some((r) => !r.complete) && (
         <p className="muted">{tr('缺失汇率的日期未绘制，曲线在该处断开。')}</p>

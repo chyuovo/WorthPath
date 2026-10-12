@@ -675,5 +675,7 @@
   "当天有记账记录": "Records today",
   "显示当天有记录": "Show today’s recorded accounts",
   "隐藏当天有记录": "Hide today’s recorded accounts",
-  "计算说明": "Calculation notes"
+  "计算说明": "Calculation notes",
+  "所选范围内没有完整的余额和汇率记录。": "No complete balance and exchange-rate records in the selected range.",
+  "默认最近90天，从实际有记录的日期开始；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。": "Defaults to the last 90 days, starting at the first available record; weekly and monthly views use period-end balances. Change attribution sums daily changes, with partial periods limited to the selected range."
 }

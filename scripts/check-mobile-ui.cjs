@@ -87,7 +87,26 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
           baseCurrency: 'CNY',
           revealed: false,
         };
-      else if (endpoint === '/positions')
+      else if (endpoint === '/trend') {
+        const shift = (n) =>
+          new Date(Date.parse(day + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+        body = {
+          items: [-2, -1, 0]
+            .map((n, i) => ({
+              date: shift(n),
+              assets: String(100000 + i * 500),
+              liabilities: '10',
+              net: String(99990 + i * 500),
+              complete: true,
+              missing: [],
+            }))
+            .filter(
+              (r) => r.date >= url.searchParams.get('from') && r.date <= url.searchParams.get('to'),
+            ),
+          revealed: false,
+          nextCursor: null,
+        };
+      } else if (endpoint === '/positions')
         body = url.searchParams.get('kind') === 'account' ? accounts : [];
       else if (endpoint === '/schedules/run') body = { executed: 0, errors: [], hasMore: false };
       else if (endpoint === '/schedules') body = [];
@@ -130,6 +149,40 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
       );
     };
     await checkWidth('overview');
+    await page.locator('.trend-chart').waitFor();
+    const chart = page.locator('.trend-chart');
+    const rangeInputs = page.locator('.overview-filters input[type="date"]');
+    const firstDay = new Date(Date.parse(day + 'T00:00:00Z') - 2 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    await page.waitForFunction(
+      (d) => document.querySelector('.overview-filters input[type="date"]')?.value === d,
+      firstDay,
+    );
+    assert.equal(
+      await chart.locator('.chart-dates span').first().textContent(),
+      await rangeInputs.first().inputValue(),
+    );
+    const before = await chart.locator('path[data-series="net"]').getAttribute('d');
+    await chart.getByRole('button', { name: /总负债/ }).click();
+    assert.equal(await chart.locator('path[data-series="liabilities"]').count(), 0);
+    assert.notEqual(await chart.locator('path[data-series="net"]').getAttribute('d'), before);
+    const chosen = new Date(Date.parse(day + 'T00:00:00Z') - 4 * 86400000)
+      .toISOString()
+      .slice(0, 10);
+    await rangeInputs.first().fill(chosen);
+    await checkWidth('selected range');
+    assert.equal(await rangeInputs.first().inputValue(), chosen);
+    assert.equal(await chart.locator('.chart-dates span').first().textContent(), chosen);
+    await rangeInputs.first().fill(day);
+    await checkWidth('single day');
+    await page.waitForFunction(() => document.querySelectorAll('.trend-chart circle').length === 2);
+    assert.deepEqual(await chart.locator('.chart-dates span').allTextContents(), [day, day]);
+    await rangeInputs.first().fill(firstDay);
+    await checkWidth('restore range');
+    console.log(
+      'PASS: visible-only chart scale, aligned default/manual date ranges, single-day points.',
+    );
     const touch = await page.context().newCDPSession(page);
     const tabCenters = await nav.locator('button').evaluateAll((bs) =>
       bs.map((b) => {

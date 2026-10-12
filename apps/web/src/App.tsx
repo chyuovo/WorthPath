@@ -464,6 +464,7 @@ export default function App() {
     ),
     [rangeTo, setRangeTo] = useState(today()),
     [grain, setGrain] = useState('day');
+  const defaultTrendRange = useRef(true);
   const [dataVersion, setDataVersion] = useState(0);
   const previousDataVersion = useRef(0);
   const viewKey = [page, selected, rangeFrom, rangeTo, grain, settingsSection, businessDay].join(
@@ -560,6 +561,10 @@ export default function App() {
         if ([o.revealed, t.revealed, recent.revealed].some((v) => v !== !!s.revealed)) {
           void load(true);
           return;
+        }
+        if (defaultTrendRange.current && t.items.length) {
+          defaultTrendRange.current = false;
+          setRangeFrom(t.items[0].date);
         }
         setOverview({ ...o, trend: t.items, recent: recent.items });
       } else if (page === 'schedules') {
@@ -1343,7 +1348,12 @@ export default function App() {
                         type="date"
                         value={rangeFrom}
                         max={rangeTo}
-                        onChange={(e) => setRangeFrom(e.target.value)}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            defaultTrendRange.current = false;
+                            setRangeFrom(e.target.value);
+                          }
+                        }}
                       />
                     </label>
                     <label>
@@ -1353,7 +1363,12 @@ export default function App() {
                         value={rangeTo}
                         min={rangeFrom}
                         max={today()}
-                        onChange={(e) => setRangeTo(e.target.value)}
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            defaultTrendRange.current = false;
+                            setRangeTo(e.target.value);
+                          }
+                        }}
                       />
                     </label>
                     <select
@@ -1368,10 +1383,15 @@ export default function App() {
                   </div>
                   <p className="muted">
                     {tr(
-                      '默认最近90天；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。',
+                      '默认最近90天，从实际有记录的日期开始；周一至周日及自然月取期末余额，变化归因累计区间内每日变化，首尾不足周期按实际范围。',
                     )}
                   </p>
-                  <NetWorthChart rows={overview.trend} base={user.baseCurrency} />
+                  <NetWorthChart
+                    rows={overview.trend}
+                    base={user.baseCurrency}
+                    from={rangeFrom}
+                    to={rangeTo}
+                  />
                   <p className="muted">
                     {tr('按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。')}
                   </p>
@@ -2049,7 +2069,12 @@ export default function App() {
                       type="date"
                       value={rangeFrom}
                       max={rangeTo}
-                      onChange={(e) => setRangeFrom(e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          defaultTrendRange.current = false;
+                          setRangeFrom(e.target.value);
+                        }
+                      }}
                     />
                   </label>
                   <label>
@@ -2059,7 +2084,12 @@ export default function App() {
                       value={rangeTo}
                       min={rangeFrom}
                       max={today()}
-                      onChange={(e) => setRangeTo(e.target.value)}
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          defaultTrendRange.current = false;
+                          setRangeTo(e.target.value);
+                        }
+                      }}
                     />
                   </label>
                 </div>
