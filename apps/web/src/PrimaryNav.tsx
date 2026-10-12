@@ -23,10 +23,14 @@ export function PrimaryNav({
   const suppressClick = useRef(false);
   const buttons = () =>
     Array.from(nav.current?.querySelectorAll<HTMLButtonElement>('button') || []);
-  const place = (left: number, width: number, height: number) => {
+  const place = (left: number, width: number, height: number, magnify = false) => {
     const el = lens.current;
     if (el) {
-      el.style.transform = 'translateX(' + left + 'px)';
+      const scale = magnify && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 1.14 : 1;
+      el.style.transform = 'translateX(' + left + 'px) scale(' + scale + ')';
+      el.style.setProperty('--lens-x', left + 'px');
+      el.style.setProperty('--lens-center', left + width / 2 + 'px');
+      el.style.setProperty('--nav-width', (nav.current?.clientWidth || 0) + 'px');
       el.style.width = width + 'px';
       el.style.height = height + 'px';
     }
@@ -95,7 +99,7 @@ export function PrimaryNav({
           last = all[all.length - 1];
         if (!first || !last) return;
         const left = Math.max(first.offsetLeft, Math.min(last.offsetLeft, g.left + dx));
-        place(left, first.offsetWidth, first.offsetHeight);
+        place(left, first.offsetWidth, first.offsetHeight, true);
         const center = left + first.offsetWidth / 2;
         const closest = all.reduce((best, b) =>
           Math.abs(b.offsetLeft + b.offsetWidth / 2 - center) <
@@ -122,7 +126,19 @@ export function PrimaryNav({
         }
       }}
     >
-      <span ref={lens} className="nav-glass-lens" aria-hidden="true" />
+      <span ref={lens} className="nav-glass-lens" aria-hidden="true">
+        <span
+          className="nav-lens-content"
+          style={{ gridTemplateColumns: 'repeat(' + items.length + ', minmax(0, 1fr))' }}
+        >
+          {items.map((item) => (
+            <span key={item.key} className="nav-lens-item">
+              {item.icon}
+              <span>{item.label}</span>
+            </span>
+          ))}
+        </span>
+      </span>
       {items.map((item) => (
         <button
           key={item.key}

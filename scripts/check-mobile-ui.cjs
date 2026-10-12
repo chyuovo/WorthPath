@@ -201,6 +201,17 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
           touchPoints: [{ x: from.x + ((to.x - from.x) * i) / 8, y: from.y, id: 1 }],
         });
       assert.equal(await nav.getAttribute('data-dragging'), 'true');
+      const reduced = await page.evaluate(
+        () => matchMedia('(prefers-reduced-motion: reduce)').matches,
+      );
+      const lensScale = await nav
+        .locator('.nav-glass-lens')
+        .evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).a);
+      assert.equal(lensScale, reduced ? 1 : 1.14);
+      assert.equal(await nav.locator('.nav-lens-content').isVisible(), !reduced);
+      assert.equal(await nav.locator('button').count(), 4);
+      if (!reduced)
+        await page.screenshot({ path: path.join(output, 'worthpath-drag-magnifier.png') });
       await touch.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
     };
     await swipe(tabCenters[0], tabCenters[1]);
@@ -209,7 +220,15 @@ let accounts = ['日常账户', '储蓄账户', '信用卡'].map((name, index) =
         document.querySelector('.primary-nav [aria-current="page"]')?.getAttribute('data-key') ===
         'calendar',
     );
+    await page.emulateMedia({ reducedMotion: 'reduce' });
     await swipe(tabCenters[1], tabCenters[0]);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    assert.equal(
+      await nav
+        .locator('.nav-glass-lens')
+        .evaluate((el) => new DOMMatrixReadOnly(getComputedStyle(el).transform).a),
+      1,
+    );
     await page.waitForFunction(
       () =>
         document.querySelector('.primary-nav [aria-current="page"]')?.getAttribute('data-key') ===

@@ -3686,3 +3686,62 @@ html[data-input='pointer'] .calendar-day {
 .native-icon-picker::backdrop {
   background: transparent;
 }
+
+/* A clipped visual copy magnifies content under the moving glass, without new hit targets. */
+.nav-lens-content {
+  display: none;
+}
+@media (max-width: 700px) and (prefers-reduced-motion: no-preference) {
+  .primary-nav[data-dragging] .nav-glass-lens {
+    z-index: 2;
+    overflow: hidden;
+    background: color-mix(in srgb, var(--surface) 78%, transparent);
+    backdrop-filter: blur(8px) saturate(180%);
+    -webkit-backdrop-filter: blur(8px) saturate(180%);
+    box-shadow:
+      inset 0 1px 2px #ffffffbb,
+      inset 0 -1px 2px #ffffff55,
+      0 4px 14px #00000016;
+  }
+  .primary-nav[data-dragging] .nav-lens-content {
+    display: grid;
+    position: absolute;
+    left: calc(-1 * var(--lens-x));
+    top: 0;
+    width: var(--nav-width);
+    height: 100%;
+    padding: 0 5px;
+    gap: 3px;
+    transform: scale(1.12);
+    transform-origin: var(--lens-center) center;
+    color: var(--accent);
+  }
+  .nav-lens-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    min-width: 0;
+    font-size: 0.75rem;
+    line-height: 1.3;
+  }
+  .nav-lens-item svg {
+    width: 22px;
+    height: 22px;
+    flex-shrink: 0;
+  }
+}
+@media (max-width: 700px) and (prefers-reduced-transparency: reduce),
+  (max-width: 700px) and (prefers-contrast: more) {
+  .primary-nav[data-dragging] .nav-glass-lens {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+@media (forced-colors: active) {
+  .nav-lens-content {
+    display: none !important;
+  }
+}
