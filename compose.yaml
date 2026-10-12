@@ -4,7 +4,7 @@ services:
 
     # 服务器生产环境配置，包含数据库连接、域名和安全开关
     env_file:
-      - /opt/worthpath/.env.production
+      - /opt/docker/worthpath/.env.production
 
     environment:
       ICON_STORAGE_DIR: /app/data/icons
@@ -12,7 +12,7 @@ services:
     # 图标持久化目录，宿主机目录需允许 UID/GID 1000 读写
     volumes:
       - type: bind
-        source: /opt/worthpath/data/icons
+        source: /opt/docker/worthpath/data/icons
         target: /app/data/icons
         bind:
           create_host_path: false

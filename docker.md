@@ -31,7 +31,7 @@ sudo ufw allow in on br-worthpath \
   comment 'WorthPath MySQL'
 
 # 创建图标持久化目录，容器内 node 用户的 UID/GID 为 1000
-sudo install -d -m 750 -o 1000 -g 1000 /opt/worthpath/data/icons
+sudo install -d -m 750 -o 1000 -g 1000 /opt/docker/worthpath/data/icons
 
 # 执行数据库迁移
 docker compose run --rm app node scripts/database.cjs deploy
