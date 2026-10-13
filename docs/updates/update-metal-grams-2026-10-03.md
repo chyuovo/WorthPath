@@ -18,7 +18,7 @@ ZIP v8 增加可选成本字段，既有备份缺少字段仍可验证恢复；�
 - 20261003130000_migration_comments：为 Prisma 自己的迁移表和 8 个字段补齐注释，保持实际类型、可空性和默认值。
 - 前一 MCP 提交已新增 20261003090000_agent_access、20261003100000_agent_audit、20261003110000_agent_comments。
 
-全部 migration deploy 已在当前 MySQL 实际执行，累计 22 个迁移。scripts/check-comments.cjs 验证所有 17 张表、159 个字段均有注释，清单见 database-comments.json。无新增环境变量；启动命令见 [MCP 文档](mcp.md)。先暂停 API，再 db:generate、db:migrate，然后 dev；不使用 reset。
+全部 migration deploy 已在当前 MySQL 实际执行，累计 22 个迁移。scripts/check-comments.cjs 验证所有 17 张表、159 个字段均有注释，清单见 database-comments.json。无新增环境变量；启动命令见 [MCP 文档](../mcp/mcp.md)。先暂停 API，再 db:generate、db:migrate，然后 dev；不使用 reset。
 
 ## 实际验证
 

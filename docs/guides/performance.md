@@ -16,7 +16,7 @@
 
 ## 实测证据
 
-随机独立测试用户，原服务 3100 与优化后隔离服务 33101 使用同一数据库；每项 3 次取中位数，全部为实际 HTTP 测量，响应大小为未压缩 JSON 字节。测试记录集中在 90 天内，金额虚构，测试结束清理该测试用户。完整 SQL、EXPLAIN ANALYZE、处理函数计时及 HTTP 结果见 [原始证据](performance-final.json)。原始证据中的 HTTP queries=0 表示远端 HTTP 客户端未采集 SQL 事件，不代表数据库零查询。
+随机独立测试用户，原服务 3100 与优化后隔离服务 33101 使用同一数据库；每项 3 次取中位数，全部为实际 HTTP 测量，响应大小为未压缩 JSON 字节。测试记录集中在 90 天内，金额虚构，测试结束清理该测试用户。完整 SQL、EXPLAIN ANALYZE、处理函数计时及 HTTP 结果见 [原始证据](../evidence/performance-final.json)。原始证据中的 HTTP queries=0 表示远端 HTTP 客户端未采集 SQL 事件，不代表数据库零查询。
 
 | 数据           |  账户列表：前 → 后 |    列表响应：前 → 后 |   当前总览：前 → 后 | 历史 50 条 | 日趋势 90 天 |
 | -------------- | -----------------: | -------------------: | ------------------: | ---------: | -----------: |
@@ -24,7 +24,7 @@
 | 单账户 10 万   | 2,826.90 → 5.56 ms |   61,267,028 → 370 B |  9,885.51 → 5.39 ms |   38.50 ms |    585.14 ms |
 | 10 账户各 1 万 | 2,869.42 → 6.19 ms | 60,970,241 → 3,671 B | 15,636.96 → 5.48 ms |   34.32 ms |    568.12 ms |
 
-单账户 10 万条 EXPLAIN ANALYZE：最新余额索引节点实际 rows=1 loops=1；历史候选索引节点 rows=51 loops=1；每条前序余额子查询实际 rows=1。多账户每分支分别限量。资金往来最终采用 FORCE INDEX + STRAIGHT_JOIN，以用户/时间/id 为驱动；60 条同时间测试记录，首批索引实际 rows=51，游标下一页 rows=10，无全量排序，见 [往来分页计划](transfers-plan.json)。隐藏或指定账户过滤需要跳过不匹配行，实际扫描可多于返回条数。旧列表实际返回全部 1 万/10 万历史，旧总览也读取全部历史；没有采集旧查询精确存储引擎 rows_examined，因此不将返回行数冒充扫描统计。新增全局日期索引曾导致优化器选择全局历史路径，已通过第二迁移移除，最终使用项目复合索引。EXPLAIN 中 cost/estimated rows 与 actual rows 含义不同。
+单账户 10 万条 EXPLAIN ANALYZE：最新余额索引节点实际 rows=1 loops=1；历史候选索引节点 rows=51 loops=1；每条前序余额子查询实际 rows=1。多账户每分支分别限量。资金往来最终采用 FORCE INDEX + STRAIGHT_JOIN，以用户/时间/id 为驱动；60 条同时间测试记录，首批索引实际 rows=51，游标下一页 rows=10，无全量排序，见 [往来分页计划](../evidence/transfers-plan.json)。隐藏或指定账户过滤需要跳过不匹配行，实际扫描可多于返回条数。旧列表实际返回全部 1 万/10 万历史，旧总览也读取全部历史；没有采集旧查询精确存储引擎 rows_examined，因此不将返回行数冒充扫描统计。新增全局日期索引曾导致优化器选择全局历史路径，已通过第二迁移移除，最终使用项目复合索引。EXPLAIN 中 cost/estimated rows 与 actual rows 含义不同。
 
 前端请求日志及浏览器实测：总览为 overview、trend、history(limit20) 共 3 个财务 GET；账户列表 1 个；详情 2 个；加载下一页只 1 个 history；变化记录页 2 个；打开资金往来表单才取账户/债务选项。旧统一加载为 positions、overview、transfers、settings 共 4 个 GET，各页面都请求全部历史。总览现在虽为 3 个 GET，但每个职责有界；账户列表从 4 降到 1。语言切换为 0 个财务 GET。认证 me 和交互活动另计；启动 me 通过共享 Promise 避免开发 StrictMode 重复。日期范围改变只请求 trend；过期响应由会话、加载序号和当前选择校验拦截。
 
@@ -51,7 +51,7 @@ ZIP v6 增加 operation；保留 v3/v4/v5 ZIP、v1/v2 JSON 读取。恢复校验
 1. `20261002000000_query_indexes`：Revision 项目/日期/顺序及配对约束索引、Transfer 用户/日期/id 索引。
 2. `20261002000100_remove_global_revision_index`：移除实测不合适的全局日期索引。
 3. `20261002000200_debt_movements`：Transfer.operation 默认 transfer，旧记录自动获得原转账语义。
-4. `20261002000300_chinese_comments`：8 张业务表及 73 个字段增加中文注释，Prisma 模型同步文档注释。迁移保留 SHOW CREATE TABLE 原列定义，不改变字段类型、默认值和自增；数据库元数据验证见 [注释核验](database-comments.json)。Prisma 自身的迁移元数据表不作为业务表修改。
+4. `20261002000300_chinese_comments`：8 张业务表及 73 个字段增加中文注释，Prisma 模型同步文档注释。迁移保留 SHOW CREATE TABLE 原列定义，不改变字段类型、默认值和自增；数据库元数据验证见 [注释核验](../evidence/database-comments.json)。Prisma 自身的迁移元数据表不作为业务表修改。
 
 无余额列回填；未删除真实历史。其他环境需先备份，停止 API 释放 Windows Prisma DLL，再按下面步骤部署同步后端与前端：
 
@@ -70,4 +70,4 @@ pnpm test:integration
 
 最终验证：类型检查和生产构建通过；18 个单元测试、8 个真实 MySQL 集成测试通过。涵盖历史补录/更正、同时间顺序、前序余额/分页、归档、隐藏解锁/用户隔离、缺失汇率/本位币切换、负手续费、并发幂等转账与收款、借入借出/还款、ZIP 完整恢复。浏览器验证了 50+10 条分页、详情转账预选、债务关联导航、还款表单默认账户及中英繁切换/刷新持久化。
 
-基准可重跑：在 apps/api 执行 `pnpm exec tsx scripts/performance.ts rerun`；TEST_API_URL 指向优化后服务，BASELINE_API_URL 可选指向独立旧版本服务，结果输出 docs/performance-rerun.json。脚本只生成/清理随机测试用户。连续反复认证集成测试可能触发现有每 IP 15 分钟 30 次认证限速；本次通过重启隔离测试进程复验，生产限制未放宽。
+基准可重跑：在 apps/api 执行 `pnpm exec tsx scripts/performance.ts rerun`；TEST_API_URL 指向优化后服务，BASELINE_API_URL 可选指向独立旧版本服务，结果输出 docs/evidence/performance-rerun.json。脚本只生成/清理随机测试用户。连续反复认证集成测试可能触发现有每 IP 15 分钟 30 次认证限速；本次通过重启隔离测试进程复验，生产限制未放宽。

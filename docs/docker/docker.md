@@ -1,6 +1,6 @@
 # WorthPath Docker 部署
 
-当前 Compose 使用 `git.chyuovo.top/chyuovo/worthpath:latest`。推荐本地构建并推送至 Gitea，服务器执行 `docker compose pull app` 后再 `docker compose up -d --no-build app`；完整命令见 [Gitea latest 部署](docs/deploy-gitea-latest.md)。无需设置版本变量。
+当前 Compose 使用 `git.chyuovo.top/chyuovo/worthpath:latest`。推荐本地构建并推送至 Gitea，服务器执行 `docker compose pull app` 后再 `docker compose up -d --no-build app`；完整命令见 [Gitea latest 部署](deploy-gitea-latest.md)。无需设置版本变量。
 
 以下 tar 导入方式保留用于离线传输，镜像名称与当前 Compose 保持一致。
 

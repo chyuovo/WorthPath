@@ -4,7 +4,7 @@
 
 WorthPath 是一个支持自托管的个人资产、负债与净资产管理应用。它将多币种账户、信用卡、独立资产和借贷往来集中管理，提供快速记账、双边转账与还款、收支日历、贵金属估值和净资产趋势，并支持通过 OAuth / MCP 连接 AI 助手。基于 NestJS、React、TypeScript 和 MySQL 构建，适配手机与电脑，可使用 Docker 部署。
 
-[快速开始](#快速开始) · [Docker 部署](docker.md) · [连接 AI 助手](#连接-ai-助手) · [文档索引](#文档索引)
+[快速开始](#快速开始) · [Docker 部署](docs/docker/docker.md) · [连接 AI 助手](#连接-ai-助手) · [文档索引](#文档索引)
 
 ## 主要功能
 
@@ -43,7 +43,7 @@ WorthPath/
 ├── Dockerfile               # 前后端合并镜像
 ├── compose.yaml             # 应用服务、网络与图标持久化配置
 ├── .env.production.example  # 生产环境模板
-└── docker.md                # Docker 部署与更新说明
+└── update.md                # 当前更新任务（完成记录在 docs/update_old.md）
 ```
 
 ## 快速开始
@@ -75,7 +75,7 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=REPLACE_WITH_A_STRONG_PASSWORD
 ```
 
-将占位值替换为实际配置，密码中的特殊字符需要 URL 编码。完整选项见 [开发配置模板](apps/api/.env.example) 和 [网络配置说明](docs/network-settings.md)。真实环境文件不要提交到 Git。
+将占位值替换为实际配置，密码中的特殊字符需要 URL 编码。完整选项见 [开发配置模板](apps/api/.env.example) 和 [网络配置说明](docs/guides/network-settings.md)。真实环境文件不要提交到 Git。
 
 先准备数据库。也可使用以下预检查脚本：已有数据库只检查；仅在不存在时创建空数据库，需要数据库账号具备相应权限。
 
@@ -97,7 +97,7 @@ pnpm --filter @worthpath/api icons:seed
 pnpm dev
 ```
 
-`icons:seed` 幂等初始化或更新内置图标，保留用户上传图标和财务数据。迁移入口按依赖顺序执行 Prisma `migrate deploy`；不要用 `db push` 或数据库重置替代迁移。历史空库迁移失败的恢复见 [数据库迁移说明](docs/database-migrations.md)。Windows 重新生成 Prisma 客户端前需停止 API，以释放 DLL。
+`icons:seed` 幂等初始化或更新内置图标，保留用户上传图标和财务数据。迁移入口按依赖顺序执行 Prisma `migrate deploy`；不要用 `db push` 或数据库重置替代迁移。历史空库迁移失败的恢复见 [数据库迁移说明](docs/guides/database-migrations.md)。Windows 重新生成 Prisma 客户端前需停止 API，以释放 DLL。
 
 | 入口 | 默认地址 |
 | --- | --- |
@@ -126,7 +126,7 @@ Windows 找不到 pnpm 时，可使用项目启动器。它优先使用已安装
 
 前后端运行在同一个容器，同一端口提供网页、`/api`、`/mcp` 和 OAuth。当前 `compose.yaml` 只管理应用，使用已有 MySQL 和外部 Docker 网络 `worthpath`，不创建数据库。
 
-部署前准备生产环境文件、MySQL、外部网络、图标目录与 HTTPS 反向代理。完整步骤、镜像构建/传输、迁移、更新和回退说明见 [docker.md](docker.md)；生产配置参考 [.env.production.example](.env.production.example)。
+部署前准备生产环境文件、MySQL、外部网络、图标目录与 HTTPS 反向代理。完整步骤、镜像构建/传输、迁移、更新和回退说明见 [docker.md](docs/docker/docker.md)；生产配置参考 [.env.production.example](.env.production.example)。
 
 - 应用端口默认绑定 `127.0.0.1:3100`，由反向代理对外提供 HTTPS；代理需覆盖全部应用路径。
 - 图标持久化：宿主机 `/opt/worthpath/data/icons` → 容器 `/app/data/icons`，目录需允许容器 UID/GID 1000 读写。
@@ -142,7 +142,7 @@ Windows 找不到 pnpm 时，可使用项目启动器。它优先使用已安装
 
 管理员可创建账号、设置管理员/普通用户/只读角色、封禁与解除封禁。账号数据按用户隔离，管理员角色不授予查看其他用户财务数据的能力。角色或封禁变化会撤销该用户全部登录会话和 MCP 授权；只读用户不能写入业务数据或创建修改草稿。
 
-删除账号仅支持默认 `admin` 管理员，需另一位已完成改密的管理员操作并完成验证，且必须保留一位可用管理员。删除清理该账号私人数据及授权，共享图标保留。详情见 [管理员功能说明](docs/admin-accounts.md)。
+删除账号仅支持默认 `admin` 管理员，需另一位已完成改密的管理员操作并完成验证，且必须保留一位可用管理员。删除清理该账号私人数据及授权，共享图标保留。详情见 [管理员功能说明](docs/guides/admin-accounts.md)。
 
 隐藏项目可要求再次验证密码；网页解锁与 MCP 隐藏账户授权分别管理。关闭备注显示不删除备注，完整备份仍包含隐藏项目和备注。清空个人数据须先下载并保存当前完整备份，再输入“确定清空”并完成两次确认；账目变化后需重新下载备份。
 
@@ -171,7 +171,7 @@ Windows 找不到 pnpm 时，可使用项目启动器。它优先使用已安装
 
 写入前使用 `state_get` 获取状态，随操作提交 `expectedState` 和唯一 `idempotencyKey`；同一次网络重试复用完全相同的参数和键。返回 `pending` 时由用户通过 `confirmationUrl` 审阅，再查询 `operation_get`，不能将待确认草稿视为已完成。
 
-密码修改、清空数据、备份导出/恢复、共享图标发布、汇率及贵金属报价编辑保留在网站完成，MCP 不提供这些操作。接入流程、协议和验证边界见 [MCP 文档](docs/mcp.md) 与 [功能覆盖矩阵](docs/mcp-coverage.md)。
+密码修改、清空数据、备份导出/恢复、共享图标发布、汇率及贵金属报价编辑保留在网站完成，MCP 不提供这些操作。接入流程、协议和验证边界见 [MCP 文档](docs/mcp/mcp.md) 与 [功能覆盖矩阵](docs/mcp/mcp-coverage.md)。
 
 ## API 文档与开发检查
 
@@ -213,18 +213,18 @@ pnpm check:staged
 
 | 文档 | 内容 |
 | --- | --- |
-| [Docker 部署](docker.md) | 镜像构建、环境配置、HTTPS、图标持久化、更新与回退 |
-| [网络配置](docs/network-settings.md) | Host、Origin、HTTP/HTTPS、Cookie 与开发配置 |
-| [数据库迁移](docs/database-migrations.md) | 迁移顺序、状态检查及历史失败恢复 |
-| [架构与数据模型](docs/architecture.md) | 领域模型、金额计算、历史及权限；含历史版本说明 |
-| [管理员账号](docs/admin-accounts.md) | 角色、封禁、默认管理员删除与验证 |
-| [MCP 接入](docs/mcp.md) / [覆盖矩阵](docs/mcp-coverage.md) | 连接、授权、工具能力与验证范围 |
-| [首版验收](docs/acceptance.md) / [性能与联动](docs/performance.md) | 历史验收记录、性能数据与验证边界 |
-| [快速记账](docs/update-quick-entry-2026-10-04.md) / [项目删除](docs/update-position-deletion-2026-10-04.md) | 快速操作、撤回、还款与删除依赖 |
-| [还款优惠与图表](docs/update-repayment-trend-2026-10-04.md) | 优惠、手续费与净资产趋势交互 |
-| [连接权限与还款](docs/update-connections-repayment-users-2026-10-05.md) / [OAuth 权限缓存](docs/update-oauth-permissions-2026-10-05.md) | 当前授权与权限调整流程 |
-| [现金、草稿审阅与登录](docs/update-cash-drafts-login-2026-10-05.md) / [草稿确认修复](docs/fix-mcp-create-drafts-2026-10-04.md) | 现金分类、批量草稿与登录偏好 |
-| [移动端导航与当天筛选](docs/update-mobile-navigation-2026-10-07.md) | 当前导航、实际记账筛选、滚动条与无障碍适配 |
+| [Docker 部署](docs/docker/docker.md) | 镜像构建、环境配置、HTTPS、图标持久化、更新与回退 |
+| [网络配置](docs/guides/network-settings.md) | Host、Origin、HTTP/HTTPS、Cookie 与开发配置 |
+| [数据库迁移](docs/guides/database-migrations.md) | 迁移顺序、状态检查及历史失败恢复 |
+| [架构与数据模型](docs/guides/architecture.md) | 领域模型、金额计算、历史及权限；含历史版本说明 |
+| [管理员账号](docs/guides/admin-accounts.md) | 角色、封禁、默认管理员删除与验证 |
+| [MCP 接入](docs/mcp/mcp.md) / [覆盖矩阵](docs/mcp/mcp-coverage.md) | 连接、授权、工具能力与验证范围 |
+| [首版验收](docs/guides/acceptance.md) / [性能与联动](docs/guides/performance.md) | 历史验收记录、性能数据与验证边界 |
+| [快速记账](docs/updates/update-quick-entry-2026-10-04.md) / [项目删除](docs/updates/update-position-deletion-2026-10-04.md) | 快速操作、撤回、还款与删除依赖 |
+| [还款优惠与图表](docs/updates/update-repayment-trend-2026-10-04.md) | 优惠、手续费与净资产趋势交互 |
+| [连接权限与还款](docs/updates/update-connections-repayment-users-2026-10-05.md) / [OAuth 权限缓存](docs/updates/update-oauth-permissions-2026-10-05.md) | 当前授权与权限调整流程 |
+| [现金、草稿审阅与登录](docs/updates/update-cash-drafts-login-2026-10-05.md) / [草稿确认修复](docs/updates/fix-mcp-create-drafts-2026-10-04.md) | 现金分类、批量草稿与登录偏好 |
+| [移动端导航与当天筛选](docs/updates/update-mobile-navigation-2026-10-07.md) | 当前导航、实际记账筛选、滚动条与无障碍适配 |
 
 `docs` 中的更新与验收文档保留对应时间的实现记录，旧备份版本和旧界面说明属于历史信息；当前仅支持 ZIP v9。文档目录保存文字与结构化验收数据，不保存界面截图；应用图标保存在资源目录。
 
@@ -243,14 +243,18 @@ git config remote.pushDefault github
 'github','gitee','wyh','cy' | ForEach-Object { git push $_ main }
 ```
 
-账户工具栏、悬浮毛玻璃底栏与紧凑手机日历已更新，手机格内显示小字号收支金额（大额使用带近似标识的紧凑单位），日期详情显示完整金额；详见 [界面更新与验收](docs/update-glass-calendar-2026-10-08.md)。
+账户工具栏、悬浮毛玻璃底栏与紧凑手机日历已更新，手机格内显示小字号收支金额（大额使用带近似标识的紧凑单位），日期详情显示完整金额；详见 [界面更新与验收](docs/updates/update-glass-calendar-2026-10-08.md)。
 
-Docker 默认使用 Gitea `latest` 镜像；本地构建推送后，服务器拉取并重建即可更新，见 [Gitea 镜像部署](docs/deploy-gitea-latest.md)。
+Docker 默认使用 Gitea `latest` 镜像；本地构建推送后，服务器拉取并重建即可更新，见 [Gitea 镜像部署](docs/docker/deploy-gitea-latest.md)。
 
-手机毛玻璃底栏支持左右拖动高亮选择入口，松手切换，点击与键盘操作仍可用；见 [滑动底栏与日历金额说明](docs/update-swipe-tabbar-2026-10-08.md)。
+手机毛玻璃底栏支持左右拖动高亮选择入口，松手切换，点击与键盘操作仍可用；见 [滑动底栏与日历金额说明](docs/updates/update-swipe-tabbar-2026-10-08.md)。
 
-编辑项目中的图标选择器使用原生嵌套模态弹窗，支持图标回填与取消，修复被外层模态框阻止交互的问题；见 [修复与验证](docs/fix-icon-picker-2026-10-12.md)。
+编辑项目中的图标选择器使用原生嵌套模态弹窗，支持图标回填与取消，修复被外层模态框阻止交互的问题；见 [修复与验证](docs/updates/fix-icon-picker-2026-10-12.md)。
 
-净资产轨迹的纵轴仅根据可见折线缩放，日期标签与选择范围一致，并支持单日数据点；见 [趋势范围修复](docs/fix-trend-range-2026-10-12.md)。
+净资产轨迹的纵轴仅根据可见折线缩放，日期标签与选择范围一致，并支持单日数据点；见 [趋势范围修复](docs/updates/fix-trend-range-2026-10-12.md)。
 
-手机底栏滑动时提供玻璃放大镜效果，松手恢复，减少动态效果模式保留滑动但关闭放大；见 [效果与验证说明](docs/update-nav-magnifier-2026-10-12.md)。
+手机底栏滑动时提供玻璃放大镜效果，松手恢复，减少动态效果模式保留滑动但关闭放大；见 [效果与验证说明](docs/updates/update-nav-magnifier-2026-10-12.md)。
+
+页面刷新保留当前入口及设置分类；在设置的常规设置中选择此浏览器的默认入口和语言。手机设置先显示分类列表，总览支持下拉刷新，移除组成卡片和总览选项卡。文档按 guides、mcp、docker、updates、evidence 分类，见 [文档目录](docs/README.md)。
+
+手机隐藏资产操作使用顶部眼睛按钮，与退出和刷新同一行。此次更新与验证详情见 [页面与设置更新](docs/updates/update-pages-settings-2026-10-13.md)。

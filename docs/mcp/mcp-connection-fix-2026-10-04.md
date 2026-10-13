@@ -13,7 +13,7 @@
 - apps/web/src/AgentConnections.tsx：教程前置连接检查、网络边界、Bearer 配置限制；折叠显示已验证 Codex OAuth 命令；成功和错误反馈统一右上角 Toast。
 - apps/web/src/Toast.tsx：提取 showToast，重复复制相同命令也刷新通知，复用已有自动消失、去重、关闭和模态框兼容机制。
 - apps/web/src/App.tsx：汇率更新失败使用相同 Toast；汇率状态仍作为可查询信息显示。缺少汇率造成总额不完整等持续业务说明保留。
-- docs/mcp.md：实际接入步骤、已验证客户端范围、环境变量 PAT 的进程继承限制。
+- docs/mcp/mcp.md：实际接入步骤、已验证客户端范围、环境变量 PAT 的进程继承限制。
 - update.md：完成提示统一要求并记录接入修正。
 
 ## 实际验证

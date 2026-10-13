@@ -1,6 +1,6 @@
 # WorthPath 远程 MCP 接入
 
-2026-10-04：服务提供 39 个工具。按用户最新要求，MCP 不再提供敏感操作、汇率或贵金属报价修改。网站保留备份、清空、密码修改和自动行情功能。完整覆盖矩阵见 [功能覆盖](mcp-coverage.md)，本次迁移及验证见 [更新记录](update-agent-backup-2026-10-04.md)。
+2026-10-04：服务提供 39 个工具。按用户最新要求，MCP 不再提供敏感操作、汇率或贵金属报价修改。网站保留备份、清空、密码修改和自动行情功能。完整覆盖矩阵见 [功能覆盖](mcp-coverage.md)，本次迁移及验证见 [更新记录](../updates/update-agent-backup-2026-10-04.md)。
 
 ## 开始连接
 
@@ -142,7 +142,7 @@ NETWORK_ALLOW_HTTP=true 时支持配置的 HTTP MCP 服务和网页审核地址�
 
 ### 统一网络配置
 
-所有网络策略及中文说明见 apps/api/.env.example。API 与 Vite 网页开发服务共同读取 apps/api/.env，修改后重启。当前 .env 使用全网卡监听、Host/Origin 通配符、HTTP 和 HTTP 回调，Cookie 保持 HttpOnly 与 SameSite=strict。NETWORK_ALLOW_WILDCARD_ORIGINS 控制是否允许来源通配符；API_ALLOWED_HOSTS、MCP_ALLOWED_HOSTS 与 WEB_ALLOWED_HOSTS 分别控制各入口。限流开关、窗口和阈值也在环境文件中。详见 docs/network-settings.md。
+所有网络策略及中文说明见 apps/api/.env.example。API 与 Vite 网页开发服务共同读取 apps/api/.env，修改后重启。当前 .env 使用全网卡监听、Host/Origin 通配符、HTTP 和 HTTP 回调，Cookie 保持 HttpOnly 与 SameSite=strict。NETWORK_ALLOW_WILDCARD_ORIGINS 控制是否允许来源通配符；API_ALLOWED_HOSTS、MCP_ALLOWED_HOSTS 与 WEB_ALLOWED_HOSTS 分别控制各入口。限流开关、窗口和阈值也在环境文件中。详见 docs/guides/network-settings.md。
 
 ## 修改已有连接与负债账户还款
 
@@ -152,8 +152,8 @@ NETWORK_ALLOW_HTTP=true 时支持配置的 HTTP MCP 服务和网页审核地址�
 
 `movement_create` 的 repay 从资产账户付款，目标支持借入债务和信用卡等负债账户。账户超额还款记为溢缴存款；独立债务仍拒绝超额还款。原币本金用 amount/received，fee 为负表示优惠、为正表示手续费；保留 repay 类型，双边余额及历史在同一事务提交，记录可编辑和撤销。
 
-本次通过 57 项单元测试、9 项隔离 MySQL/REST/官方 SDK 集成测试、类型检查及生产构建；网页验证权限编辑表单、还款草稿预览、默认 admin 删除入口与余额颜色。详见 [更新验收](update-connections-repayment-users-2026-10-05.md)。
+本次通过 57 项单元测试、9 项隔离 MySQL/REST/官方 SDK 集成测试、类型检查及生产构建；网页验证权限编辑表单、还款草稿预览、默认 admin 删除入口与余额颜色。详见 [更新验收](../updates/update-connections-repayment-users-2026-10-05.md)。
 
 ### OAuth 三档选择与助手权限缓存
 
-OAuth 即使只申请 read，网页也提供只读、草稿与直接写入，默认只读，由用户确认最终等级；只读用户不能授予写入，隐藏访问仍需申请并勾选。助手在连接时检查一次 connection_info 并缓存；权限可能在网页更改，重新连接/授权、用户通知变更、权限错误或缓存不足时再检查一次，无需逐次操作重复检查。服务端继续逐请求验证实际权限。教程、配置提示词及其保存规则均已同步，见 [本次更新](update-oauth-permissions-2026-10-05.md)。
+OAuth 即使只申请 read，网页也提供只读、草稿与直接写入，默认只读，由用户确认最终等级；只读用户不能授予写入，隐藏访问仍需申请并勾选。助手在连接时检查一次 connection_info 并缓存；权限可能在网页更改，重新连接/授权、用户通知变更、权限错误或缓存不足时再检查一次，无需逐次操作重复检查。服务端继续逐请求验证实际权限。教程、配置提示词及其保存规则均已同步，见 [本次更新](../updates/update-oauth-permissions-2026-10-05.md)。

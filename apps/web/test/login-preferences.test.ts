@@ -57,3 +57,70 @@ test('remembered login keeps passwords out of application storage and delegates 
   values.set('worthpath.login', 'bad json');
   assert.deepEqual(savedLogin(), { username: '', remember: false });
 });
+
+import {
+  initialPage,
+  initialSettingsSection,
+  persistPage,
+  savedDefaultPage,
+  saveDefaultPage,
+} from '../src/page-preferences';
+test('refresh keeps the current page and settings detail while new entries use a validated default', (t) => {
+  const keys = ['localStorage', 'location', 'history'];
+  const old = keys.map((key) => Object.getOwnPropertyDescriptor(globalThis, key));
+  t.after(() =>
+    keys.forEach((key, i) =>
+      old[i]
+        ? Object.defineProperty(globalThis, key, old[i]!)
+        : Reflect.deleteProperty(globalThis, key),
+    ),
+  );
+  const values = new Map<string, string>();
+  const loc = { hash: '', search: '', pathname: '/' };
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: (key: string) => values.get(key),
+      setItem: (key: string, value: string) => values.set(key, value),
+    },
+  });
+  Object.defineProperty(globalThis, 'location', { configurable: true, value: loc });
+  Object.defineProperty(globalThis, 'history', {
+    configurable: true,
+    value: {
+      replaceState: (_state: unknown, _title: string, url: string) => {
+        loc.hash = url.slice(url.indexOf('#'));
+      },
+    },
+  });
+  assert.equal(initialPage(), 'overview');
+  saveDefaultPage('calendar');
+  assert.equal(initialPage(), 'calendar');
+  loc.hash = '#account';
+  assert.equal(initialPage(), 'account');
+  persistPage('settings', 'privacy');
+  assert.equal(initialPage(), 'settings');
+  assert.equal(initialSettingsSection(), 'privacy');
+  persistPage('settings', '');
+  assert.equal(initialSettingsSection(), '');
+  loc.hash = '#unknown';
+  assert.equal(initialPage(), 'calendar');
+  saveDefaultPage('unknown');
+  assert.equal(savedDefaultPage(), 'calendar');
+  loc.search = '?agent_authorization=example';
+  assert.equal(initialPage(), 'agent-review');
+  loc.search = '';
+  Object.defineProperty(globalThis, 'localStorage', {
+    configurable: true,
+    value: {
+      getItem: () => {
+        throw Error('blocked');
+      },
+      setItem: () => {
+        throw Error('blocked');
+      },
+    },
+  });
+  assert.equal(savedDefaultPage(), 'overview');
+  assert.doesNotThrow(() => saveDefaultPage('account'));
+});

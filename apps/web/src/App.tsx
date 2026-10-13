@@ -1,3 +1,11 @@
+import {
+  initialPage,
+  savedDefaultPage,
+  saveDefaultPage,
+  persistPage,
+  initialSettingsSection,
+} from './page-preferences';
+import { PullToRefresh } from './PullToRefresh';
 import { PrimaryNav } from './PrimaryNav';
 import { t as tr, useLocale, LanguagePicker } from './i18n';
 import {
@@ -219,9 +227,7 @@ export default function App() {
   const authCheck = useRef<Promise<User> | null>(null);
   const [user, setUser] = useState<User | null>(null),
     [boot, setBoot] = useState(true),
-    [page, setPage] = useState(
-      new URLSearchParams(location.search).has('agent_authorization') ? 'agent-review' : 'overview',
-    ),
+    [page, setPage] = useState(initialPage()),
     [positions, setPositions] = useState<Position[]>([]),
     [overview, setOverview] = useState<Overview | null>(null),
     [rates, setRates] = useState<Rate[]>([]),
@@ -453,7 +459,7 @@ export default function App() {
       new URLSearchParams(location.search).has('agent_authorization') ||
         new URLSearchParams(location.search).has('agent_operation')
         ? 'agent'
-        : 'general',
+        : initialSettingsSection(),
     ),
     [transfers, setTransfers] = useState<Transfer[]>([]);
   const [historyRows, setHistoryRows] = useState<History[]>([]),
@@ -531,7 +537,11 @@ export default function App() {
       if (visibilityChanged) rangeOnly = false;
       if (refreshUser) {
         setUser(s);
-        setPage((current) => (s.hiddenMenus.includes(current) ? 'settings' : current));
+        setPage((current) =>
+          s.hiddenMenus.includes(current) || (current === 'admin' && s.role !== 'admin')
+            ? 'settings'
+            : current,
+        );
         if (!s.revealed) {
           setPositions((rows) => rows.filter((p) => !p.hidden));
           setHistoryRows([]);
@@ -711,6 +721,20 @@ export default function App() {
       cancelled = true;
     };
   }, [modal]);
+  const [defaultPage, setDefaultPage] = useState(savedDefaultPage);
+  useEffect(() => {
+    const restore = () => {
+      setPage(initialPage());
+      setSettingsSection(initialSettingsSection());
+      setSelected(null);
+    };
+    window.addEventListener('hashchange', restore);
+    return () => window.removeEventListener('hashchange', restore);
+  }, []);
+  useEffect(() => {
+    if (user && !user.mustChangePassword && page !== 'agent-review')
+      persistPage(page, settingsSection);
+  }, [page, settingsSection, !!user, user?.mustChangePassword]);
   const previousView = useRef('');
   const previousBusinessDay = useRef(businessDay);
   useEffect(() => {
@@ -743,6 +767,11 @@ export default function App() {
       .then((u) => {
         if (session !== sessionGeneration.current) return;
         setUser(u);
+        setPage((current) =>
+          u.hiddenMenus.includes(current) || (current === 'admin' && u.role !== 'admin')
+            ? 'settings'
+            : current,
+        );
         if (u.lastActivity) activityAt.current = +new Date(u.lastActivity);
       })
       .catch((e) => {
@@ -853,7 +882,7 @@ export default function App() {
       if (session !== sessionGeneration.current) return;
       void rememberLogin(String(f.get('username')), String(f.get('password')), remember);
       const agentReturn = new URLSearchParams(location.search).has('agent_authorization');
-      setPage(agentReturn ? 'agent-review' : 'overview');
+      setPage(agentReturn ? 'agent-review' : savedDefaultPage());
       if (agentReturn) setSettingsSection('agent');
       setSelected(null);
       setModal(null);
@@ -1063,17 +1092,46 @@ export default function App() {
     ['settings', Settings, '设置'],
   ] as const;
   const hiddenMenus = user.hiddenMenus || [];
+  const hiddenAssetsButton = (
+    <button
+      className="secondary hidden-assets-action"
+      aria-label={user.revealed ? tr('锁定隐藏资产') : tr('显示隐藏资产')}
+      disabled={busy}
+      onClick={() =>
+        user.revealed
+          ? void act(() => api('/auth/lock', 'POST'), tr('隐藏资产已锁定'))
+          : user.requireHiddenPassword === false
+            ? void act(() => api('/auth/reveal', 'POST', {}), tr('隐藏资产已显示'))
+            : setModal({ kind: 'reveal' })
+      }
+    >
+      {user.revealed ? (
+        <EyeOff size={17} aria-hidden="true" />
+      ) : (
+        <Eye size={17} aria-hidden="true" />
+      )}
+      <span className="hidden-assets-label">
+        {' '}
+        {user.revealed
+          ? tr('锁定隐藏资产')
+          : user.requireHiddenPassword === false
+            ? tr('显示隐藏资产')
+            : tr('显示隐藏资产（验证密码）')}
+      </span>
+    </button>
+  );
   const activeGroup = navigationGroup(page);
   const visibleNav = nav.filter(([key]) => navigationDestination(key, hiddenMenus, user.role));
   const sectionPages =
     activeGroup === 'account'
       ? accountPages
-      : activeGroup === 'overview'
+      : activeGroup === 'overview' && page !== 'overview'
         ? overviewPages
         : activeGroup === 'settings'
           ? settingsPages
           : [];
   function navigateTo(next: string) {
+    if (next === 'settings') setSettingsSection('');
     setPage(next);
     setSelected(null);
     setPositions([]);
@@ -1130,11 +1188,11 @@ export default function App() {
             {tr(labels[page])}
           </span>
           <div>
-            <LanguagePicker />
             <span className="currency-pill">
               {tr('本位币')}
               {user.baseCurrency}
             </span>
+            <div className="mobile-hidden-assets">{hiddenAssetsButton}</div>
             <button
               className="icon mobile-logout"
               aria-label={tr('退出登录')}
@@ -1178,28 +1236,7 @@ export default function App() {
                 ? tr('当前包含隐藏资产 · 5 分钟后自动锁定')
                 : tr('当前不包含隐藏账户、资产和债务，净资产按此范围计算')}
             </span>
-            <button
-              className="secondary"
-              disabled={busy}
-              onClick={() =>
-                user.revealed
-                  ? void act(() => api('/auth/lock', 'POST'), tr('隐藏资产已锁定'))
-                  : user.requireHiddenPassword === false
-                    ? void act(() => api('/auth/reveal', 'POST', {}), tr('隐藏资产已显示'))
-                    : setModal({ kind: 'reveal' })
-              }
-            >
-              {user.revealed ? (
-                <EyeOff size={17} aria-hidden="true" />
-              ) : (
-                <Eye size={17} aria-hidden="true" />
-              )}
-              {user.revealed
-                ? tr('锁定隐藏资产')
-                : user.requireHiddenPassword === false
-                  ? tr('显示隐藏资产')
-                  : tr('显示隐藏资产（验证密码）')}
-            </button>
+            <div className="desktop-hidden-assets">{hiddenAssetsButton}</div>
           </div>
           <div className="page-heading">
             <div>
@@ -1242,9 +1279,12 @@ export default function App() {
               {tr('正在刷新数据…')}
             </p>
           )}
+          {page === 'overview' && <PullToRefresh refreshing={loading} refresh={() => load()} />}
           {page === 'overview' && overview && (
             <>
-              {user.overviewCards?.length === 0 && (
+              {!allOverviewCards.some((key) =>
+                (user.overviewCards ?? allOverviewCards).includes(key),
+              ) && (
                 <section className="panel">
                   <p>{tr('尚未选择总览卡片')}</p>
                   <button
@@ -1319,19 +1359,8 @@ export default function App() {
                   ))}
               </div>
               <div
-                className={
-                  'dashboard-grid' +
-                  (!['trend', 'composition'].every((key) =>
-                    (user.overviewCards ?? allOverviewCards).includes(key),
-                  )
-                    ? ' single-card'
-                    : '')
-                }
-                hidden={
-                  !['trend', 'composition'].some((key) =>
-                    (user.overviewCards ?? allOverviewCards).includes(key),
-                  )
-                }
+                className="dashboard-grid single-card"
+                hidden={!(user.overviewCards ?? allOverviewCards).includes('trend')}
               >
                 <section
                   className="panel"
@@ -1394,43 +1423,6 @@ export default function App() {
                   />
                   <p className="muted">
                     {tr('按当时可用汇率重放；更正历史后重新计算。归档项目仍计入。')}
-                  </p>
-                </section>
-                <section
-                  className="panel"
-                  hidden={!(user.overviewCards ?? allOverviewCards).includes('composition')}
-                >
-                  <h2>{tr('资产与负债组成')}</h2>
-                  {overview.items.length ? (
-                    ['account', 'asset', 'debt'].map((k) => (
-                      <button
-                        className="composition"
-                        key={k}
-                        onClick={() => {
-                          setPage(k);
-                          setSelected(null);
-                        }}
-                      >
-                        <span>
-                          {tr(labels[k])}
-                          <small>
-                            {overview.items.filter((p) => p.included && p.kind === k).length}{' '}
-                            {tr('个项目')}
-                          </small>
-                        </span>
-                        <ArrowUpRight size={18} />
-                      </button>
-                    ))
-                  ) : (
-                    <Empty
-                      title={tr('从一个账户开始')}
-                      body={tr('添加银行、现金或投资账户，建立你的资产全貌。')}
-                      action={newAction}
-                    />
-                  )}
-                  <p className="privacy">
-                    <ShieldCheck size={15} />
-                    {tr('关联关系不会重复计入总额')}
                   </p>
                 </section>
               </div>
@@ -2195,576 +2187,633 @@ export default function App() {
           {page === 'admin' && user.role === 'admin' && <AdminPanel user={user} report={report} />}
           {page === 'settings' && (
             <>
-              <label className="settings-category">
-                <span>{tr('设置分类')}</span>
-                <select
-                  value={settingsSection}
-                  onChange={(event) => setSettingsSection(event.target.value)}
-                >
+              <div className={'settings-layout' + (settingsSection ? ' settings-detail-open' : '')}>
+                <nav className="settings-list" aria-label={tr('设置分类')}>
                   {Object.entries({
                     general: '常规设置',
-                    agent: '连接 Agent',
                     display: '显示与菜单',
                     privacy: '登录与隐私',
                     security: '账号与密码',
+                    agent: '连接 Agent',
                     icons: '图标库',
                     rates: '每日汇率',
                     backup: '备份与恢复',
                     clear: '清空本账号数据',
                   }).map(([key, label]) => (
-                    <option key={key} value={key}>
+                    <button
+                      key={key}
+                      aria-current={settingsSection === key ? 'page' : undefined}
+                      onClick={() => setSettingsSection(key)}
+                    >
                       {tr(label)}
-                    </option>
+                      <ArrowUpRight size={16} />
+                    </button>
                   ))}
-                </select>
-              </label>
-              {settingsSection === 'icons' && (
-                <section className="panel">
-                  <IconLibrary />
-                </section>
-              )}
-              {settingsSection === 'agent' && <AgentConnections changed={() => void load()} />}
-              {settingsSection === 'security' && (
-                <section className="panel">
-                  <h2>{tr('账号与密码')}</h2>
-                  <p className="muted">{tr('修改后其他登录会话将退出，当前会话保持登录。')}</p>
-                  <form
-                    key={user.username}
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const form = e.currentTarget,
-                        f = new FormData(form);
-                      const username = String(f.get('username')).trim(),
-                        newPassword = String(f.get('newPassword'));
-                      if (newPassword !== String(f.get('confirmPassword'))) {
-                        setError(tr('两次输入的新密码不一致'));
-                        return;
-                      }
-                      void act(async () => {
-                        const result = await api('/auth/credentials', 'PATCH', {
-                          currentPassword: f.get('currentPassword'),
-                          ...(username !== user.username ? { username } : {}),
-                          ...(newPassword ? { newPassword } : {}),
-                        });
-                        form.reset();
-                        return result;
-                      }, tr('账号与密码已更新'));
-                    }}
-                  >
-                    <Field label={tr('账号')}>
-                      <input
-                        name="username"
-                        autoComplete="username"
-                        required
-                        minLength={3}
-                        maxLength={64}
-                        defaultValue={user.username}
-                      />
-                    </Field>
-                    <Field label={tr('当前密码')}>
-                      <input
-                        name="currentPassword"
-                        type="password"
-                        autoComplete="current-password"
-                        required
-                        minLength={10}
-                        maxLength={72}
-                      />
-                    </Field>
-                    <Field label={tr('新密码（不修改请留空）')}>
-                      <input
-                        name="newPassword"
-                        type="password"
-                        autoComplete="new-password"
-                        minLength={10}
-                        maxLength={72}
-                      />
-                    </Field>
-                    <Field label={tr('确认新密码')}>
-                      <input
-                        name="confirmPassword"
-                        type="password"
-                        autoComplete="new-password"
-                        minLength={10}
-                        maxLength={72}
-                      />
-                    </Field>
-                    <button className="primary" disabled={busy}>
-                      {tr('保存修改')}
+                  {availablePages(['schedules', 'admin'], hiddenMenus, user.role).map((key) => (
+                    <button key={key} onClick={() => navigateTo(key)}>
+                      {tr(labels[key])}
+                      <ArrowUpRight size={16} />
                     </button>
-                  </form>
-                </section>
-              )}
-              <div className="settings-grid">
-                <section className="panel" hidden={settingsSection !== 'general'}>
-                  <div className="panel-title">
-                    <h2>{tr('常规设置')}</h2>
-                    <button className="text" disabled={busy} onClick={() => void logout()}>
-                      <LogOut size={16} />
-                      {tr('退出登录')}
-                    </button>
-                  </div>
-                  <p className="muted">
-                    {tr('账号：')}
-                    {user.username}
-                    {tr('。切换本位币会重新换算整个历史，原币数据保留。')}
-                  </p>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const f = new FormData(e.currentTarget);
-                      void act(
-                        () => api('/settings', 'PATCH', { baseCurrency: f.get('baseCurrency') }),
-                        tr('设置已保存'),
-                      );
-                    }}
-                  >
-                    <Field label={tr('本位币')}>
-                      <select
-                        name="baseCurrency"
-                        defaultValue={user.baseCurrency}
-                        key={user.baseCurrency}
+                  ))}
+                </nav>
+                <div className="settings-detail">
+                  <button className="text settings-back" onClick={() => setSettingsSection('')}>
+                    <ArrowLeft size={17} />
+                    {tr('返回设置列表')}
+                  </button>
+                  {!settingsSection && (
+                    <p className="muted settings-placeholder">{tr('选择一项设置')}</p>
+                  )}
+                  {settingsSection === 'icons' && (
+                    <section className="panel">
+                      <IconLibrary />
+                    </section>
+                  )}
+                  {settingsSection === 'agent' && <AgentConnections changed={() => void load()} />}
+                  {settingsSection === 'security' && (
+                    <section className="panel">
+                      <h2>{tr('账号与密码')}</h2>
+                      <p className="muted">{tr('修改后其他登录会话将退出，当前会话保持登录。')}</p>
+                      <form
+                        key={user.username}
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const form = e.currentTarget,
+                            f = new FormData(form);
+                          const username = String(f.get('username')).trim(),
+                            newPassword = String(f.get('newPassword'));
+                          if (newPassword !== String(f.get('confirmPassword'))) {
+                            setError(tr('两次输入的新密码不一致'));
+                            return;
+                          }
+                          void act(async () => {
+                            const result = await api('/auth/credentials', 'PATCH', {
+                              currentPassword: f.get('currentPassword'),
+                              ...(username !== user.username ? { username } : {}),
+                              ...(newPassword ? { newPassword } : {}),
+                            });
+                            form.reset();
+                            return result;
+                          }, tr('账号与密码已更新'));
+                        }}
                       >
-                        {currencies.map((c) => (
-                          <option key={c}>{c}</option>
-                        ))}
-                      </select>
-                    </Field>
-                    <button className="primary" disabled={busy}>
-                      {tr('保存设置')}
-                    </button>
-                  </form>
-                </section>
-                <section className="panel" hidden={settingsSection !== 'display'}>
-                  <h2>{tr('显示与菜单')}</h2>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const f = new FormData(e.currentTarget);
-                      void act(
-                        () =>
-                          api('/settings', 'PATCH', {
-                            hiddenMenus: [
+                        <Field label={tr('账号')}>
+                          <input
+                            name="username"
+                            autoComplete="username"
+                            required
+                            minLength={3}
+                            maxLength={64}
+                            defaultValue={user.username}
+                          />
+                        </Field>
+                        <Field label={tr('当前密码')}>
+                          <input
+                            name="currentPassword"
+                            type="password"
+                            autoComplete="current-password"
+                            required
+                            minLength={10}
+                            maxLength={72}
+                          />
+                        </Field>
+                        <Field label={tr('新密码（不修改请留空）')}>
+                          <input
+                            name="newPassword"
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={10}
+                            maxLength={72}
+                          />
+                        </Field>
+                        <Field label={tr('确认新密码')}>
+                          <input
+                            name="confirmPassword"
+                            type="password"
+                            autoComplete="new-password"
+                            minLength={10}
+                            maxLength={72}
+                          />
+                        </Field>
+                        <button className="primary" disabled={busy}>
+                          {tr('保存修改')}
+                        </button>
+                      </form>
+                    </section>
+                  )}
+                  <div className="settings-grid">
+                    <section className="panel" hidden={settingsSection !== 'general'}>
+                      <div className="panel-title">
+                        <h2>{tr('常规设置')}</h2>
+                        <button className="text" disabled={busy} onClick={() => void logout()}>
+                          <LogOut size={16} />
+                          {tr('退出登录')}
+                        </button>
+                      </div>
+                      <p className="muted">
+                        {tr('账号：')}
+                        {user.username}
+                        {tr('。切换本位币会重新换算整个历史，原币数据保留。')}
+                      </p>
+                      <LanguagePicker />
+                      <label className="default-page-picker">
+                        {tr('默认打开的页面')}
+                        <select
+                          value={defaultPage}
+                          onChange={(e) => {
+                            setDefaultPage(e.target.value);
+                            saveDefaultPage(e.target.value);
+                          }}
+                        >
+                          {availablePages(
+                            [
                               'overview',
+                              'calendar',
                               'account',
                               'asset',
                               'debt',
                               'history',
-                              'calendar',
+                              'settings',
                               'schedules',
-                            ].filter((key) => !f.has('menu_' + key)),
-                            showNotes: f.has('showNotes'),
-                            includeIndependentAssets: f.has('includeIndependentAssets'),
-                            overviewCards: allOverviewCards.filter((key) => f.has('card_' + key)),
-                          }),
-                        tr('设置已保存'),
-                      );
-                    }}
-                  >
-                    <label className="switch-row">
-                      <span>{tr('独立资产计入总览')}</span>
-                      <input
-                        type="checkbox"
-                        role="switch"
-                        name="includeIndependentAssets"
-                        defaultChecked={user.includeIndependentAssets !== false}
-                        key={String(user.includeIndependentAssets)}
-                      />
-                    </label>
-                    <p className="muted">
-                      {tr('关闭后，独立资产不参与总额和净资产轨迹，资料与历史仍保留。')}
-                    </p>
-                    <h3>{tr('导航菜单')}</h3>
-                    <p className="muted">
-                      {tr('选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。')}
-                    </p>
-                    <div className="menu-preferences">
-                      {[
-                        'overview',
-                        'account',
-                        'asset',
-                        'debt',
-                        'history',
-                        'calendar',
-                        'schedules',
-                      ].map((key) => (
-                        <label key={key} className="switch-row">
-                          <span>{tr(labels[key])}</span>
-                          <input
-                            type="checkbox"
-                            role="switch"
-                            aria-label={tr(labels[key]) + tr('显示')}
-                            name={'menu_' + key}
-                            key={key + String(user.hiddenMenus)}
-                            defaultChecked={!(user.hiddenMenus || []).includes(key)}
-                          />
-                          <span className="switch-state" aria-hidden="true">
-                            {tr('显示')}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <label className="switch-row">
-                      <span>{tr('显示备注')}</span>
-                      <input
-                        type="checkbox"
-                        role="switch"
-                        name="showNotes"
-                        aria-label={tr('显示备注')}
-                        key={String(user.showNotes)}
-                        defaultChecked={user.showNotes !== false}
-                      />
-                      <span className="switch-state" aria-hidden="true">
-                        {tr('显示')}
-                      </span>
-                    </label>
-                    <p className="muted">
-                      {tr('关闭后隐藏列表、详情及编辑表单中的备注，已有备注仍会保留在备份中。')}
-                    </p>
-
-                    <h3>{tr('总览显示卡片')}</h3>
-                    <p className="muted">
-                      {tr('选择资产总览需要显示的卡片，数据和记录仍会保留。')}
-                    </p>
-                    <div className="menu-preferences">
-                      {allOverviewCards.map((key) => (
-                        <label className="switch-row" key={key}>
-                          <span>{tr(overviewCardLabels[key])}</span>
-                          <input
-                            name={'card_' + key}
-                            type="checkbox"
-                            role="switch"
-                            aria-label={tr(overviewCardLabels[key]) + tr('显示')}
-                            key={key + String(user.overviewCards)}
-                            defaultChecked={(user.overviewCards ?? allOverviewCards).includes(key)}
-                          />
-                          <span className="switch-state" aria-hidden="true">
-                            {tr('显示')}
-                          </span>
-                        </label>
-                      ))}
-                    </div>
-                    <button className="primary" disabled={busy}>
-                      {tr('保存设置')}
-                    </button>
-                  </form>
-                </section>
-                <section className="panel" hidden={settingsSection !== 'privacy'}>
-                  <h2>{tr('登录与隐私')}</h2>
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      const f = new FormData(e.currentTarget);
-                      void act(
-                        () =>
-                          api('/settings', 'PATCH', {
-                            sessionHours: Number(f.get('sessionHours')),
-                            idleMinutes: Number(f.get('idleMinutes')),
-                            requireHiddenPassword: f.has('requireHiddenPassword'),
-                          }),
-                        tr('设置已保存'),
-                      );
-                    }}
-                  >
-                    <Field label={tr('登录有效期（小时）')}>
-                      <input
-                        name="sessionHours"
-                        type="number"
-                        min="1"
-                        max="720"
-                        step="1"
-                        required
-                        defaultValue={user.sessionHours ?? 168}
-                        key={user.sessionHours}
-                      />
-                    </Field>
-                    <p className="muted">
-                      {tr(
-                        '范围 1 小时至 30 天（720 小时）。保存后当前登录重新计时，其他会话沿用原到期时间；后续登录使用新设置。',
-                      )}
-                    </p>
-                    {user.sessionExpiresAt && (
-                      <p className="muted">
-                        {tr('当前会话到期：')}
-                        {new Date(user.sessionExpiresAt).toLocaleString(locale, {
-                          timeZone: 'Asia/Hong_Kong',
-                        })}
-                      </p>
-                    )}
-                    <Field label={tr('无操作自动退出（分钟）')}>
-                      <select
-                        name="idleMinutes"
-                        key={user.idleMinutes}
-                        defaultValue={user.idleMinutes}
-                      >
-                        {[...new Set([0, 5, 15, 30, 60, 120, 1440, user.idleMinutes])]
-                          .sort((a, b) => a - b)
-                          .map((n) => (
-                            <option key={n} value={n}>
-                              {n === 0 ? tr('关闭自动退出') : n + tr(' 分钟')}
+                              'admin',
+                            ],
+                            hiddenMenus,
+                            user.role,
+                          ).map((key) => (
+                            <option key={key} value={key}>
+                              {tr(labels[key])}
                             </option>
                           ))}
-                      </select>
-                    </Field>
-                    <p className="muted">
-                      {tr(
-                        '0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。',
-                      )}
-                    </p>
+                        </select>
+                        <small className="muted">
+                          {tr('在此浏览器登录或打开新入口时使用；刷新保留当前页面。')}
+                        </small>
+                      </label>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const f = new FormData(e.currentTarget);
+                          void act(
+                            () =>
+                              api('/settings', 'PATCH', { baseCurrency: f.get('baseCurrency') }),
+                            tr('设置已保存'),
+                          );
+                        }}
+                      >
+                        <Field label={tr('本位币')}>
+                          <select
+                            name="baseCurrency"
+                            defaultValue={user.baseCurrency}
+                            key={user.baseCurrency}
+                          >
+                            {currencies.map((c) => (
+                              <option key={c}>{c}</option>
+                            ))}
+                          </select>
+                        </Field>
+                        <button className="primary" disabled={busy}>
+                          {tr('保存设置')}
+                        </button>
+                      </form>
+                    </section>
+                    <section className="panel" hidden={settingsSection !== 'display'}>
+                      <h2>{tr('显示与菜单')}</h2>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const f = new FormData(e.currentTarget);
+                          void act(
+                            () =>
+                              api('/settings', 'PATCH', {
+                                hiddenMenus: [
+                                  'overview',
+                                  'account',
+                                  'asset',
+                                  'debt',
+                                  'history',
+                                  'calendar',
+                                  'schedules',
+                                ].filter((key) => !f.has('menu_' + key)),
+                                showNotes: f.has('showNotes'),
+                                includeIndependentAssets: f.has('includeIndependentAssets'),
+                                overviewCards: allOverviewCards.filter((key) =>
+                                  f.has('card_' + key),
+                                ),
+                              }),
+                            tr('设置已保存'),
+                          );
+                        }}
+                      >
+                        <label className="switch-row">
+                          <span>{tr('独立资产计入总览')}</span>
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            name="includeIndependentAssets"
+                            defaultChecked={user.includeIndependentAssets !== false}
+                            key={String(user.includeIndependentAssets)}
+                          />
+                        </label>
+                        <p className="muted">
+                          {tr('关闭后，独立资产不参与总额和净资产轨迹，资料与历史仍保留。')}
+                        </p>
+                        <h3>{tr('导航菜单')}</h3>
+                        <p className="muted">
+                          {tr(
+                            '选择需要显示的菜单项。设置入口始终保留，隐藏仅影响导航，不删除数据。',
+                          )}
+                        </p>
+                        <div className="menu-preferences">
+                          {[
+                            'overview',
+                            'account',
+                            'asset',
+                            'debt',
+                            'history',
+                            'calendar',
+                            'schedules',
+                          ].map((key) => (
+                            <label key={key} className="switch-row">
+                              <span>{tr(labels[key])}</span>
+                              <input
+                                type="checkbox"
+                                role="switch"
+                                aria-label={tr(labels[key]) + tr('显示')}
+                                name={'menu_' + key}
+                                key={key + String(user.hiddenMenus)}
+                                defaultChecked={!(user.hiddenMenus || []).includes(key)}
+                              />
+                              <span className="switch-state" aria-hidden="true">
+                                {tr('显示')}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <label className="switch-row">
+                          <span>{tr('显示备注')}</span>
+                          <input
+                            type="checkbox"
+                            role="switch"
+                            name="showNotes"
+                            aria-label={tr('显示备注')}
+                            key={String(user.showNotes)}
+                            defaultChecked={user.showNotes !== false}
+                          />
+                          <span className="switch-state" aria-hidden="true">
+                            {tr('显示')}
+                          </span>
+                        </label>
+                        <p className="muted">
+                          {tr('关闭后隐藏列表、详情及编辑表单中的备注，已有备注仍会保留在备份中。')}
+                        </p>
 
-                    <label className="switch-row">
-                      <span>{tr('查看隐藏资产需要密码')}</span>
-                      <input
-                        name="requireHiddenPassword"
-                        type="checkbox"
-                        role="switch"
-                        aria-label={tr('查看隐藏资产需要密码')}
-                        key={String(user.requireHiddenPassword)}
-                        defaultChecked={user.requireHiddenPassword !== false}
+                        <h3>{tr('总览显示卡片')}</h3>
+                        <p className="muted">
+                          {tr('选择资产总览需要显示的卡片，数据和记录仍会保留。')}
+                        </p>
+                        <div className="menu-preferences">
+                          {allOverviewCards.map((key) => (
+                            <label className="switch-row" key={key}>
+                              <span>{tr(overviewCardLabels[key])}</span>
+                              <input
+                                name={'card_' + key}
+                                type="checkbox"
+                                role="switch"
+                                aria-label={tr(overviewCardLabels[key]) + tr('显示')}
+                                key={key + String(user.overviewCards)}
+                                defaultChecked={(user.overviewCards ?? allOverviewCards).includes(
+                                  key,
+                                )}
+                              />
+                              <span className="switch-state" aria-hidden="true">
+                                {tr('显示')}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                        <button className="primary" disabled={busy}>
+                          {tr('保存设置')}
+                        </button>
+                      </form>
+                    </section>
+                    <section className="panel" hidden={settingsSection !== 'privacy'}>
+                      <h2>{tr('登录与隐私')}</h2>
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          const f = new FormData(e.currentTarget);
+                          void act(
+                            () =>
+                              api('/settings', 'PATCH', {
+                                sessionHours: Number(f.get('sessionHours')),
+                                idleMinutes: Number(f.get('idleMinutes')),
+                                requireHiddenPassword: f.has('requireHiddenPassword'),
+                              }),
+                            tr('设置已保存'),
+                          );
+                        }}
+                      >
+                        <Field label={tr('登录有效期（小时）')}>
+                          <input
+                            name="sessionHours"
+                            type="number"
+                            min="1"
+                            max="720"
+                            step="1"
+                            required
+                            defaultValue={user.sessionHours ?? 168}
+                            key={user.sessionHours}
+                          />
+                        </Field>
+                        <p className="muted">
+                          {tr(
+                            '范围 1 小时至 30 天（720 小时）。保存后当前登录重新计时，其他会话沿用原到期时间；后续登录使用新设置。',
+                          )}
+                        </p>
+                        {user.sessionExpiresAt && (
+                          <p className="muted">
+                            {tr('当前会话到期：')}
+                            {new Date(user.sessionExpiresAt).toLocaleString(locale, {
+                              timeZone: 'Asia/Hong_Kong',
+                            })}
+                          </p>
+                        )}
+                        <Field label={tr('无操作自动退出（分钟）')}>
+                          <select
+                            name="idleMinutes"
+                            key={user.idleMinutes}
+                            defaultValue={user.idleMinutes}
+                          >
+                            {[...new Set([0, 5, 15, 30, 60, 120, 1440, user.idleMinutes])]
+                              .sort((a, b) => a - b)
+                              .map((n) => (
+                                <option key={n} value={n}>
+                                  {n === 0 ? tr('关闭自动退出') : n + tr(' 分钟')}
+                                </option>
+                              ))}
+                          </select>
+                        </Field>
+                        <p className="muted">
+                          {tr(
+                            '0 为关闭；最长 1440 分钟。到时退出登录并清除页面数据，浏览器标签页保留。',
+                          )}
+                        </p>
+
+                        <label className="switch-row">
+                          <span>{tr('查看隐藏资产需要密码')}</span>
+                          <input
+                            name="requireHiddenPassword"
+                            type="checkbox"
+                            role="switch"
+                            aria-label={tr('查看隐藏资产需要密码')}
+                            key={String(user.requireHiddenPassword)}
+                            defaultChecked={user.requireHiddenPassword !== false}
+                          />
+                        </label>
+                        <p className="muted">
+                          {tr(
+                            '关闭后，已登录账号可直接显示隐藏资产。每次显示持续 5 分钟，也可手动锁定；保存此设置会锁定所有会话的隐藏资产。',
+                          )}
+                        </p>
+                        <button className="primary" disabled={busy}>
+                          {tr('保存设置')}
+                        </button>
+                      </form>
+                    </section>
+                    <section className="panel" hidden={settingsSection !== 'rates'}>
+                      <h2>{tr('每日汇率')}</h2>
+                      {fxStatus && (
+                        <p className="muted" role="status">
+                          {tr(fxStatus.message)}
+                          {fxStatus.attemptedAt
+                            ? ' · ' +
+                              new Date(fxStatus.attemptedAt).toLocaleString(locale, {
+                                timeZone: 'Asia/Hong_Kong',
+                              })
+                            : ''}
+                        </p>
+                      )}
+                      <p className="muted">
+                        {tr(
+                          '服务器每小时检查当日是否已尝试更新。外部请求固定下载公共汇率表，不发送个人数据。失败保留已有汇率，可稍后重试。',
+                        )}
+                      </p>
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() =>
+                          void act(
+                            () => api('/rates/refresh', 'POST'),
+                            tr('汇率已更新至数据源最新可用日期'),
+                          )
+                        }
+                      >
+                        <RefreshCw size={16} />
+                        {tr('立即更新')}
+                      </button>
+                      <p className="muted">
+                        {tr('公共参考汇率可能与银行成交价不同；休市日日期可能滞后。')}
+                      </p>
+                    </section>
+                  </div>
+                  <section className="panel" hidden={settingsSection !== 'rates'}>
+                    <h2>{tr('已保存汇率')}</h2>
+                    {rates.length ? (
+                      <div className="table-wrap">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>{tr('原币 → 本位币')}</th>
+                              <th>{tr('汇率')}</th>
+                              <th>{tr('日期')}</th>
+                              <th>{tr('来源')}</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rates.slice(0, 100).map((r) => (
+                              <tr key={r.currency + r.baseCurrency + r.date}>
+                                <td>
+                                  {r.currency} → {r.baseCurrency}
+                                </td>
+                                <td>{r.rate}</td>
+                                <td>{r.date.slice(0, 10)}</td>
+                                <td>{r.source === 'manual' ? tr('历史导入') : 'Frankfurter'}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    ) : (
+                      <Empty
+                        title={tr('没有保存的外币汇率')}
+                        body={tr('添加外币项目后更新并保存自动汇率。')}
                       />
-                    </label>
+                    )}
+                  </section>
+                  {settingsSection === 'rates' && <MetalPanel refresh={() => load(false, true)} />}
+                  <section className="panel" hidden={settingsSection !== 'clear'}>
+                    <h2 className="danger-text">{tr('清空本账号数据')}</h2>
                     <p className="muted">
                       {tr(
-                        '关闭后，已登录账号可直接显示隐藏资产。每次显示持续 5 分钟，也可手动锁定；保存此设置会锁定所有会话的隐藏资产。',
+                        '清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏资产）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。',
                       )}
                     </p>
-                    <button className="primary" disabled={busy}>
-                      {tr('保存设置')}
-                    </button>
-                  </form>
-                </section>
-                <section className="panel" hidden={settingsSection !== 'rates'}>
-                  <h2>{tr('每日汇率')}</h2>
-                  {fxStatus && (
-                    <p className="muted" role="status">
-                      {tr(fxStatus.message)}
-                      {fxStatus.attemptedAt
-                        ? ' · ' +
-                          new Date(fxStatus.attemptedAt).toLocaleString(locale, {
-                            timeZone: 'Asia/Hong_Kong',
-                          })
-                        : ''}
-                    </p>
-                  )}
-                  <p className="muted">
-                    {tr(
-                      '服务器每小时检查当日是否已尝试更新。外部请求固定下载公共汇率表，不发送个人数据。失败保留已有汇率，可稍后重试。',
+                    {clearStep === 0 ? (
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() => void downloadBackup(true)}
+                      >
+                        <Download size={16} />
+                        {tr('第一步：下载备份')}
+                      </button>
+                    ) : clearStep === 1 ? (
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={async () => {
+                          try {
+                            const s = await api<{ ready: boolean }>('/backup/clear-status');
+                            if (!s.ready) throw new Error(tr('备份尚未完成，请重新下载'));
+                            setClearStep(2);
+                          } catch (e) {
+                            report(e);
+                          }
+                        }}
+                      >
+                        {tr('备份已保存，进入下一步')}
+                      </button>
+                    ) : (
+                      <form
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (new FormData(e.currentTarget).get('confirmation') === tr('确定清空'))
+                            setClearConfirmation(1);
+                        }}
+                      >
+                        <Field label={tr('输入“确定清空”以确认')}>
+                          <input
+                            name="confirmation"
+                            required
+                            pattern={tr('确定清空')}
+                            autoComplete="off"
+                          />
+                        </Field>
+                        <button className="danger" disabled={busy}>
+                          {tr('清空本账号数据')}
+                        </button>
+                      </form>
                     )}
-                  </p>
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() =>
-                      void act(
-                        () => api('/rates/refresh', 'POST'),
-                        tr('汇率已更新至数据源最新可用日期'),
-                      )
-                    }
-                  >
-                    <RefreshCw size={16} />
-                    {tr('立即更新')}
-                  </button>
-                  <p className="muted">
-                    {tr('公共参考汇率可能与银行成交价不同；休市日日期可能滞后。')}
-                  </p>
-                </section>
-              </div>
-              <section className="panel" hidden={settingsSection !== 'rates'}>
-                <h2>{tr('已保存汇率')}</h2>
-                {rates.length ? (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>{tr('原币 → 本位币')}</th>
-                          <th>{tr('汇率')}</th>
-                          <th>{tr('日期')}</th>
-                          <th>{tr('来源')}</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {rates.slice(0, 100).map((r) => (
-                          <tr key={r.currency + r.baseCurrency + r.date}>
-                            <td>
-                              {r.currency} → {r.baseCurrency}
-                            </td>
-                            <td>{r.rate}</td>
-                            <td>{r.date.slice(0, 10)}</td>
-                            <td>{r.source === 'manual' ? tr('历史导入') : 'Frankfurter'}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ) : (
-                  <Empty
-                    title={tr('没有保存的外币汇率')}
-                    body={tr('添加外币项目后更新并保存自动汇率。')}
-                  />
-                )}
-              </section>
-              {settingsSection === 'rates' && <MetalPanel refresh={() => load(false, true)} />}
-              <section className="panel" hidden={settingsSection !== 'clear'}>
-                <h2 className="danger-text">{tr('清空本账号数据')}</h2>
-                <p className="muted">
-                  {tr(
-                    '清除本账号全部账户、资产、债务、历史、私有图标和汇率（包括隐藏资产）；保留登录账号、个人设置和已发布的共享图标。请先下载备份并确认文件已保存。',
-                  )}
-                </p>
-                {clearStep === 0 ? (
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => void downloadBackup(true)}
-                  >
-                    <Download size={16} />
-                    {tr('第一步：下载备份')}
-                  </button>
-                ) : clearStep === 1 ? (
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={async () => {
-                      try {
-                        const s = await api<{ ready: boolean }>('/backup/clear-status');
-                        if (!s.ready) throw new Error(tr('备份尚未完成，请重新下载'));
-                        setClearStep(2);
-                      } catch (e) {
-                        report(e);
-                      }
-                    }}
-                  >
-                    {tr('备份已保存，进入下一步')}
-                  </button>
-                ) : (
-                  <form
-                    onSubmit={(e) => {
-                      e.preventDefault();
-                      if (new FormData(e.currentTarget).get('confirmation') === tr('确定清空'))
-                        setClearConfirmation(1);
-                    }}
-                  >
-                    <Field label={tr('输入“确定清空”以确认')}>
-                      <input
-                        name="confirmation"
-                        required
-                        pattern={tr('确定清空')}
-                        autoComplete="off"
-                      />
-                    </Field>
-                    <button className="danger" disabled={busy}>
-                      {tr('清空本账号数据')}
-                    </button>
-                  </form>
-                )}
-                {clearStep > 0 && (
-                  <button className="text" onClick={() => setClearStep(0)}>
-                    {tr('取消清空 / 重新下载')}
-                  </button>
-                )}
-              </section>
-              <section className="panel" hidden={settingsSection !== 'backup'}>
-                <h2>{tr('数据备份与恢复')}</h2>
-                <p className="muted">
-                  {tr(
-                    'ZIP 内分文件保存可读 JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率、图标及配对转账，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。',
-                  )}
-                </p>
-                <div className="actions">
-                  <button
-                    className="secondary"
-                    disabled={busy}
-                    onClick={() => void downloadBackup()}
-                  >
-                    <Download size={16} />
-                    {tr('下载我的数据备份')}
-                  </button>{' '}
-                  <label className="secondary file-button">
-                    <Upload size={16} />
-                    {tr('选择备份并验证')}
-                    <input
-                      type="file"
-                      accept=".zip,application/zip"
-                      disabled={busy}
-                      onChange={async (e) => {
-                        setBackup(null);
-                        setPreview(null);
-                        setError('');
-                        const file = e.target.files?.[0];
-                        if (!file) return;
-                        const uploadSession = sessionGeneration.current;
-                        setBusy(true);
-                        try {
-                          if (file.size > 512 * 1024 * 1024)
-                            throw new Error(tr('ZIP 文件不能超过 512 MB（不限制记录条数）'));
-                          const form = new FormData();
-                          form.append('file', file);
-                          const response = await fetch('/api/backup/upload', {
-                            method: 'POST',
-                            body: form,
-                            credentials: 'same-origin',
-                          });
-                          const result = await response.json();
-                          if (!response.ok)
-                            throw new ApiError(
-                              result.message || tr('ZIP 验证失败'),
-                              response.status,
-                            );
-                          if (uploadSession !== sessionGeneration.current) return;
-                          setBackup(result.token);
-                          setPreview(result);
-                        } catch (err) {
-                          if (uploadSession === sessionGeneration.current) report(err);
-                        } finally {
-                          setBusy(false);
-                          e.target.value = '';
-                        }
-                      }}
-                    />
-                  </label>
+                    {clearStep > 0 && (
+                      <button className="text" onClick={() => setClearStep(0)}>
+                        {tr('取消清空 / 重新下载')}
+                      </button>
+                    )}
+                  </section>
+                  <section className="panel" hidden={settingsSection !== 'backup'}>
+                    <h2>{tr('数据备份与恢复')}</h2>
+                    <p className="muted">
+                      {tr(
+                        'ZIP 内分文件保存可读 JSON，包括全部账户、资产、债务、历史、关联、币种、设置、汇率、图标及配对转账，不限制记录条数；不包含任何认证凭据。备份含个人财务信息，请妥善保管。',
+                      )}
+                    </p>
+                    <div className="actions">
+                      <button
+                        className="secondary"
+                        disabled={busy}
+                        onClick={() => void downloadBackup()}
+                      >
+                        <Download size={16} />
+                        {tr('下载我的数据备份')}
+                      </button>{' '}
+                      <label className="secondary file-button">
+                        <Upload size={16} />
+                        {tr('选择备份并验证')}
+                        <input
+                          type="file"
+                          accept=".zip,application/zip"
+                          disabled={busy}
+                          onChange={async (e) => {
+                            setBackup(null);
+                            setPreview(null);
+                            setError('');
+                            const file = e.target.files?.[0];
+                            if (!file) return;
+                            const uploadSession = sessionGeneration.current;
+                            setBusy(true);
+                            try {
+                              if (file.size > 512 * 1024 * 1024)
+                                throw new Error(tr('ZIP 文件不能超过 512 MB（不限制记录条数）'));
+                              const form = new FormData();
+                              form.append('file', file);
+                              const response = await fetch('/api/backup/upload', {
+                                method: 'POST',
+                                body: form,
+                                credentials: 'same-origin',
+                              });
+                              const result = await response.json();
+                              if (!response.ok)
+                                throw new ApiError(
+                                  result.message || tr('ZIP 验证失败'),
+                                  response.status,
+                                );
+                              if (uploadSession !== sessionGeneration.current) return;
+                              setBackup(result.token);
+                              setPreview(result);
+                            } catch (err) {
+                              if (uploadSession === sessionGeneration.current) report(err);
+                            } finally {
+                              setBusy(false);
+                              e.target.value = '';
+                            }
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {preview && (
+                      <div className="import-preview">
+                        <h3>{tr('导入预览')}</h3>
+                        <p>
+                          {preview.positions} {tr('个项目 ·')}
+                          {preview.revisions} {tr('条历史 ·')}
+                          {preview.rates} {tr('条汇率')}
+                        </p>
+                        <p>
+                          {tr('备份本位币')}
+                          {preview.baseCurrency} {tr('/ 当前本位币')}
+                          {preview.currentBaseCurrency}
+                        </p>
+                        <p>{tr(preview.message)}</p>
+                        <button
+                          className="primary"
+                          disabled={busy}
+                          onClick={() =>
+                            void act(async () => {
+                              await api('/backup/import-file', 'POST', {
+                                confirmed: true,
+                                token: backup,
+                              });
+                              setPreview(null);
+                              setBackup(null);
+                            }, tr('备份已完整导入'))
+                          }
+                        >
+                          {tr('确认追加导入')}
+                        </button>
+                        <button
+                          className="text"
+                          onClick={() => {
+                            setPreview(null);
+                            setBackup(null);
+                          }}
+                        >
+                          {tr('取消')}
+                        </button>
+                      </div>
+                    )}
+                  </section>
                 </div>
-                {preview && (
-                  <div className="import-preview">
-                    <h3>{tr('导入预览')}</h3>
-                    <p>
-                      {preview.positions} {tr('个项目 ·')}
-                      {preview.revisions} {tr('条历史 ·')}
-                      {preview.rates} {tr('条汇率')}
-                    </p>
-                    <p>
-                      {tr('备份本位币')}
-                      {preview.baseCurrency} {tr('/ 当前本位币')}
-                      {preview.currentBaseCurrency}
-                    </p>
-                    <p>{tr(preview.message)}</p>
-                    <button
-                      className="primary"
-                      disabled={busy}
-                      onClick={() =>
-                        void act(async () => {
-                          await api('/backup/import-file', 'POST', {
-                            confirmed: true,
-                            token: backup,
-                          });
-                          setPreview(null);
-                          setBackup(null);
-                        }, tr('备份已完整导入'))
-                      }
-                    >
-                      {tr('确认追加导入')}
-                    </button>
-                    <button
-                      className="text"
-                      onClick={() => {
-                        setPreview(null);
-                        setBackup(null);
-                      }}
-                    >
-                      {tr('取消')}
-                    </button>
-                  </div>
-                )}
-              </section>
+              </div>
             </>
           )}
           <footer>{tr('WorthPath · 记录你的积累，理解你的财富')}</footer>

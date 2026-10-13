@@ -215,7 +215,7 @@ async function run() {
         candidatePlans,
       });
       writeFileSync(
-        `../../docs/performance-${phase}.json`,
+        `../../docs/evidence/performance-${phase}.json`,
         JSON.stringify(
           { phase, node: process.version, results },
           (_k, v) => (typeof v === 'bigint' ? v.toString() : v),
@@ -230,7 +230,7 @@ async function run() {
     }
   }
   writeFileSync(
-    `../../docs/performance-${phase}.json`,
+    `../../docs/evidence/performance-${phase}.json`,
     JSON.stringify(
       { phase, node: process.version, results },
       (_k, v) => (typeof v === 'bigint' ? v.toString() : v),

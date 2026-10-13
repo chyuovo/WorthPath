@@ -27,3 +27,9 @@ pnpm --filter @worthpath/api test:isolated
 ```
 
 测试只创建和清理随机 `wp_test_` 库，覆盖真实空库初始化、重现 005 失败并恢复、迁移校验值一致、重复执行保留数据和历史、拒绝未跟踪的已有表，以及完整业务回归。
+
+## 更换本地数据库
+
+修改 apps/api/.env 的 DATABASE_URL 后，从 apps/api 执行 node scripts/db-preflight.cjs，再从项目根执行 pnpm db:migrate。空库会按依赖顺序迁移。随后运行 pnpm --filter @worthpath/api build 和 pnpm --filter @worthpath/api icons:seed；迁移状态用 pnpm db:status 检查，表/字段注释在 apps/api 执行 node scripts/check-comments.cjs 核验，输出位于 docs/evidence/database-comments.json。不要提交真实环境配置。
+
+2026-10-13：新的本地测试库已应用 29 个迁移，17 张表和 163 个字段的注释全部通过核验，并初始化 36 个内置图标。
